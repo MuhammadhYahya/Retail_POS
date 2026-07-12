@@ -5,6 +5,7 @@ import tailwindcss from '@tailwindcss/vite';
 // https://vitejs.dev/config
 export default defineConfig({
   root: './src/renderer',
+  base: './',
   plugins: [
     react(), // Required for your React components [2]
     tailwindcss(), // The new Tailwind v4 plugin
@@ -13,7 +14,7 @@ export default defineConfig({
   build: {
     outDir: '../../.vite/renderer',
     rollupOptions: {
-      input: 'index.html',
+      input: './src/renderer/index.html',
     },
   },
 });

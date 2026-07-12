@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import { app } from 'electron';
-import path from 'path'; // Using standard naming format consistent with your index.js
+import path from 'path'; 
 import fs from 'fs';
 import { runMigrations } from './migrations/index.js';
 
@@ -27,9 +27,9 @@ export function getDb() {
   // Automatically spin up your tables and settings
   try {
     runMigrations(db);
-    console.log('✔ Database successfully initialized at:', dbPath);
+    console.log('Database successfully initialized at:', dbPath);
   } catch (error) {
-    console.error('❌ Failed to run database migrations:', error);
+    console.error('Failed to run database migrations:', error);
   }
 
   return db;

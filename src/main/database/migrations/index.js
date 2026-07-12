@@ -1,9 +1,19 @@
 import * as migration001 from './001_init.js';
 import * as migration002 from './002_settings.js';
+import * as migration003 from './003_sessions.js';
+import * as migration004 from './004_user_fields.js';
+import * as migration005 from './005_user_timestamps.js';
+import * as migration006 from './006_auth_bootstrap.js';
+import * as migration007 from './007_security_questions.js';
 
 const migrations = [
   migration001,
   migration002,
+  migration003,
+  migration004,
+  migration005,
+  migration006,
+  migration007,
 ];
 
 export function runMigrations(db) {
@@ -33,6 +43,6 @@ export function runMigrations(db) {
 
     transaction();
 
-    console.log(`✔ Migration applied: ${migration.version}`);
+    console.log(`Migration applied: ${migration.version}`);
   }
 }

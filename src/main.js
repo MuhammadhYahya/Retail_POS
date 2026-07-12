@@ -2,23 +2,41 @@ import { app, BrowserWindow } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import { getDb } from './main/database/db.js';
+import { registerAuthHandlers } from './main/ipc/authHandlers.js';
+import { registerUserHandlers } from './main/ipc/userHandlers.js';
 
-// Exit during Windows installer events.
 if (started) {
   app.quit();
 }
 
-const createWindow = () => {
-  const mainWindow = new BrowserWindow({
+let mainWindow;
+
+function clearSessionStore() {
+  try {
+    const db = getDb();
+    db.prepare('DELETE FROM sessions').run();
+  } catch (error) {
+    console.error('[main] Failed to clear sessions on shutdown:', error.message);
+  }
+}
+
+function createWindow() {
+  mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     webPreferences: {
-      // Secure bridge between the main and renderer processes.
       preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
     },
   });
 
-  // Load Vite dev server in development, otherwise load the built app.
+  mainWindow.on('closed', () => {
+    clearSessionStore();
+    mainWindow = null;
+  });
+
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
   } else {
@@ -26,28 +44,27 @@ const createWindow = () => {
       path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`)
     );
   }
+}
 
-  // Open DevTools while developing.
-  mainWindow.webContents.openDevTools();
-};
-
-app.whenReady().then(() => {
-  // Initialize the SQLite database on startup.
-  getDb();
-
-  createWindow();
-
-  // Recreate a window when the dock icon is clicked (macOS).
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
-  });
+app.on('before-quit', () => {
+  clearSessionStore();
 });
 
-// Keep the app running on macOS until the user quits explicitly.
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+app.on('activate', () => {
+  if (mainWindow === null) {
+    createWindow();
+  }
+});
+
+app.whenReady().then(() => {
+  getDb();
+  registerAuthHandlers();
+  registerUserHandlers();
+  createWindow();
 });
