@@ -4,6 +4,7 @@ const validChannels = [
   'auth:getRegistrationContext',
   'auth:getSecurityQuestions',
   'auth:getUsers',
+  'auth:requestAdminRecovery',
   'auth:login',
   'auth:register',
   'auth:restore-session',

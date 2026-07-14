@@ -7,17 +7,24 @@ import {
   SecurityQuestionsFields,
   ContactFields,
   EMPTY_SECURITY_FORM,
+  CUSTOM_QUESTION_VALUE,
 } from '../../components/auth/SecurityQuestionsFields';
 
 const PIN_REGEX = /^[0-9]{4}$/;
 
+function resolveQuestion(choice, customQuestion) {
+  return choice === CUSTOM_QUESTION_VALUE ? customQuestion.trim() : choice;
+}
+
 export default function RegisterPage() {
   const navigate = useNavigate();
   const [context, setContext] = useState(null);
+  const [recoveryFilePath, setRecoveryFilePath] = useState('');
   const [form, setForm] = useState({
     username: '',
     pin: '',
     confirmPin: '',
+    recoveryCode: '',
     ...EMPTY_SECURITY_FORM,
   });
   const [loading, setLoading] = useState(false);
@@ -45,12 +52,38 @@ export default function RegisterPage() {
   }, []);
 
   const isBootstrap = context?.mode === 'bootstrap';
-  const role = isBootstrap ? 'admin' : 'cashier';
-  const title = isBootstrap ? 'Set Up Admin Account' : 'Create Cashier Account';
+  const isRecovery = context?.mode === 'recovery';
+  const role = isBootstrap || isRecovery ? 'admin' : 'cashier';
+  const title = isBootstrap
+    ? 'Set Up Admin Account'
+    : isRecovery
+      ? 'Recover Admin Access'
+      : 'Create Cashier Account';
   const subtitle = isBootstrap
     ? 'Create the first administrator account to get started.'
+    : isRecovery
+      ? 'A cashier account exists, but no administrator is active. Use a local recovery code to create a new admin.'
     : 'Register as a cashier with limited system access.';
   const securityQuestions = context?.securityQuestions || [];
+
+  const handleGenerateRecoveryCode = async () => {
+    setError('');
+    setLoading(true);
+
+    try {
+      const response = await window.electronAPI.invoke('auth:requestAdminRecovery');
+      if (response.success) {
+        setRecoveryFilePath(response.data?.filePath || '');
+      } else {
+        setError(response.error || 'Failed to create recovery code');
+      }
+    } catch (err) {
+      console.error(err);
+      setError('Failed to create recovery code');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -72,14 +105,22 @@ export default function RegisterPage() {
     }
 
     if (isBootstrap) {
-      if (!form.securityQ1 || !form.securityQ2 || !form.securityA1.trim() || !form.securityA2.trim()) {
+      const resolvedQ1 = resolveQuestion(form.securityQ1Choice, form.securityQ1Custom);
+      const resolvedQ2 = resolveQuestion(form.securityQ2Choice, form.securityQ2Custom);
+
+      if (!resolvedQ1 || !resolvedQ2 || !form.securityA1.trim() || !form.securityA2.trim()) {
         setError('Please complete both security questions and answers.');
         return;
       }
-      if (form.securityQ1 === form.securityQ2) {
+      if (resolvedQ1.trim().toLowerCase() === resolvedQ2.trim().toLowerCase()) {
         setError('Choose two different security questions.');
         return;
       }
+    }
+
+    if (isRecovery && !form.recoveryCode.trim()) {
+      setError('Enter the recovery code from the file on this computer.');
+      return;
     }
 
     setLoading(true);
@@ -92,14 +133,21 @@ export default function RegisterPage() {
       };
 
       if (isBootstrap) {
+        const resolvedQ1 = resolveQuestion(form.securityQ1Choice, form.securityQ1Custom);
+        const resolvedQ2 = resolveQuestion(form.securityQ2Choice, form.securityQ2Custom);
+
         Object.assign(payload, {
-          securityQ1: form.securityQ1,
+          securityQ1: resolvedQ1,
           securityA1: form.securityA1,
-          securityQ2: form.securityQ2,
+          securityQ2: resolvedQ2,
           securityA2: form.securityA2,
           email: form.email.trim() || undefined,
           phone: form.phone.trim() || undefined,
         });
+      }
+
+      if (isRecovery) {
+        payload.recoveryCode = form.recoveryCode.trim();
       }
 
       const response = await window.electronAPI.invoke('auth:register', payload);
@@ -211,15 +259,59 @@ export default function RegisterPage() {
 
           <div className="rounded-lg bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
             Account type: <span className="font-medium text-foreground capitalize">{role}</span>
-            {!isBootstrap && (
+            {(!isBootstrap && !isRecovery) && (
               <p className="mt-1 text-xs">
                 Admin accounts can only be created by an existing administrator.
               </p>
             )}
           </div>
 
+          {isRecovery && (
+            <div className="border-t border-border pt-4 space-y-4">
+              <p className="text-sm font-medium">Admin recovery</p>
+              <p className="text-sm text-muted-foreground">
+                Generate a one-time recovery code on this computer, then paste it here to create a new administrator account.
+              </p>
+              {recoveryFilePath && (
+                <p className="text-xs break-all rounded-lg bg-muted/50 p-3 font-mono text-muted-foreground">
+                  {recoveryFilePath}
+                </p>
+              )}
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleGenerateRecoveryCode}
+                disabled={loading}
+                className="w-full"
+              >
+                {recoveryFilePath ? 'Generate a new recovery code' : 'Generate recovery code'}
+              </Button>
+
+              <div>
+                <label htmlFor="recoveryCode" className="block text-sm font-medium mb-2">
+                  Recovery code
+                </label>
+                <input
+                  id="recoveryCode"
+                  className="w-full p-3 rounded-lg bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring tracking-widest"
+                  placeholder="Enter code from the file"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={form.recoveryCode}
+                  onChange={(e) =>
+                    setForm({ ...form, recoveryCode: e.target.value.replace(/\D/g, '').slice(0, 6) })
+                  }
+                />
+              </div>
+            </div>
+          )}
+
           <Button type="submit" className="w-full" size="lg" disabled={loading}>
-            {loading ? 'Creating...' : isBootstrap ? 'Create Admin Account' : 'Register as Cashier'}
+            {loading
+              ? 'Creating...'
+              : isBootstrap || isRecovery
+                ? 'Create Admin Account'
+                : 'Register as Cashier'}
           </Button>
 
           <p className="text-sm text-muted-foreground text-center">

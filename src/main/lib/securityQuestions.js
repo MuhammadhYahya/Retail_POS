@@ -9,8 +9,14 @@ export const SECURITY_QUESTIONS = [
   'What is your favorite movie?',
 ];
 
+export const CUSTOM_QUESTION_VALUE = '__custom__';
+
 export function normalizeAnswer(answer) {
   return String(answer || '').trim().toLowerCase();
+}
+
+export function normalizeQuestion(question) {
+  return String(question || '').trim().toLowerCase();
 }
 
 export function hasSecurityQuestions(user) {
@@ -18,11 +24,31 @@ export function hasSecurityQuestions(user) {
 }
 
 export function validateQuestionPair(q1, q2) {
-  if (!SECURITY_QUESTIONS.includes(q1) || !SECURITY_QUESTIONS.includes(q2)) {
-    return 'Please select valid security questions.';
+  if (!normalizeQuestion(q1) || !normalizeQuestion(q2)) {
+    return 'Please enter two security questions.';
   }
-  if (q1 === q2) {
+  if (normalizeQuestion(q1) === normalizeQuestion(q2)) {
     return 'Choose two different security questions.';
   }
+  return null;
+}
+
+export function resolveSecurityQuestion(choice, customQuestion) {
+  return String(choice || '') === CUSTOM_QUESTION_VALUE
+    ? String(customQuestion || '').trim()
+    : String(choice || '').trim();
+}
+
+export function validateQuestionSelection(choice, customQuestion) {
+  if (String(choice || '') === CUSTOM_QUESTION_VALUE) {
+    return String(customQuestion || '').trim()
+      ? null
+      : 'Please enter a custom security question.';
+  }
+
+  if (!SECURITY_QUESTIONS.includes(choice)) {
+    return 'Please select a valid security question.';
+  }
+
   return null;
 }

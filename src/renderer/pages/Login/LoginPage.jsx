@@ -44,6 +44,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [users, setUsers] = useState([]);
+  const [registrationContext, setRegistrationContext] = useState(null);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [forgotOpen, setForgotOpen] = useState(false);
 
@@ -67,11 +68,19 @@ export default function LoginPage() {
   useEffect(() => {
     const loadUsers = async () => {
       setLoadingUsers(true);
-      const result = await window.electronAPI.invoke('auth:getUsers');
-      if (result.success) {
-        setUsers(result.data);
+      const [usersResult, contextResult] = await Promise.all([
+        window.electronAPI.invoke('auth:getUsers'),
+        window.electronAPI.invoke('auth:getRegistrationContext'),
+      ]);
+
+      if (usersResult.success) {
+        setUsers(usersResult.data);
       } else {
-        setError(result.error || result.message || 'Failed to load users');
+        setError(usersResult.error || usersResult.message || 'Failed to load users');
+      }
+
+      if (contextResult.success) {
+        setRegistrationContext(contextResult.data);
       }
       setLoadingUsers(false);
     };
@@ -82,7 +91,7 @@ export default function LoginPage() {
     const currentPin = pinRef.current;
     const currentUser = selectedUserRef.current;
 
-    if (loading) return;
+    if (loading || forgotOpen) return;
 
     if (!currentUser) {
       setError('Please select a user');
@@ -118,7 +127,7 @@ export default function LoginPage() {
     } finally {
       setLoading(false);
     }
-  }, [loading, navigate, setLogin]);
+  }, [loading, forgotOpen, navigate, setLogin]);
 
   const addDigit = useCallback((digit) => {
     if (loading) return;
@@ -132,7 +141,6 @@ export default function LoginPage() {
   const clearPin = useCallback(() => {
     if (loading) return;
     setPin('');
-    setError('');
   }, [loading]);
 
   const deleteDigit = useCallback(() => {
@@ -151,8 +159,15 @@ export default function LoginPage() {
   }, [pin, handleLogin]);
 
   useEffect(() => {
+    if (forgotOpen) {
+      clearTimeout(submitTimer.current);
+      clearPin();
+    }
+  }, [forgotOpen, clearPin]);
+
+  useEffect(() => {
     const keyboardHandler = (event) => {
-      if (loading) return;
+      if (loading || forgotOpen) return;
 
       if (event.key >= '0' && event.key <= '9') {
         addDigit(event.key);
@@ -181,7 +196,7 @@ export default function LoginPage() {
 
     window.addEventListener('keydown', keyboardHandler);
     return () => window.removeEventListener('keydown', keyboardHandler);
-  }, [loading, addDigit, deleteDigit, clearPin, handleLogin]);
+  }, [loading, forgotOpen, addDigit, deleteDigit, clearPin, handleLogin]);
 
   return (
     <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-6">
@@ -191,15 +206,34 @@ export default function LoginPage() {
           <p className="text-muted-foreground mb-4">Select User & Enter PIN</p>
 
           <div className="mb-8">
-            <Button
-              type="button"
-              variant="ghost"
-              className="text-primary hover:text-primary/80 p-0 h-auto font-medium"
-              onClick={() => navigate('/register')}
-            >
-              + Create New Account
-            </Button>
+            {registrationContext?.mode === 'recovery' ? (
+              <Button
+                type="button"
+                variant="ghost"
+                className="text-primary hover:text-primary/80 p-0 h-auto font-medium"
+                onClick={() => navigate('/register')}
+              >
+                Recover admin access
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="ghost"
+                className="text-primary hover:text-primary/80 p-0 h-auto font-medium"
+                onClick={() => navigate('/register')}
+              >
+                + Create New Account
+              </Button>
+            )}
           </div>
+
+          {registrationContext?.mode === 'recovery' && (
+            <Alert className="mb-4">
+              <AlertDescription>
+                No administrator account is active on this device. Use admin recovery to restore management access.
+              </AlertDescription>
+            </Alert>
+          )}
 
           {loadingUsers ? (
             <p className="text-muted-foreground text-sm">Loading users...</p>

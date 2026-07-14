@@ -18,9 +18,14 @@ import {
   SecurityQuestionsFields,
   ContactFields,
   EMPTY_SECURITY_FORM,
+  CUSTOM_QUESTION_VALUE,
 } from '../../components/auth/SecurityQuestionsFields';
 
 const PIN_REGEX = /^[0-9]{4}$/;
+
+function resolveQuestion(choice, customQuestion) {
+  return choice === CUSTOM_QUESTION_VALUE ? customQuestion.trim() : choice;
+}
 
 const EMPTY_FORM = {
   username: '',
@@ -97,11 +102,14 @@ export default function StaffManagement() {
     }
 
     if (form.role === 'admin') {
-      if (!form.securityQ1 || !form.securityQ2 || !form.securityA1.trim() || !form.securityA2.trim()) {
+      const resolvedQ1 = resolveQuestion(form.securityQ1Choice, form.securityQ1Custom);
+      const resolvedQ2 = resolveQuestion(form.securityQ2Choice, form.securityQ2Custom);
+
+      if (!resolvedQ1 || !resolvedQ2 || !form.securityA1.trim() || !form.securityA2.trim()) {
         setFormError('Please complete both security questions and answers for admin accounts.');
         return;
       }
-      if (form.securityQ1 === form.securityQ2) {
+      if (resolvedQ1.trim().toLowerCase() === resolvedQ2.trim().toLowerCase()) {
         setFormError('Choose two different security questions.');
         return;
       }
@@ -116,10 +124,13 @@ export default function StaffManagement() {
     };
 
     if (form.role === 'admin') {
+      const resolvedQ1 = resolveQuestion(form.securityQ1Choice, form.securityQ1Custom);
+      const resolvedQ2 = resolveQuestion(form.securityQ2Choice, form.securityQ2Custom);
+
       Object.assign(payload, {
-        securityQ1: form.securityQ1,
+        securityQ1: resolvedQ1,
         securityA1: form.securityA1,
-        securityQ2: form.securityQ2,
+        securityQ2: resolvedQ2,
         securityA2: form.securityA2,
         email: form.email.trim() || undefined,
         phone: form.phone.trim() || undefined,

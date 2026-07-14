@@ -7,6 +7,11 @@ import { getJwtSecret, ensureJwtSecret } from '../lib/jwtSecret.js';
 import { writeAuditLog } from '../lib/auditLog.js';
 import { getRegistrationContext } from '../lib/registrationContext.js';
 import {
+  clearAdminRecoveryCode,
+  requestAdminRecoveryCode,
+  verifyAdminRecoveryCode,
+} from '../lib/adminRecovery.js';
+import {
   SECURITY_QUESTIONS,
   normalizeAnswer,
   validateQuestionPair,
@@ -65,6 +70,20 @@ export function registerAuthHandlers() {
 
   ipcMain.handle('auth:getSecurityQuestions', () => {
     return { success: true, data: SECURITY_QUESTIONS };
+  });
+
+  ipcMain.handle('auth:requestAdminRecovery', () => {
+    try {
+      const context = getRegistrationContext();
+      if (context.mode !== 'recovery') {
+        return { success: false, error: 'Admin recovery is only available when no active administrator exists.' };
+      }
+
+      return requestAdminRecoveryCode();
+    } catch (err) {
+      console.error('[auth:requestAdminRecovery] Error:', err.message);
+      return { success: false, error: 'Failed to create recovery code.' };
+    }
   });
 
   ipcMain.handle('auth:getUsers', () => {
@@ -263,6 +282,7 @@ export function registerAuthHandlers() {
       const usernameClean = String(username || '').trim();
       const pinString = String(pin || '').trim();
       const requestedRole = role === 'admin' ? 'admin' : 'cashier';
+      const recoveryCode = String(payload.recoveryCode || '').trim();
 
       if (!usernameClean || usernameClean.length < 2) {
         return { success: false, message: 'Username must be at least 2 characters.' };
@@ -273,7 +293,7 @@ export function registerAuthHandlers() {
       }
 
       let allowedRole;
-      if (context.mode === 'bootstrap') {
+      if (context.mode === 'bootstrap' || context.mode === 'recovery') {
         allowedRole = 'admin';
       } else {
         allowedRole = 'cashier';
@@ -284,17 +304,26 @@ export function registerAuthHandlers() {
           success: false,
           message: context.mode === 'bootstrap'
             ? 'First account must be an Admin.'
+            : context.mode === 'recovery'
+              ? 'Admin recovery is required before creating an administrator account.'
             : 'Public registration is limited to Cashier accounts.',
         };
       }
 
       if (allowedRole === 'admin') {
-        const questionError = validateQuestionPair(securityQ1, securityQ2);
-        if (questionError) {
-          return { success: false, message: questionError };
-        }
-        if (!normalizeAnswer(securityA1) || !normalizeAnswer(securityA2)) {
-          return { success: false, message: 'Security answers are required.' };
+        if (context.mode === 'recovery') {
+          const recoveryCheck = verifyAdminRecoveryCode(recoveryCode);
+          if (!recoveryCheck.success) {
+            return { success: false, message: recoveryCheck.error };
+          }
+        } else {
+          const questionError = validateQuestionPair(securityQ1, securityQ2);
+          if (questionError) {
+            return { success: false, message: questionError };
+          }
+          if (!normalizeAnswer(securityA1) || !normalizeAnswer(securityA2)) {
+            return { success: false, message: 'Security answers are required.' };
+          }
         }
       }
 
@@ -350,6 +379,10 @@ export function registerAuthHandlers() {
         email ? String(email).trim() : null,
         phone ? String(phone).trim() : null
       );
+
+      if (allowedRole === 'admin' && context.mode === 'recovery') {
+        clearAdminRecoveryCode();
+      }
 
       writeAuditLog(`register:${usernameClean}:${allowedRole}`, id);
 

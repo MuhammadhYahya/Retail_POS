@@ -15,7 +15,12 @@ import {
   SecurityQuestionsFields,
   ContactFields,
   EMPTY_SECURITY_FORM,
+  CUSTOM_QUESTION_VALUE,
 } from './SecurityQuestionsFields';
+
+function resolveQuestion(choice, customQuestion) {
+  return choice === CUSTOM_QUESTION_VALUE ? customQuestion.trim() : choice;
+}
 
 export default function RecoverySetupDialog() {
   const user = useAuthStore((state) => state.user);
@@ -66,18 +71,25 @@ export default function RecoverySetupDialog() {
     e.preventDefault();
     setError('');
 
-    if (!form.securityQ1 || !form.securityQ2 || !form.securityA1.trim() || !form.securityA2.trim()) {
+    const resolvedQ1 = resolveQuestion(form.securityQ1Choice, form.securityQ1Custom);
+    const resolvedQ2 = resolveQuestion(form.securityQ2Choice, form.securityQ2Custom);
+
+    if (!resolvedQ1 || !resolvedQ2 || !form.securityA1.trim() || !form.securityA2.trim()) {
       setError('Please complete both security questions and answers.');
       return;
     }
 
-    if (form.securityQ1 === form.securityQ2) {
+    if (resolvedQ1.trim().toLowerCase() === resolvedQ2.trim().toLowerCase()) {
       setError('Choose two different security questions.');
       return;
     }
 
     setSubmitting(true);
-    const response = await invokeWithAuth('auth:setSecurityQuestions', form);
+    const response = await invokeWithAuth('auth:setSecurityQuestions', {
+      ...form,
+      securityQ1: resolvedQ1,
+      securityQ2: resolvedQ2,
+    });
     setSubmitting(false);
 
     if (response.success) {

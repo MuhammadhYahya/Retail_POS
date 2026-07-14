@@ -19,7 +19,13 @@ export function getRegistrationContext() {
 
   const hasUsers = userCount > 0;
   const hasAdmin = adminCount > 0;
-  const mode = hasUsers ? 'public' : 'bootstrap';
+  let mode = 'public';
+
+  if (!hasUsers) {
+    mode = 'bootstrap';
+  } else if (!hasAdmin) {
+    mode = 'recovery';
+  }
 
   return { mode, hasAdmin, hasUsers };
 }

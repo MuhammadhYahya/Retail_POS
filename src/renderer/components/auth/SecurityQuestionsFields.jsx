@@ -2,6 +2,7 @@ import React from 'react';
 
 const inputClass =
   'w-full p-3 rounded-lg bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring';
+export const CUSTOM_QUESTION_VALUE = '__custom__';
 
 export function SecurityQuestionsFields({
   questions = [],
@@ -18,17 +19,40 @@ export function SecurityQuestionsFields({
         <select
           id={`${idPrefix}-q1`}
           className={inputClass}
-          value={values.securityQ1}
-          onChange={(e) => onChange({ ...values, securityQ1: e.target.value })}
+          value={values.securityQ1Choice}
+          onChange={(e) =>
+            onChange({
+              ...values,
+              securityQ1Choice: e.target.value,
+              securityQ1Custom: e.target.value === CUSTOM_QUESTION_VALUE ? values.securityQ1Custom : '',
+            })
+          }
         >
           <option value="">Select a question</option>
           {questions.map((q) => (
-            <option key={q} value={q} disabled={q === values.securityQ2}>
+            <option key={q} value={q} disabled={q === values.securityQ2Choice}>
               {q}
             </option>
           ))}
+          <option value={CUSTOM_QUESTION_VALUE}>Custom question</option>
         </select>
       </div>
+
+      {values.securityQ1Choice === CUSTOM_QUESTION_VALUE && (
+        <div>
+          <label htmlFor={`${idPrefix}-q1-custom`} className="block text-sm font-medium mb-2">
+            Custom question
+          </label>
+          <input
+            id={`${idPrefix}-q1-custom`}
+            className={inputClass}
+            value={values.securityQ1Custom}
+            onChange={(e) => onChange({ ...values, securityQ1Custom: e.target.value })}
+            placeholder="Enter your own recovery question"
+            autoComplete="off"
+          />
+        </div>
+      )}
 
       <div>
         <label htmlFor={`${idPrefix}-a1`} className="block text-sm font-medium mb-2">
@@ -50,17 +74,40 @@ export function SecurityQuestionsFields({
         <select
           id={`${idPrefix}-q2`}
           className={inputClass}
-          value={values.securityQ2}
-          onChange={(e) => onChange({ ...values, securityQ2: e.target.value })}
+          value={values.securityQ2Choice}
+          onChange={(e) =>
+            onChange({
+              ...values,
+              securityQ2Choice: e.target.value,
+              securityQ2Custom: e.target.value === CUSTOM_QUESTION_VALUE ? values.securityQ2Custom : '',
+            })
+          }
         >
           <option value="">Select a question</option>
           {questions.map((q) => (
-            <option key={q} value={q} disabled={q === values.securityQ1}>
+            <option key={q} value={q} disabled={q === values.securityQ1Choice}>
               {q}
             </option>
           ))}
+          <option value={CUSTOM_QUESTION_VALUE}>Custom question</option>
         </select>
       </div>
+
+      {values.securityQ2Choice === CUSTOM_QUESTION_VALUE && (
+        <div>
+          <label htmlFor={`${idPrefix}-q2-custom`} className="block text-sm font-medium mb-2">
+            Custom question
+          </label>
+          <input
+            id={`${idPrefix}-q2-custom`}
+            className={inputClass}
+            value={values.securityQ2Custom}
+            onChange={(e) => onChange({ ...values, securityQ2Custom: e.target.value })}
+            placeholder="Enter your own recovery question"
+            autoComplete="off"
+          />
+        </div>
+      )}
 
       <div>
         <label htmlFor={`${idPrefix}-a2`} className="block text-sm font-medium mb-2">
@@ -112,9 +159,11 @@ export function ContactFields({ values, onChange, idPrefix = 'contact' }) {
 }
 
 export const EMPTY_SECURITY_FORM = {
-  securityQ1: '',
+  securityQ1Choice: '',
+  securityQ1Custom: '',
   securityA1: '',
-  securityQ2: '',
+  securityQ2Choice: '',
+  securityQ2Custom: '',
   securityA2: '',
   email: '',
   phone: '',
