@@ -20,6 +20,16 @@ const validChannels = [
   'user:delete',
   'user:unlock',
   'user:resetPin',
+  'category:getAll',
+  'category:create',
+  'product:getAll',
+  'product:getById',
+  'product:create',
+  'product:update',
+  'product:delete',
+  'product:lookupBarcode',
+  'inventory:adjustStock',
+  'inventory:getSummary',
 ];
 
 contextBridge.exposeInMainWorld('electronAPI', {

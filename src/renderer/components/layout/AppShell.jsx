@@ -2,12 +2,13 @@ import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { Button } from '../ui/button';
-import { LogOut, LayoutDashboard, Users, ShoppingCart } from 'lucide-react';
+import { LogOut, LayoutDashboard, Users, ShoppingCart, Package } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 const NAV_ITEMS = {
   admin: [
     { path: '/admin', label: 'Dashboard', icon: LayoutDashboard },
+    { path: '/products', label: 'Products', icon: Package },
     { path: '/staff', label: 'Staff Management', icon: Users },
   ],
   cashier: [

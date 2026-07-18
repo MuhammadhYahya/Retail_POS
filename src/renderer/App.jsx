@@ -8,6 +8,7 @@ import RegisterPage from './pages/Register/RegisterPage';
 import AdminDashboard from './pages/Dashboard/AdminDashboard';
 import CashierDashboard from './pages/Dashboard/CashierDashboard';
 import StaffManagement from './pages/Dashboard/StaffManagement';
+import ProductsManagement from './pages/Dashboard/ProductsManagement';
 import DashboardRedirect from './pages/Dashboard/Dashboard';
 import RecoverySetupDialog from './components/auth/RecoverySetupDialog';
 
@@ -104,6 +105,17 @@ function AppRoutes() {
             <ProtectedRoute>
               <RoleGuard allowedRoles={['admin']}>
                 <StaffManagement />
+              </RoleGuard>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/products"
+          element={
+            <ProtectedRoute>
+              <RoleGuard allowedRoles={['admin']}>
+                <ProductsManagement />
               </RoleGuard>
             </ProtectedRoute>
           }

@@ -4,6 +4,7 @@ import started from 'electron-squirrel-startup';
 import { getDb } from './main/database/db.js';
 import { registerAuthHandlers } from './main/ipc/authHandlers.js';
 import { registerUserHandlers } from './main/ipc/userHandlers.js';
+import { registerProductHandlers } from './main/ipc/productHandlers.js';
 
 if (started) {
   app.quit();
@@ -66,5 +67,6 @@ app.whenReady().then(() => {
   getDb();
   registerAuthHandlers();
   registerUserHandlers();
+  registerProductHandlers();
   createWindow();
 });

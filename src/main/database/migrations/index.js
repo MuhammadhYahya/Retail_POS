@@ -5,6 +5,7 @@ import * as migration004 from './004_user_fields.js';
 import * as migration005 from './005_user_timestamps.js';
 import * as migration006 from './006_auth_bootstrap.js';
 import * as migration007 from './007_security_questions.js';
+import * as migration008 from './008_products.js';
 
 const migrations = [
   migration001,
@@ -14,6 +15,7 @@ const migrations = [
   migration005,
   migration006,
   migration007,
+  migration008,
 ];
 
 export function runMigrations(db) {

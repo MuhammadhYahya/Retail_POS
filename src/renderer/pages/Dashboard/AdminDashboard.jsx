@@ -2,9 +2,16 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import AppShell from '../../components/layout/AppShell';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
-import { Users, BarChart3, Settings } from 'lucide-react';
+import { Users, BarChart3, Settings, Package } from 'lucide-react';
 
 const MODULES = [
+  {
+    title: 'Product Module',
+    description: 'Manage products, variants, categories, and inventory ledgers.',
+    icon: Package,
+    path: '/products',
+    available: true,
+  },
   {
     title: 'Staff Management',
     description: 'Create and manage cashier and admin accounts.',

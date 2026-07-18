@@ -28,6 +28,7 @@ export function getDb() {
   try {
     runMigrations(db);
     console.log('Database successfully initialized at:', dbPath);
+    
   } catch (error) {
     console.error('Failed to run database migrations:', error);
   }
