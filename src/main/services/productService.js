@@ -142,6 +142,69 @@ function assertTruthy(value, message) {
   }
 }
 
+function friendlyDbError(err) {
+  const message = String(err?.message || err || '');
+  if (message.includes('idx_categories_parent_name')) {
+    return 'A category with this name already exists under the same parent.';
+  }
+  if (message.includes('idx_product_variants_sku')) {
+    return 'This SKU is already used by another product. Enter a different SKU.';
+  }
+  if (message.includes('idx_product_variants_barcode')) {
+    return 'This barcode is already used by another product.';
+  }
+  if (message.includes('UNIQUE constraint failed')) {
+    return 'That value is already in use. Please use a different one.';
+  }
+  return message || 'Something went wrong.';
+}
+
+function wrapDbCall(fn) {
+  try {
+    return fn();
+  } catch (err) {
+    throw new Error(friendlyDbError(err));
+  }
+}
+
+/** Outgoing stock types expect a positive quantity in the UI and store a negative delta. */
+function signedStockDelta(quantity, transactionType) {
+  const amount = Math.abs(toNumber(quantity, 0));
+  if (!amount) return 0;
+
+  const outgoing = new Set(['sale', 'return_out', 'transfer_out']);
+  const type = cleanText(transactionType).toLowerCase();
+  if (outgoing.has(type)) return -amount;
+  if (type === 'adjustment') return toNumber(quantity, 0);
+  return amount;
+}
+
+function findCategoryDuplicate(db, name, parentId = null, excludeId = null) {
+  const parentKey = parentId || null;
+  const rows = db.prepare(`
+    SELECT id, name, parent_id
+    FROM categories
+    WHERE deleted_at IS NULL
+      AND LOWER(name) = LOWER(?)
+      AND (
+        (parent_id IS NULL AND ? IS NULL)
+        OR parent_id = ?
+      )
+  `).all(name, parentKey, parentKey);
+
+  return rows.find((row) => row.id !== excludeId) || null;
+}
+
+function assertCategoryExists(db, categoryId) {
+  if (!categoryId) return;
+  const category = db.prepare(`
+    SELECT id FROM categories WHERE id = ? AND deleted_at IS NULL
+  `).get(categoryId);
+  if (!category) {
+    throw new Error('Selected category was not found.');
+  }
+}
+
 function prepareVariantPayload(productName, variant, index = 0, isSimpleDefault = false) {
   const normalized = parseJsonObject(variant?.attributes || variant?.attributesJson);
   const variantName = cleanText(variant?.name) || productName;
@@ -156,8 +219,8 @@ function prepareVariantPayload(productName, variant, index = 0, isSimpleDefault 
     sellingPrice: toNumber(variant?.sellingPrice ?? variant?.selling_price, 0),
     costPrice: toNumber(variant?.costPrice ?? variant?.cost_price, 0),
     trackInventory: variant?.trackInventory === false || variant?.track_inventory === 0 ? 0 : 1,
-    isDefault: variant?.isDefault || isSimpleDefault ? 1 : 0,
-    isHidden: variant?.isHidden || isSimpleDefault ? 1 : 0,
+    isDefault: (variant?.isDefault || isSimpleDefault) ? 1 : 0,
+    isHidden: (variant?.isHidden || isSimpleDefault) ? 1 : 0,
     sortOrder: toNumber(variant?.sortOrder ?? variant?.sort_order, index),
     isActive: variant?.isActive === false ? 0 : 1,
   };
@@ -188,19 +251,6 @@ function upsertInventoryBalance(db, variantId, delta) {
   }
 }
 
-function mapProductRows(rows) {
-  const grouped = new Map();
-
-  for (const row of rows) {
-    if (!grouped.has(row.product_id)) {
-      grouped.set(row.product_id, []);
-    }
-    grouped.get(row.product_id).push(normalizeVariantRow(row));
-  }
-
-  return grouped;
-}
-
 const productService = {
   listCategories() {
     const db = getDb();
@@ -228,13 +278,22 @@ const productService = {
       }
     }
 
+    const duplicate = findCategoryDuplicate(db, categoryName, parentId || null);
+    if (duplicate) {
+      throw new Error(
+        `A category named "${duplicate.name}" already exists here. Category names must be unique (case does not matter).`
+      );
+    }
+
     const id = crypto.randomUUID();
     const timestamp = now();
 
-    db.prepare(`
-      INSERT INTO categories (id, name, parent_id, is_active, created_at, updated_at)
-      VALUES (?, ?, ?, 1, ?, ?)
-    `).run(id, categoryName, parentId || null, timestamp, timestamp);
+    wrapDbCall(() => {
+      db.prepare(`
+        INSERT INTO categories (id, name, parent_id, is_active, created_at, updated_at)
+        VALUES (?, ?, ?, 1, ?, ?)
+      `).run(id, categoryName, parentId || null, timestamp, timestamp);
+    });
 
     return {
       id,
@@ -429,6 +488,8 @@ const productService = {
     assertTruthy(productName, 'Product name is required.');
 
     const categoryId = cleanText(payload.categoryId) || null;
+    assertCategoryExists(db, categoryId);
+
     const variantsInput = Array.isArray(payload.variants) && payload.variants.length
       ? payload.variants
       : [payload.variant || {}];
@@ -464,6 +525,22 @@ const productService = {
     const id = crypto.randomUUID();
     const timestamp = now();
     const imageUrlsJson = JSON.stringify(parseJsonArray(payload.imageUrls || payload.imageUrlsJson));
+    const initialStockByVariant = new Map();
+
+    for (let index = 0; index < variantsInput.length; index += 1) {
+      const rawStock = variantsInput[index]?.initialStock ?? variantsInput[index]?.stock;
+      const stockQty = toNumber(rawStock, 0);
+      if (stockQty > 0) {
+        initialStockByVariant.set(normalizedVariants[index].id, stockQty);
+      }
+    }
+
+    // Product-level initialStock applies to the default/first variant when creating.
+    const productInitialStock = toNumber(payload.initialStock, 0);
+    if (productInitialStock > 0 && normalizedVariants[0]) {
+      const existing = initialStockByVariant.get(normalizedVariants[0].id) || 0;
+      initialStockByVariant.set(normalizedVariants[0].id, existing + productInitialStock);
+    }
 
     const createTx = db.transaction(() => {
       db.prepare(`
@@ -510,14 +587,25 @@ const productService = {
           timestamp
         );
 
+        const openingStock = initialStockByVariant.get(variant.id) || 0;
         db.prepare(`
           INSERT INTO inventory_balances (variant_id, on_hand, reserved, available, updated_at)
-          VALUES (?, 0, 0, 0, ?)
-        `).run(variant.id, timestamp);
+          VALUES (?, ?, 0, ?, ?)
+        `).run(variant.id, openingStock, openingStock, timestamp);
+
+        if (openingStock > 0) {
+          db.prepare(`
+            INSERT INTO inventory_transactions (
+              id, variant_id, transaction_type, quantity, unit_cost,
+              reference_type, reference_id, notes, created_by, created_at
+            )
+            VALUES (?, ?, 'initial', ?, NULL, 'product', ?, 'Opening stock on create', NULL, ?)
+          `).run(crypto.randomUUID(), variant.id, openingStock, id, timestamp);
+        }
       }
     });
 
-    createTx();
+    wrapDbCall(() => createTx());
     return this.getProductById(id);
   },
 
@@ -533,6 +621,7 @@ const productService = {
     const nextCategoryId = Object.prototype.hasOwnProperty.call(payload, 'categoryId')
       ? cleanText(payload.categoryId) || null
       : existing.categoryId;
+    assertCategoryExists(db, nextCategoryId);
     const nextImageUrlsJson = Object.prototype.hasOwnProperty.call(payload, 'imageUrls')
       || Object.prototype.hasOwnProperty.call(payload, 'imageUrlsJson')
       ? JSON.stringify(parseJsonArray(payload.imageUrls || payload.imageUrlsJson))
@@ -679,7 +768,7 @@ const productService = {
       }
     });
 
-    updateTx();
+    wrapDbCall(() => updateTx());
     return this.getProductById(productId);
   },
 
@@ -721,7 +810,7 @@ const productService = {
     const db = getDb();
     const cleanVariantId = cleanText(variantId);
     const cleanType = cleanText(transactionType);
-    const delta = toNumber(quantity, 0);
+    const delta = signedStockDelta(quantity, cleanType);
 
     assertTruthy(cleanVariantId, 'Variant ID is required.');
     assertTruthy(cleanType, 'Transaction type is required.');
@@ -763,7 +852,7 @@ const productService = {
       upsertInventoryBalance(db, cleanVariantId, delta);
     });
 
-    tx();
+    wrapDbCall(() => tx());
 
     return this.getInventorySummary(cleanVariantId);
   },
@@ -797,27 +886,6 @@ const productService = {
       available: toNumber(row.available),
       updatedAt: row.updated_at,
     };
-  },
-
-  async ensureDefaultVariantHasSku(productId) {
-    const product = this.getProductById(productId);
-    if (!product) return null;
-
-    const db = getDb();
-    const variants = product.variants || [];
-    const tx = db.transaction(() => {
-      for (const variant of variants) {
-        if (variant.sku) continue;
-        db.prepare(`
-          UPDATE product_variants
-          SET sku = ?, updated_at = ?
-          WHERE id = ?
-        `).run(generateSku(product.name), now(), variant.id);
-      }
-    });
-
-    tx();
-    return this.getProductById(productId);
   },
 };
 

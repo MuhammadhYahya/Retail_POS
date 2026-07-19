@@ -9,6 +9,15 @@ import ForgotPinDialog from '../../components/auth/ForgotPinDialog';
 
 const KEYPAD_NUMBERS = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
 
+const nameToAvatar = (name) => {
+  if (!name) return '?';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length > 1) {
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+  return name.slice(0, 2).toUpperCase();
+};
+
 function KeypadButton({ value, onClick, variant = 'default', disabled }) {
   return (
     <button
@@ -16,12 +25,13 @@ function KeypadButton({ value, onClick, variant = 'default', disabled }) {
       disabled={disabled}
       onClick={onClick}
       className={`
-        h-20 rounded-xl text-xl font-bold
-        flex items-center justify-center transition-all
+        h-20 rounded-2xl text-2xl font-bold
+        flex items-center justify-center transition-all duration-100
         active:scale-95 select-none disabled:opacity-50
+        cursor-pointer border border-transparent shadow-sm
         ${variant === 'primary'
-          ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-          : 'bg-muted text-foreground hover:bg-muted/80'
+          ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600 shadow-orange-500/20 active:from-orange-600 active:to-orange-700'
+          : 'bg-muted text-foreground hover:bg-muted/80 hover:border-border hover:shadow-md'
         }
       `}
     >
@@ -31,8 +41,8 @@ function KeypadButton({ value, onClick, variant = 'default', disabled }) {
 }
 
 function RoleIcon({ role }) {
-  if (role === 'admin') return <Shield className="h-5 w-5 text-primary" />;
-  return <User className="h-5 w-5 text-muted-foreground" />;
+  if (role === 'admin') return <Shield className="h-3.5 w-3.5 text-primary shrink-0" />;
+  return <User className="h-3.5 w-3.5 text-muted-foreground shrink-0" />;
 }
 
 export default function LoginPage() {
@@ -199,154 +209,216 @@ export default function LoginPage() {
   }, [loading, forgotOpen, addDigit, deleteDigit, clearPin, handleLogin]);
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-6">
-      <div className="w-full max-w-5xl grid md:grid-cols-2 gap-8">
-        <div>
-          <h1 className="text-5xl font-black text-primary mb-2">POSLY</h1>
-          <p className="text-muted-foreground mb-4">Select User & Enter PIN</p>
+    <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-6 sm:p-10">
+      <div className="w-full max-w-6xl grid md:grid-cols-[1.1fr_1fr] gap-8 bg-card/25 border border-border/50 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur-md">
+        
+        {/* Left column: branding & user list */}
+        <div className="flex flex-col justify-between pr-0 md:pr-4">
+          <div>
+            {/* Logo and Brand */}
+            <div className="flex items-center gap-3 mb-6">
+              <span className="p-3 bg-gradient-to-tr from-amber-500 to-orange-600 rounded-2xl shadow-lg shadow-orange-500/20 text-white font-extrabold text-2xl tracking-wider select-none">
+                P
+              </span>
+              <div>
+                <h1 className="text-3xl font-black tracking-tight bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">
+                  POSLY
+                </h1>
+                <p className="text-xs text-muted-foreground font-semibold uppercase tracking-widest mt-0.5">Terminal System</p>
+              </div>
+            </div>
 
-          <div className="mb-8">
-            {registrationContext?.mode === 'recovery' ? (
-              <Button
-                type="button"
-                variant="ghost"
-                className="text-primary hover:text-primary/80 p-0 h-auto font-medium"
-                onClick={() => navigate('/register')}
-              >
-                Recover admin access
-              </Button>
+            <h2 className="text-2xl font-bold text-foreground tracking-tight mb-2">Welcome Back</h2>
+            <p className="text-muted-foreground text-sm mb-6">Select your user profile to sign in to the register.</p>
+
+            {/* Registration/Recovery CTA */}
+            <div className="mb-6">
+              {registrationContext?.mode === 'recovery' ? (
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 text-sm font-semibold text-primary hover:text-primary/80 transition-colors cursor-pointer"
+                  onClick={() => navigate('/register')}
+                >
+                  Recover Admin Access &rarr;
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:text-primary/85 transition-colors cursor-pointer"
+                  onClick={() => navigate('/register')}
+                >
+                  <span className="flex items-center justify-center w-5 h-5 rounded-full bg-primary/10 text-xs font-bold text-primary">+</span>
+                  Create New Account
+                </button>
+              )}
+            </div>
+
+            {registrationContext?.mode === 'recovery' && (
+              <Alert className="mb-6 border-amber-500/20 bg-amber-500/5">
+                <AlertDescription className="text-amber-400 text-xs">
+                  No administrator account is active on this device. Use admin recovery to restore management access.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {/* User List */}
+            {loadingUsers ? (
+              <div className="space-y-3">
+                {[1, 2, 3].map((n) => (
+                  <div key={n} className="h-20 rounded-2xl bg-muted/30 animate-pulse border border-border/20" />
+                ))}
+              </div>
+            ) : users.length === 0 ? (
+              <Alert className="border-border">
+                <AlertDescription className="text-sm">
+                  No accounts found.{' '}
+                  <button
+                    type="button"
+                    onClick={() => navigate('/register')}
+                    className="text-primary hover:underline font-bold"
+                  >
+                    Set up your first admin account
+                  </button>
+                </AlertDescription>
+              </Alert>
             ) : (
-              <Button
-                type="button"
-                variant="ghost"
-                className="text-primary hover:text-primary/80 p-0 h-auto font-medium"
-                onClick={() => navigate('/register')}
-              >
-                + Create New Account
-              </Button>
+              <div className="space-y-3 max-h-[360px] overflow-y-auto pr-1">
+                {users.map((user) => {
+                  const isSelected = selectedUser === user.username;
+                  const initials = nameToAvatar(user.display_name || user.username);
+                  const isUserAdmin = user.role === 'admin';
+                  return (
+                    <button
+                      key={user.id}
+                      type="button"
+                      disabled={loading}
+                      onClick={() => {
+                        setSelectedUser(user.username);
+                        setError('');
+                      }}
+                      className={`w-full p-4 rounded-2xl border-2 text-left transition-all duration-200 flex items-center gap-4 cursor-pointer hover:shadow-md ${
+                        isSelected
+                          ? 'border-primary bg-primary/15 shadow-lg shadow-primary/5 ring-1 ring-primary/30'
+                          : 'border-border/60 bg-card hover:border-muted-foreground/30'
+                      }`}
+                    >
+                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold text-lg shadow-sm shrink-0 ${
+                        isUserAdmin
+                          ? 'bg-gradient-to-tr from-rose-500 to-orange-500 text-white'
+                          : 'bg-gradient-to-tr from-sky-500 to-blue-600 text-white'
+                      }`}>
+                        {initials}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-lg font-bold truncate">
+                          {user.display_name || user.username}
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <RoleIcon role={user.role} />
+                          <span className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">{user.role}</span>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             )}
           </div>
-
-          {registrationContext?.mode === 'recovery' && (
-            <Alert className="mb-4">
-              <AlertDescription>
-                No administrator account is active on this device. Use admin recovery to restore management access.
-              </AlertDescription>
-            </Alert>
-          )}
-
-          {loadingUsers ? (
-            <p className="text-muted-foreground text-sm">Loading users...</p>
-          ) : users.length === 0 ? (
-            <Alert>
-              <AlertDescription>
-                No accounts found.{' '}
-                <button
-                  type="button"
-                  onClick={() => navigate('/register')}
-                  className="text-primary hover:underline font-medium"
-                >
-                  Set up your first admin account
-                </button>
-              </AlertDescription>
-            </Alert>
-          ) : (
-            <div className="space-y-3">
-              {users.map((user) => (
-                <button
-                  key={user.id}
-                  type="button"
-                  disabled={loading}
-                  onClick={() => {
-                    setSelectedUser(user.username);
-                    setError('');
-                  }}
-                  className={`w-full p-5 rounded-xl border-2 text-left transition-all flex items-center gap-4 ${
-                    selectedUser === user.username
-                      ? 'border-primary bg-primary/10'
-                      : 'border-border bg-card hover:border-muted-foreground/30'
-                  }`}
-                >
-                  <div className="p-2 rounded-lg bg-muted">
-                    <RoleIcon role={user.role} />
-                  </div>
-                  <div>
-                    <div className="text-lg font-semibold">
-                      {user.display_name || user.username}
-                    </div>
-                    <div className="text-sm text-muted-foreground capitalize">{user.role}</div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
+          <div className="text-xs text-muted-foreground/60 mt-6 pt-4 border-t border-border/40">
+            POSLY Terminal v1.0.0 &bull; Secure offline database
+          </div>
         </div>
 
-        <div className="bg-card border border-border rounded-2xl p-8">
-          <div className="flex items-center justify-center gap-2 mb-6 text-muted-foreground">
-            <UserCircle className="h-5 w-5" />
-            <span className="text-sm">
-              {selectedUser ? `Signing in as ${selectedUser}` : 'Select a user to continue'}
-            </span>
-          </div>
+        {/* Right column: PIN Pad */}
+        <div className="bg-card border border-border rounded-3xl p-6 sm:p-8 flex flex-col justify-between shadow-lg relative overflow-hidden">
+          {/* Subtle decoration background glow */}
+          <div className="absolute -top-24 -right-24 w-48 h-48 bg-primary/5 rounded-full blur-3xl pointer-events-none" />
+          
+          <div>
+            <div className="flex flex-col items-center mb-6">
+              <div className="w-14 h-14 rounded-full bg-muted flex items-center justify-center mb-3">
+                <UserCircle className="h-8 w-8 text-muted-foreground/80" />
+              </div>
+              <span className="text-sm font-semibold text-muted-foreground uppercase tracking-widest text-center">
+                {selectedUser ? `Signing in as ${selectedUser}` : 'Please select profile'}
+              </span>
+            </div>
 
-          <div className="flex justify-center gap-5 mb-8">
-            {[0, 1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className={`w-5 h-5 rounded-full border-2 transition-all ${
-                  pin.length > i
-                    ? 'bg-primary border-primary'
-                    : 'border-muted-foreground/40'
-                }`}
+            {/* PIN Mask Dots */}
+            <div className="flex justify-center gap-6 mb-8 mt-2">
+              {[0, 1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className={`w-6 h-6 rounded-full border-2 transition-all duration-200 transform ${
+                    pin.length > i
+                      ? 'bg-primary border-primary scale-110 shadow-[0_0_12px_rgba(245,158,11,0.5)]'
+                      : 'border-muted-foreground/30 bg-background/50 scale-100'
+                  }`}
+                />
+              ))}
+            </div>
+
+            {error && (
+              <Alert variant="destructive" className="mb-6 rounded-xl border-destructive/20 bg-destructive/10">
+                <AlertDescription className="text-destructive font-semibold text-center py-1">
+                  {error === 'Invalid PIN' ? 'Wrong PIN' : error}
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {/* Tactile Keypad */}
+            <div className="grid grid-cols-3 gap-4 max-w-sm mx-auto">
+              {KEYPAD_NUMBERS.map((num) => (
+                <KeypadButton
+                  key={num}
+                  value={num}
+                  disabled={loading || !selectedUser}
+                  onClick={() => addDigit(num)}
+                />
+              ))}
+
+              <KeypadButton 
+                value="Clear" 
+                disabled={loading || !selectedUser} 
+                onClick={clearPin} 
               />
-            ))}
-          </div>
-
-          {error && (
-            <Alert variant="destructive" className="mb-4">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-
-          <div className="grid grid-cols-3 gap-4">
-            {KEYPAD_NUMBERS.map((num) => (
+              <KeypadButton 
+                value="0" 
+                disabled={loading || !selectedUser} 
+                onClick={() => addDigit('0')} 
+              />
               <KeypadButton
-                key={num}
-                value={num}
-                disabled={loading}
-                onClick={() => addDigit(num)}
+                value={loading ? '...' : 'Enter'}
+                variant="primary"
+                disabled={loading || !selectedUser}
+                onClick={handleLogin}
               />
-            ))}
-
-            <KeypadButton value="Clear" disabled={loading} onClick={clearPin} />
-            <KeypadButton value="0" disabled={loading} onClick={() => addDigit('0')} />
-            <KeypadButton
-              value={loading ? '...' : 'Enter'}
-              variant="primary"
-              disabled={loading}
-              onClick={handleLogin}
-            />
+            </div>
           </div>
 
-          {selectedUserRecord?.role === 'admin' && (
-            <div className="mt-6 text-center">
-              <Button
+          <div className="mt-8 pt-4 border-t border-border/40 text-center font-medium">
+            {selectedUserRecord?.role === 'admin' && (
+              <button
                 type="button"
-                variant="ghost"
-                className="text-primary hover:text-primary/80"
+                className="text-sm font-semibold text-primary hover:underline hover:text-primary/90 cursor-pointer"
                 onClick={() => setForgotOpen(true)}
               >
                 Forgot PIN?
-              </Button>
-            </div>
-          )}
+              </button>
+            )}
 
-          {selectedUserRecord?.role === 'cashier' && (
-            <p className="mt-6 text-center text-xs text-muted-foreground">
-              Forgot your PIN? Ask an admin to reset it in Staff Management.
-            </p>
-          )}
+            {selectedUserRecord?.role === 'cashier' && (
+              <p className="text-xs text-muted-foreground/80 leading-relaxed max-w-xs mx-auto">
+                Forgot your PIN? Ask an administrator to reset it in Staff Management.
+              </p>
+            )}
+            
+            {!selectedUser && (
+              <p className="text-xs text-muted-foreground/80 leading-relaxed max-w-xs mx-auto">
+                Choose a profile on the left to activate the keypad.
+              </p>
+            )}
+          </div>
         </div>
       </div>
 

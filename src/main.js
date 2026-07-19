@@ -5,6 +5,12 @@ import { getDb } from './main/database/db.js';
 import { registerAuthHandlers } from './main/ipc/authHandlers.js';
 import { registerUserHandlers } from './main/ipc/userHandlers.js';
 import { registerProductHandlers } from './main/ipc/productHandlers.js';
+import { registerSaleHandlers } from './main/ipc/saleHandlers.js';
+import {
+  registerSettingsHandlers,
+  registerReportHandlers,
+  registerBackupHandlers,
+} from './main/ipc/settingsHandlers.js';
 
 if (started) {
   app.quit();
@@ -68,5 +74,9 @@ app.whenReady().then(() => {
   registerAuthHandlers();
   registerUserHandlers();
   registerProductHandlers();
+  registerSaleHandlers();
+  registerSettingsHandlers();
+  registerReportHandlers();
+  registerBackupHandlers();
   createWindow();
 });

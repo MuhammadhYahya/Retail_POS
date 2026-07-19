@@ -10,6 +10,9 @@ import CashierDashboard from './pages/Dashboard/CashierDashboard';
 import StaffManagement from './pages/Dashboard/StaffManagement';
 import ProductsManagement from './pages/Dashboard/ProductsManagement';
 import DashboardRedirect from './pages/Dashboard/Dashboard';
+import BillingPage from './pages/Billing/BillingPage';
+import ReportsPage from './pages/Reports/ReportsPage';
+import SettingsPage from './pages/Settings/SettingsPage';
 import RecoverySetupDialog from './components/auth/RecoverySetupDialog';
 
 function ProtectedRoute({ children }) {
@@ -114,8 +117,41 @@ function AppRoutes() {
           path="/products"
           element={
             <ProtectedRoute>
-              <RoleGuard allowedRoles={['admin']}>
+              <RoleGuard allowedRoles={['admin', 'cashier']}>
                 <ProductsManagement />
+              </RoleGuard>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/billing"
+          element={
+            <ProtectedRoute>
+              <RoleGuard allowedRoles={['admin', 'cashier']}>
+                <BillingPage />
+              </RoleGuard>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/reports"
+          element={
+            <ProtectedRoute>
+              <RoleGuard allowedRoles={['admin']}>
+                <ReportsPage />
+              </RoleGuard>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/settings"
+          element={
+            <ProtectedRoute>
+              <RoleGuard allowedRoles={['admin']}>
+                <SettingsPage />
               </RoleGuard>
             </ProtectedRoute>
           }

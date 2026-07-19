@@ -3,12 +3,121 @@
   <head>
     <meta charset="UTF-8" />
     <title>POSLY - Modern POS</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+      if (!window.electronAPI) {
+        window.electronAPI = {
+          invoke: async (channel, data) => {
+            console.log('Mock IPC Invoke:', channel, data);
+            if (channel === 'auth:listUsers') {
+              return {
+                success: true,
+                data: [
+                  { id: 1, username: 'alice', display_name: 'Alice Smith (Manager)', role: 'admin' },
+                  { id: 2, username: 'john', display_name: 'John Cashier', role: 'cashier' }
+                ]
+              };
+            }
+            if (channel === 'auth:login') {
+              if (data.username === 'alice' && data.pin === '1234') {
+                return {
+                  success: true,
+                  data: {
+                    user: { id: 1, username: 'alice', display_name: 'Alice Smith (Manager)', role: 'admin' },
+                    token: 'mock-admin-token'
+                  }
+                };
+              }
+              if (data.username === 'john' && data.pin === '4321') {
+                return {
+                  success: true,
+                  data: {
+                    user: { id: 2, username: 'john', display_name: 'John Cashier', role: 'cashier' },
+                    token: 'mock-cashier-token'
+                  }
+                };
+              }
+              return { success: false, error: 'Invalid PIN' };
+            }
+            if (channel === 'settings:get') {
+              return {
+                success: true,
+                data: {
+                  shopName: 'POSLY Sri Lanka',
+                  shopAddress: '45 Galle Road, Colombo 03',
+                  receiptFooter: 'Thank you for shopping with POSLY!'
+                }
+              };
+            }
+            if (channel === 'product:lookupBarcode') {
+              if (data.barcode === '123' || data.barcode === '123456') {
+                return {
+                  success: true,
+                  data: {
+                    id: 101,
+                    productId: 10,
+                    name: 'Premium Basmati Rice 1kg',
+                    sellingPrice: 450,
+                    sku: 'RICE-BAS-1KG',
+                    barcode: data.barcode,
+                    product: { name: 'Premium Basmati Rice 1kg', taxRate: 8 }
+                  }
+                };
+              }
+              if (data.barcode === '999') {
+                return {
+                  success: true,
+                  data: {
+                    id: 102,
+                    productId: 11,
+                    name: 'Ceylon Black Tea Large Pack',
+                    sellingPrice: 1200,
+                    sku: 'TEA-CEY-LRG',
+                    barcode: '999',
+                    product: { name: 'Ceylon Black Tea Large Pack', taxRate: 15 }
+                  }
+                };
+              }
+              return { success: false, error: 'Product barcode not found' };
+            }
+            if (channel === 'sale:create') {
+              const subtotal = data.cartItems.reduce((acc, item) => acc + (item.unitPrice * item.quantity), 0);
+              const discountTotal = data.cartItems.reduce((acc, item) => acc + (Number(item.discountAmount || 0)), 0);
+              const total = subtotal - discountTotal;
+              return {
+                success: true,
+                data: {
+                  invoiceNumber: 'INV-2026-9874',
+                  subtotal,
+                  discountTotal,
+                  vatTotal: Math.round(total * 0.08),
+                  total,
+                  paymentMethod: data.payment.method,
+                  amountTendered: data.payment.amountTendered,
+                  changeGiven: Math.max(0, data.payment.amountTendered - total),
+                  saleDate: new Date().toISOString(),
+                  items: data.cartItems.map((item) => ({
+                    productName: item.variantId === 101 ? 'Premium Basmati Rice 1kg' : 'Ceylon Black Tea Large Pack',
+                    quantity: item.quantity,
+                    unitPrice: item.unitPrice,
+                    lineTotal: item.unitPrice * item.quantity - (item.discountAmount || 0)
+                  })),
+                  ird: {
+                    qrData: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="black"/><rect x="10" y="10" width="80" height="80" fill="white"/><rect x="25" y="25" width="50" height="50" fill="black"/></svg>'
+                  }
+                }
+              };
+            }
+            return { success: true };
+          }
+        };
+      }
+    </script>
   </head>
   <body>
-    <!-- React will inject the UI here -->
     <div id="root"></div>
-    
-    <!-- Point this to your main.jsx file -->
     <script type="module" src="./main.jsx"></script>
   </body>
 </html>

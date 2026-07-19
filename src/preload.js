@@ -30,6 +30,21 @@ const validChannels = [
   'product:lookupBarcode',
   'inventory:adjustStock',
   'inventory:getSummary',
+  'sale:create',
+  'sale:getById',
+  'sale:getByInvoice',
+  'sale:listRecent',
+  'sale:void',
+  'sale:getReceipt',
+  'settings:get',
+  'settings:update',
+  'report:dailySummary',
+  'report:topProducts',
+  'report:salesByDay',
+  'backup:create',
+  'backup:list',
+  'backup:listDrives',
+  'backup:restore',
 ];
 
 contextBridge.exposeInMainWorld('electronAPI', {
