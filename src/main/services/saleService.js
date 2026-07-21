@@ -224,6 +224,9 @@ const saleService = {
         if (!variant.variant_is_active || !variant.product_is_active) {
           throw new Error(`${variant.product_name} is inactive.`);
         }
+        if (!variant.barcode) {
+          throw new Error('Only barcode-enabled variants can be sold.');
+        }
 
         const quantity = item.quantity;
         if (variant.track_inventory && toNumber(variant.available, 0) < quantity) {
@@ -397,6 +400,27 @@ const saleService = {
       `).all(take);
     }
     return rows.map((row) => mapSaleRow(row, []));
+  },
+
+  listTodayForCashier({ cashierId, date = new Date().toISOString().slice(0, 10), limit = 100 } = {}) {
+    const db = getDb();
+    const take = Math.min(Math.max(toNumber(limit, 100), 1), 200);
+    const rows = db.prepare(`
+      SELECT s.*, COUNT(si.id) AS item_count
+      FROM sales s
+      LEFT JOIN sale_items si ON si.sale_id = s.id
+      WHERE s.deleted_at IS NULL
+        AND s.status = 'completed'
+        AND s.cashier_id = ?
+        AND substr(s.sale_date, 1, 10) = ?
+      GROUP BY s.id
+      ORDER BY s.sale_date DESC
+      LIMIT ?
+    `).all(cleanText(cashierId), String(date).slice(0, 10), take);
+    return rows.map((row) => ({
+      ...mapSaleRow(row, []),
+      itemCount: Number(row.item_count || 0),
+    }));
   },
 
   voidSale({ saleId, reason, userId }) {

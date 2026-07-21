@@ -45,6 +45,24 @@ export function registerProductHandlers() {
     }
   });
 
+  ipcMain.handle('category:delete', async (event, payload = {}) => {
+    try {
+      const token = extractToken(payload);
+      const session = validateSession(token);
+      if (!session.success) return session;
+
+      const roleCheck = requireAdmin(session);
+      if (!roleCheck.success) return roleCheck;
+
+      productService.deleteCategory(payload.categoryId, { moveProducts: Boolean(payload.moveProducts) });
+      writeAuditLog(`category_delete:${payload.categoryId}`, session.user.id);
+
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
   ipcMain.handle('product:getAll', async (event, payload = {}) => {
     try {
       const token = extractToken(payload);
@@ -84,7 +102,7 @@ export function registerProductHandlers() {
       const roleCheck = requireAdmin(session);
       if (!roleCheck.success) return roleCheck;
 
-      const product = productService.createProduct(payload);
+      const product = productService.createProduct({ ...payload, createdBy: session.user.id });
       writeAuditLog(`product_create:${product.name}`, session.user.id);
 
       return { success: true, data: product };
@@ -102,7 +120,7 @@ export function registerProductHandlers() {
       const roleCheck = requireAdmin(session);
       if (!roleCheck.success) return roleCheck;
 
-      const product = productService.updateProduct(payload.productId, payload);
+      const product = productService.updateProduct(payload.productId, { ...payload, createdBy: session.user.id });
       writeAuditLog(`product_update:${product?.name || payload.productId}`, session.user.id);
 
       return { success: true, data: product };
@@ -185,6 +203,44 @@ export function registerProductHandlers() {
         success: true,
         data: productService.getInventorySummary(payload.variantId),
       };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('inventory:getHistory', async (event, payload = {}) => {
+    try {
+      const token = extractToken(payload);
+      const session = validateSession(token);
+      if (!session.success) return session;
+      const roleCheck = requireAdmin(session);
+      if (!roleCheck.success) return roleCheck;
+      return { success: true, data: productService.listInventoryHistory(payload) };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('inventory:getLowStock', async (event, payload = {}) => {
+    try {
+      const token = extractToken(payload);
+      const session = validateSession(token);
+      if (!session.success) return session;
+      return { success: true, data: productService.listLowStock() };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('inventory:disableLowStockAlert', async (event, payload = {}) => {
+    try {
+      const token = extractToken(payload);
+      const session = validateSession(token);
+      if (!session.success) return session;
+      const roleCheck = requireAdmin(session);
+      if (!roleCheck.success) return roleCheck;
+      productService.disableLowStockAlert(payload.variantId);
+      return { success: true };
     } catch (err) {
       return { success: false, error: err.message };
     }

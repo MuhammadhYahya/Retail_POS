@@ -38,42 +38,14 @@ export const useAuthStore = create((set, get) => ({
   },
 
   initializeAuth: async () => {
-    if (!window.electronAPI?.invoke) {
-      set({ isInitialized: true });
-      return null;
-    }
-
-    try {
-      const response = await window.electronAPI.invoke('auth:restore-session');
-      if (response?.success) {
-        set({
-          user: response.user,
-          token: response.token,
-          isAuthenticated: true,
-          isInitialized: true,
-          needsRecoverySetup: Boolean(response.user?.needsRecoverySetup),
-        });
-        return response.user;
-      }
-      set({
-        user: null,
-        token: null,
-        isAuthenticated: false,
-        isInitialized: true,
-        needsRecoverySetup: false,
-      });
-      return null;
-    } catch (error) {
-      console.error('Failed to restore session:', error);
-      set({
-        user: null,
-        token: null,
-        isAuthenticated: false,
-        isInitialized: true,
-        needsRecoverySetup: false,
-      });
-      return null;
-    }
+    set({
+      user: null,
+      token: null,
+      isAuthenticated: false,
+      isInitialized: true,
+      needsRecoverySetup: false,
+    });
+    return null;
   },
 }));
 

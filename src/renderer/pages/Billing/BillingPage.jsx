@@ -12,7 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../components/ui/dialog';
-import { invokeWithAuth } from '../../lib/ipc';
+import { invokeWithAuth, notifyLowStockUpdated } from '../../lib/ipc';
 import { useCartStore } from '../../store/cartStore';
 import { cn } from '../../lib/utils';
 
@@ -27,6 +27,9 @@ export default function BillingPage() {
   const navigate = useNavigate();
   const barcodeRef = useRef(null);
   const [barcode, setBarcode] = useState('');
+  const [catalog, setCatalog] = useState([]);
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [catalogQuery, setCatalogQuery] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [tendered, setTendered] = useState('');
   const [error, setError] = useState('');
@@ -34,6 +37,7 @@ export default function BillingPage() {
   const [settings, setSettings] = useState(null);
   const [successOpen, setSuccessOpen] = useState(false);
   const [completedSale, setCompletedSale] = useState(null);
+  const [receiptSeconds, setReceiptSeconds] = useState(120);
 
   const items = useCartStore((state) => state.items);
   const addItem = useCartStore((state) => state.addItem);
@@ -52,8 +56,9 @@ export default function BillingPage() {
 
   useEffect(() => {
     barcodeRef.current?.focus();
-    invokeWithAuth('settings:get').then((response) => {
-      if (response.success) setSettings(response.data);
+    Promise.all([invokeWithAuth('settings:get'), invokeWithAuth('product:getAll')]).then(([settingsResponse, productsResponse]) => {
+      if (settingsResponse.success) setSettings(settingsResponse.data);
+      if (productsResponse.success) setCatalog(productsResponse.data || []);
     });
   }, []);
 
@@ -83,7 +88,7 @@ export default function BillingPage() {
       return;
     }
     if (!response.data) {
-      setError(`No product found for barcode "${code}".`);
+      setError('No product found with this barcode.');
       setBarcode('');
       return;
     }
@@ -103,6 +108,63 @@ export default function BillingPage() {
     setBarcode('');
     barcodeRef.current?.focus();
   };
+
+  const addVariantToSale = (variant) => {
+    if (!variant?.barcode) {
+      setError('Only barcode-enabled variants can be added to a sale.');
+      return;
+    }
+
+    addItem({
+      id: variant.id,
+      variantId: variant.id,
+      productId: variant.productId || variant.product?.id,
+      productName: variant.product?.name || variant.productName || variant.name,
+      variantName: variant.name,
+      sku: variant.sku,
+      barcode: variant.barcode,
+      sellingPrice: variant.sellingPrice,
+      taxRate: variant.product?.taxRate ?? 0,
+    });
+    setCatalogOpen(false);
+    setCatalogQuery('');
+    barcodeRef.current?.focus();
+  };
+
+  const catalogResults = useMemo(() => {
+    const query = catalogQuery.trim().toLowerCase();
+    const products = catalog || [];
+
+    const variants = products.flatMap((product) =>
+      (product.variants || [])
+        .filter((variant) => variant.barcode)
+        .map((variant) => ({
+          ...variant,
+          product,
+        }))
+    );
+
+    if (!query) {
+      return variants.slice(0, 50);
+    }
+
+    return variants.filter((variant) => {
+      const haystack = [
+        variant.product?.name,
+        variant.product?.brand,
+        variant.product?.category?.name,
+        variant.product?.category?.path,
+        variant.name,
+        variant.sku,
+        variant.barcode,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+      return haystack.includes(query);
+    });
+  }, [catalog, catalogQuery]);
 
   const handleCompleteSale = async () => {
     setError('');
@@ -137,7 +199,9 @@ export default function BillingPage() {
     }
 
     setCompletedSale(response.data);
+    setReceiptSeconds(120);
     setLastSale(response.data);
+    notifyLowStockUpdated();
     clear();
     setTendered('');
     setPaymentMethod('cash');
@@ -200,8 +264,26 @@ export default function BillingPage() {
   const startNewSale = () => {
     setSuccessOpen(false);
     setCompletedSale(null);
+    setReceiptSeconds(120);
     barcodeRef.current?.focus();
   };
+
+  useEffect(() => {
+    if (!successOpen) return undefined;
+    const timer = window.setInterval(() => {
+      setReceiptSeconds((seconds) => {
+        if (seconds <= 1) {
+          window.clearInterval(timer);
+          startNewSale();
+          return 120;
+        }
+        return seconds - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [successOpen]);
+
+  const resetReceiptCountdown = () => setReceiptSeconds(120);
 
   return (
     <AppShell title="New Sale" description="Scan barcode, take payment, save the sale.">
@@ -230,6 +312,9 @@ export default function BillingPage() {
               </span>
             </div>
             <Button type="submit" className="h-14 px-6 rounded-xl font-bold text-base cursor-pointer">Add</Button>
+            <Button type="button" variant="outline" className="h-14 px-6 rounded-xl font-bold text-base" onClick={() => setCatalogOpen(true)}>
+              Browse
+            </Button>
           </form>
 
           <div className="rounded-2xl border border-border/60 bg-card overflow-hidden shadow-sm">
@@ -445,8 +530,60 @@ export default function BillingPage() {
         </div>
       </div>
 
+      <Dialog open={catalogOpen} onOpenChange={setCatalogOpen}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Search Products</DialogTitle>
+            <DialogDescription>
+              Search by name, SKU, barcode, or brand. Only barcode-enabled variants can be added.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <input
+                className={cn(inputClassName, 'pl-10')}
+                value={catalogQuery}
+                onChange={(e) => setCatalogQuery(e.target.value)}
+                placeholder="Search products..."
+              />
+            </div>
+
+            <div className="space-y-2">
+              {!catalogResults.length && (
+                <p className="text-sm text-muted-foreground">No matching barcode-enabled products found.</p>
+              )}
+              {catalogResults.map((variant) => (
+                <button
+                  key={variant.id}
+                  type="button"
+                  onClick={() => addVariantToSale(variant)}
+                  className="w-full text-left rounded-xl border border-border bg-card p-3 hover:bg-muted/40 transition-colors"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-semibold truncate">{variant.product?.name || variant.productName || variant.name}</p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {variant.product?.brand || ''}{variant.product?.brand ? ' · ' : ''}{variant.name || 'Default variant'}
+                      </p>
+                      <p className="text-xs text-muted-foreground font-mono mt-1">
+                        {variant.barcode} · {variant.sku}
+                      </p>
+                    </div>
+                    <div className="text-sm font-bold text-foreground">
+                      {formatMoney(variant.sellingPrice)}
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Invoice receipt modal on success */}
-      <Dialog open={successOpen} onOpenChange={setSuccessOpen}>
+      <Dialog open={successOpen} onOpenChange={(open) => { if (!open) startNewSale(); }}>
         <DialogContent className="max-w-md bg-card border border-border rounded-3xl p-6 shadow-2xl">
           <DialogHeader className="text-center">
             <div className="mx-auto w-12 h-12 rounded-full bg-emerald-500/15 flex items-center justify-center mb-2">
@@ -459,7 +596,8 @@ export default function BillingPage() {
           </DialogHeader>
           
           {completedSale && (
-            <div className="my-6 p-5 rounded-2xl bg-muted/30 border border-border/50 space-y-4 font-semibold">
+            <div onClick={resetReceiptCountdown} className="relative my-6 p-5 rounded-2xl bg-muted/30 border border-border/50 space-y-4 font-semibold cursor-pointer">
+              <div className="absolute right-4 top-3 text-xs font-semibold text-amber-600">Starting new sale in 0:{String(receiptSeconds).padStart(2, '0')}...</div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Total Sale</span>
                 <span className="font-extrabold text-foreground text-lg">{formatMoney(completedSale.total)}</span>

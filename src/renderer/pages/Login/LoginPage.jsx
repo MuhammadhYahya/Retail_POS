@@ -92,6 +92,7 @@ export default function LoginPage() {
       if (contextResult.success) {
         setRegistrationContext(contextResult.data);
       }
+
       setLoadingUsers(false);
     };
     loadUsers();
@@ -224,7 +225,7 @@ export default function LoginPage() {
                 <h1 className="text-3xl font-black tracking-tight bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">
                   POSLY
                 </h1>
-                <p className="text-xs text-muted-foreground font-semibold uppercase tracking-widest mt-0.5">Terminal System</p>
+                <p className="text-xs text-muted-foreground font-semibold uppercase tracking-widest mt-0.5">Point of Sale</p>
               </div>
             </div>
 

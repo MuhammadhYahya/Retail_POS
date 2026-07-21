@@ -28,6 +28,7 @@ export default function SettingsPage() {
   const [drives, setDrives] = useState([]);
   const [usbPath, setUsbPath] = useState('');
   const [message, setMessage] = useState('');
+  const [settingsSaved, setSettingsSaved] = useState(false);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -58,6 +59,7 @@ export default function SettingsPage() {
     setSaving(true);
     setError('');
     setMessage('');
+    setSettingsSaved(false);
     const response = await invokeWithAuth('settings:update', { settings: form });
     setSaving(false);
     if (!response.success) {
@@ -65,7 +67,7 @@ export default function SettingsPage() {
       return;
     }
     setForm({ ...emptyForm, ...response.data });
-    setMessage('Settings saved.');
+    setSettingsSaved(true);
   };
 
   const handleBackup = async () => {
@@ -194,9 +196,12 @@ export default function SettingsPage() {
                   placeholder="Thank you for shopping"
                 />
               </div>
-              <Button type="submit" disabled={saving}>
-                {saving ? 'Saving...' : 'Save settings'}
-              </Button>
+              <div className="relative inline-flex items-center gap-3">
+                <Button type="submit" disabled={saving}>
+                  {saving ? 'Saving...' : 'Save settings'}
+                </Button>
+                {settingsSaved && <span role="status" className="absolute left-0 top-full mt-2 whitespace-nowrap rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-600 shadow-sm">Settings saved.</span>}
+              </div>
             </form>
           </CardContent>
         </Card>

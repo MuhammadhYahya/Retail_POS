@@ -224,45 +224,6 @@ export function registerAuthHandlers() {
     }
   });
 
-  ipcMain.handle('auth:restore-session', (event) => {
-    try {
-      const db = getDb();
-      const now = new Date().toISOString();
-
-      const session = db.prepare(`
-        SELECT s.token, u.id, u.username, u.display_name, u.role,
-               u.security_a1_hash, u.security_a2_hash
-        FROM sessions s
-        JOIN users u ON u.id = s.user_id
-        WHERE s.expires_at > ?
-          AND u.is_active  = 1
-          AND u.deleted_at IS NULL
-        ORDER BY s.created_at DESC
-        LIMIT 1
-      `).get(now);
-
-      if (!session) {
-        return { success: false };
-      }
-
-      try {
-        jwt.verify(session.token, getJwtSecret());
-      } catch (jwtErr) {
-        db.prepare(`DELETE FROM sessions WHERE token = ?`).run(session.token);
-        return { success: false };
-      }
-
-      return {
-        success: true,
-        token: session.token,
-        user: publicUser(session),
-      };
-    } catch (err) {
-      console.error('[auth:restore-session] Error:', err.message);
-      return { success: false };
-    }
-  });
-
   ipcMain.handle('auth:register', async (event, payload = {}) => {
     try {
       const {

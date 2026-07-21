@@ -3,14 +3,16 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { useThemeStore } from '../../store/themeStore';
 import { Button } from '../ui/button';
-import { LogOut, LayoutDashboard, Users, ShoppingCart, Package, BarChart3, Settings, Sun, Moon } from 'lucide-react';
+import { LogOut, LayoutDashboard, Users, ShoppingCart, Package, BarChart3, Settings, Sun, Moon, AlertTriangle } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { getDashboardPath, invokeWithAuth, LOW_STOCK_UPDATED_EVENT } from '../../lib/ipc';
 
 const NAV_ITEMS = {
   admin: [
     { path: '/admin', label: 'Dashboard', icon: LayoutDashboard, color: 'text-amber-500' },
     { path: '/billing', label: 'New Sale', icon: ShoppingCart, color: 'text-emerald-500' },
     { path: '/products', label: 'Products', icon: Package, color: 'text-violet-500' },
+    { path: '/low-stock', label: 'Low Stock', icon: AlertTriangle, color: 'text-red-500' },
     { path: '/reports', label: 'Reports', icon: BarChart3, color: 'text-sky-500' },
     { path: '/staff', label: 'Staff Management', icon: Users, color: 'text-rose-500' },
     { path: '/settings', label: 'Settings', icon: Settings, color: 'text-slate-500' },
@@ -19,6 +21,7 @@ const NAV_ITEMS = {
     { path: '/cashier', label: 'POS Terminal', icon: LayoutDashboard, color: 'text-amber-500' },
     { path: '/billing', label: 'New Sale', icon: ShoppingCart, color: 'text-emerald-500' },
     { path: '/products', label: 'Products', icon: Package, color: 'text-violet-500' },
+    { path: '/low-stock', label: 'Low Stock', icon: AlertTriangle, color: 'text-red-500' },
   ],
 };
 
@@ -39,6 +42,8 @@ export default function AppShell({ children, title, description }) {
   const { theme, toggleTheme } = useThemeStore();
 
   const [timeString, setTimeString] = React.useState('');
+  const [profileOpen, setProfileOpen] = React.useState(false);
+  const [lowStockCount, setLowStockCount] = React.useState(0);
 
   React.useEffect(() => {
     const updateClock = () => {
@@ -54,6 +59,25 @@ export default function AppShell({ children, title, description }) {
     return () => clearInterval(timer);
   }, []);
 
+  React.useEffect(() => {
+    let active = true;
+    const refreshLowStockCount = async () => {
+      try {
+        const response = await invokeWithAuth('inventory:getLowStock');
+        if (active && response.success) setLowStockCount((response.data || []).length);
+      } catch {
+        if (active) setLowStockCount(0);
+      }
+    };
+
+    refreshLowStockCount();
+    window.addEventListener(LOW_STOCK_UPDATED_EVENT, refreshLowStockCount);
+    return () => {
+      active = false;
+      window.removeEventListener(LOW_STOCK_UPDATED_EVENT, refreshLowStockCount);
+    };
+  }, [location.pathname]);
+
   const navItems = NAV_ITEMS[user?.role] || [];
 
   const handleLogout = async () => {
@@ -62,10 +86,10 @@ export default function AppShell({ children, title, description }) {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex">
+    <div className="h-screen overflow-hidden bg-background text-foreground flex">
       {/* Sidebar navigation */}
-      <aside className="w-64 border-r border-border bg-card flex flex-col shrink-0 select-none">
-        <div className="p-6 border-b border-border/40 flex items-center gap-3">
+      <aside className="w-64 h-screen border-r border-border bg-card flex flex-col shrink-0 select-none">
+        <button type="button" onClick={() => navigate(getDashboardPath(user?.role))} className="p-6 border-b border-border/40 flex items-center gap-3 text-left cursor-pointer hover:bg-muted/30">
           <span className="p-2.5 bg-gradient-to-tr from-amber-500 to-orange-600 rounded-xl shadow-md shadow-orange-500/10 text-white font-extrabold text-lg select-none">
             P
           </span>
@@ -75,7 +99,7 @@ export default function AppShell({ children, title, description }) {
             </h1>
             <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest mt-0.5">Point of Sale</p>
           </div>
-        </div>
+        </button>
 
         <nav className="flex-1 p-4 space-y-2">
           {navItems.map(({ path, label, icon: Icon, color }) => {
@@ -93,7 +117,7 @@ export default function AppShell({ children, title, description }) {
                 )}
               >
                 <Icon className={cn("h-5 w-5 shrink-0 transition-transform duration-100", color, isActive && "scale-110")} />
-                <span>{label}</span>
+                <span className="flex min-w-0 flex-1 items-center justify-between gap-2"><span>{label}</span>{path === '/low-stock' && lowStockCount > 0 && <span className="rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-bold text-white">{lowStockCount}</span>}</span>
               </button>
             );
           })}
@@ -108,7 +132,7 @@ export default function AppShell({ children, title, description }) {
       </aside>
 
       {/* Main content pane */}
-      <main className="flex-1 flex flex-col min-w-0">
+      <main className="flex-1 flex flex-col min-w-0 min-h-0">
         <header className="border-b border-border bg-card/45 backdrop-blur-md px-8 py-4 flex items-center justify-between">
           <div className="flex flex-col">
             <h2 className="text-xl font-bold tracking-tight">{title}</h2>
@@ -134,7 +158,7 @@ export default function AppShell({ children, title, description }) {
               {theme === 'dark' ? <Sun className="h-4.5 w-4.5" /> : <Moon className="h-4.5 w-4.5" />}
             </button>
 
-            <div className="flex items-center gap-3 pl-3 border-l border-border/50">
+            <div className="relative flex items-center gap-3 pl-3 border-l border-border/50">
               <div className="text-right hidden sm:block">
                 <p className="text-sm font-bold text-foreground truncate max-w-[150px]">
                   {user?.display_name || user?.username}
@@ -143,17 +167,24 @@ export default function AppShell({ children, title, description }) {
                   {user?.role}
                 </p>
               </div>
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm shadow-sm shrink-0 ${
+              <button type="button" onClick={() => setProfileOpen((open) => !open)} aria-expanded={profileOpen} className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm shadow-sm shrink-0 cursor-pointer ${
                 user?.role === 'admin'
                   ? 'bg-gradient-to-tr from-rose-500 to-orange-500 text-white'
                   : 'bg-gradient-to-tr from-sky-500 to-blue-600 text-white'
               }`}>
                 {nameToAvatar(user?.display_name || user?.username)}
-              </div>
+              </button>
+              {profileOpen && (
+                <div className="absolute right-0 top-12 z-20 w-40 rounded-xl border border-border bg-card p-2 shadow-xl">
+                  <button type="button" onClick={handleLogout} className="w-full rounded-lg px-3 py-2 text-left text-sm font-semibold text-destructive hover:bg-destructive/10">
+                    <LogOut className="mr-2 inline h-4 w-4" /> Logout
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </header>
-        <div className="flex-1 p-8 overflow-auto">{children}</div>
+        <div className="flex-1 min-h-0 p-8 overflow-y-auto">{children}</div>
       </main>
     </div>
   );

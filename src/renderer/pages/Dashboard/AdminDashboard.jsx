@@ -64,9 +64,6 @@ export default function AdminDashboard() {
             <h1 className="text-3xl font-black text-white tracking-tight">
               Welcome back, {user?.display_name || user?.username}!
             </h1>
-            <p className="text-neutral-400 text-sm max-w-xl leading-relaxed">
-              All retail database nodes are active and sync is operational. Manage store catalogs, review analytics reports, or open register terminals below.
-            </p>
           </div>
           <div className="absolute right-0 top-0 bottom-0 w-1/3 bg-gradient-to-l from-rose-500/5 to-transparent pointer-events-none" />
         </div>

@@ -1,13 +1,35 @@
 import React from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import AppShell from '../../components/layout/AppShell';
 import { Package, ShoppingCart, Receipt, Clock } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { invokeWithAuth } from '../../lib/ipc';
+import { Button } from '../../components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../components/ui/dialog';
 
 export default function CashierDashboard() {
   const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
+  const [sales, setSales] = useState([]);
+  const [salesLoading, setSalesLoading] = useState(true);
+  const [salesError, setSalesError] = useState('');
+  const [receipt, setReceipt] = useState(null);
+
+  useEffect(() => {
+    invokeWithAuth('sale:listTodayCashier').then((response) => {
+      if (response.success) setSales(response.data || []);
+      else setSalesError(response.error || 'Failed to load today\'s sales.');
+      setSalesLoading(false);
+    });
+  }, []);
+
+  const viewReceipt = async (saleId) => {
+    const response = await invokeWithAuth('sale:getReceipt', { saleId });
+    if (response.success) setReceipt(response.data);
+    else setSalesError(response.error || 'Failed to load receipt.');
+  };
 
   return (
     <AppShell title="POS Terminal" description="Ready to process sales.">
@@ -21,12 +43,21 @@ export default function CashierDashboard() {
             <h1 className="text-3xl font-black text-white tracking-tight">
               Welcome back, {user?.display_name || user?.username}!
             </h1>
-            <p className="text-neutral-400 text-sm max-w-xl leading-relaxed">
-              Your register terminal is authorized and connected. Scan items, apply local discounts, and finalize sales securely.
-            </p>
           </div>
           <div className="absolute right-0 top-0 bottom-0 w-1/3 bg-gradient-to-l from-emerald-500/5 to-transparent pointer-events-none" />
         </div>
+
+        <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
+            <div><h2 className="text-lg font-bold">Today&apos;s Sales</h2><p className="text-sm text-muted-foreground">Your completed transactions for today.</p></div>
+            <Receipt className="h-5 w-5 text-muted-foreground" />
+          </div>
+          {salesLoading ? <p className="text-sm text-muted-foreground">Loading today&apos;s sales...</p> : salesError ? <p className="text-sm text-destructive">{salesError}</p> : sales.length === 0 ? <p className="text-sm text-muted-foreground">No sales completed today.</p> : (
+            <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b border-border text-left text-muted-foreground"><th className="px-3 py-2">Invoice #</th><th className="px-3 py-2">Time</th><th className="px-3 py-2">Items</th><th className="px-3 py-2">Total</th><th className="px-3 py-2 text-right">View</th></tr></thead><tbody>
+              {sales.map((sale) => <tr key={sale.id} className="border-b border-border/50"><td className="px-3 py-3 font-mono font-semibold">{sale.invoiceNumber}</td><td className="px-3 py-3">{new Date(sale.saleDate).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</td><td className="px-3 py-3">{sale.itemCount}</td><td className="px-3 py-3">Rs. {sale.total.toFixed(2)}</td><td className="px-3 py-3 text-right"><Button variant="outline" size="sm" onClick={() => viewReceipt(sale.id)}>View</Button></td></tr>)}
+            </tbody></table></div>
+          )}
+        </section>
 
         {/* Action Cards */}
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-2">
@@ -105,6 +136,11 @@ export default function CashierDashboard() {
           </div>
         </div>
       </div>
+      <Dialog open={Boolean(receipt)} onOpenChange={(open) => !open && setReceipt(null)}>
+        <DialogContent className="max-w-md"><DialogHeader><DialogTitle>Receipt #{receipt?.sale?.invoiceNumber}</DialogTitle></DialogHeader>
+          {receipt?.sale && <div className="space-y-3 text-sm"><div className="flex justify-between"><span>Total</span><strong>Rs. {receipt.sale.total.toFixed(2)}</strong></div><div className="border-t border-border pt-2">{receipt.sale.items.map((item) => <div key={item.id} className="flex justify-between py-1"><span>{item.productName} × {item.quantity}</span><span>Rs. {item.lineTotal.toFixed(2)}</span></div>)}</div></div>}
+        </DialogContent>
+      </Dialog>
     </AppShell>
   );
 }

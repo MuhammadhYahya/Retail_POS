@@ -84,6 +84,22 @@ export function registerSaleHandlers() {
     }
   });
 
+  ipcMain.handle('sale:listTodayCashier', async (event, payload = {}) => {
+    try {
+      const token = extractToken(payload);
+      const session = validateSession(token);
+      if (!session.success) return session;
+      const roleCheck = requireRole(session, ['cashier']);
+      if (!roleCheck.success) return roleCheck;
+      return {
+        success: true,
+        data: saleService.listTodayForCashier({ cashierId: session.user.id, limit: payload.limit }),
+      };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
   ipcMain.handle('sale:void', async (event, payload = {}) => {
     try {
       const token = extractToken(payload);
@@ -113,6 +129,9 @@ export function registerSaleHandlers() {
       if (!session.success) return session;
 
       const sale = saleService.getById(payload.saleId);
+      if (session.user.role === 'cashier' && sale.cashierId !== session.user.id) {
+        return { success: false, error: 'You can only view your own receipts.' };
+      }
       const ird = irdService.getBySaleId(sale.id);
       return { success: true, data: { sale, ird } };
     } catch (err) {

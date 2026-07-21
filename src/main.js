@@ -71,6 +71,7 @@ app.on('activate', () => {
 
 app.whenReady().then(() => {
   getDb();
+  clearSessionStore();
   registerAuthHandlers();
   registerUserHandlers();
   registerProductHandlers();

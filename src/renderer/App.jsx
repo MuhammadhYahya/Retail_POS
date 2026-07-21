@@ -13,6 +13,7 @@ import DashboardRedirect from './pages/Dashboard/Dashboard';
 import BillingPage from './pages/Billing/BillingPage';
 import ReportsPage from './pages/Reports/ReportsPage';
 import SettingsPage from './pages/Settings/SettingsPage';
+import LowStockPage from './pages/Inventory/LowStockPage';
 import RecoverySetupDialog from './components/auth/RecoverySetupDialog';
 
 function ProtectedRoute({ children }) {
@@ -122,6 +123,11 @@ function AppRoutes() {
               </RoleGuard>
             </ProtectedRoute>
           }
+        />
+
+        <Route
+          path="/low-stock"
+          element={<ProtectedRoute><RoleGuard allowedRoles={['admin', 'cashier']}><LowStockPage /></RoleGuard></ProtectedRoute>}
         />
 
         <Route
