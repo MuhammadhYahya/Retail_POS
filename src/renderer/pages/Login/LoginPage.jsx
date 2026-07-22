@@ -42,6 +42,7 @@ function KeypadButton({ value, onClick, variant = 'default', disabled }) {
 
 function RoleIcon({ role }) {
   if (role === 'admin') return <Shield className="h-3.5 w-3.5 text-primary shrink-0" />;
+  if (role === 'manager') return <Shield className="h-3.5 w-3.5 text-amber-500 shrink-0" />;
   return <User className="h-3.5 w-3.5 text-muted-foreground shrink-0" />;
 }
 

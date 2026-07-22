@@ -20,6 +20,8 @@ const emptyForm = {
   receiptHeader: '',
   receiptFooter: '',
   paperWidth: 80,
+  cashierMaxDiscountPct: 10,
+  managerMaxDiscountPct: 25,
 };
 
 export default function SettingsPage() {
@@ -196,6 +198,42 @@ export default function SettingsPage() {
                   placeholder="Thank you for shopping"
                 />
               </div>
+
+              <div className="border-t border-border pt-4 space-y-4">
+                <div>
+                  <p className="text-sm font-semibold">Discount limits</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Maximum discount staff can apply on an item or whole bill (percent of price). Admins have no limit.
+                  </p>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Cashier max discount (%)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.1"
+                      className={inputClassName}
+                      value={form.cashierMaxDiscountPct}
+                      onChange={(e) => setForm({ ...form, cashierMaxDiscountPct: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Manager max discount (%)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.1"
+                      className={inputClassName}
+                      value={form.managerMaxDiscountPct}
+                      onChange={(e) => setForm({ ...form, managerMaxDiscountPct: e.target.value })}
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div className="relative inline-flex items-center gap-3">
                 <Button type="submit" disabled={saving}>
                   {saving ? 'Saving...' : 'Save settings'}

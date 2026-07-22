@@ -42,7 +42,7 @@ export function registerReportHandlers() {
       const session = validateSession(token);
       if (!session.success) return session;
 
-      const roleCheck = requireRole(session, ['admin']);
+      const roleCheck = requireRole(session, ['admin', 'manager']);
       if (!roleCheck.success) return roleCheck;
 
       return {
@@ -60,7 +60,7 @@ export function registerReportHandlers() {
       const session = validateSession(token);
       if (!session.success) return session;
 
-      const roleCheck = requireRole(session, ['admin']);
+      const roleCheck = requireRole(session, ['admin', 'manager']);
       if (!roleCheck.success) return roleCheck;
 
       return {
@@ -78,12 +78,33 @@ export function registerReportHandlers() {
       const session = validateSession(token);
       if (!session.success) return session;
 
-      const roleCheck = requireRole(session, ['admin']);
+      const roleCheck = requireRole(session, ['admin', 'manager']);
       if (!roleCheck.success) return roleCheck;
 
       return {
         success: true,
         data: reportService.salesByDay(payload.from, payload.to),
+      };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('report:recentSales', async (event, payload = {}) => {
+    try {
+      const token = extractToken(payload);
+      const session = validateSession(token);
+      if (!session.success) return session;
+
+      const roleCheck = requireRole(session, ['admin', 'manager']);
+      if (!roleCheck.success) return roleCheck;
+
+      return {
+        success: true,
+        data: reportService.recentSales({
+          date: payload.date,
+          limit: payload.limit,
+        }),
       };
     } catch (err) {
       return { success: false, error: err.message };

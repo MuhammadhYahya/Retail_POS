@@ -104,6 +104,17 @@ function AppRoutes() {
         />
 
         <Route
+          path="/manager"
+          element={
+            <ProtectedRoute>
+              <RoleGuard allowedRoles={['manager']}>
+                <CashierDashboard />
+              </RoleGuard>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
           path="/staff"
           element={
             <ProtectedRoute>
@@ -118,7 +129,7 @@ function AppRoutes() {
           path="/products"
           element={
             <ProtectedRoute>
-              <RoleGuard allowedRoles={['admin', 'cashier']}>
+              <RoleGuard allowedRoles={['admin', 'manager', 'cashier']}>
                 <ProductsManagement />
               </RoleGuard>
             </ProtectedRoute>
@@ -127,14 +138,14 @@ function AppRoutes() {
 
         <Route
           path="/low-stock"
-          element={<ProtectedRoute><RoleGuard allowedRoles={['admin', 'cashier']}><LowStockPage /></RoleGuard></ProtectedRoute>}
+          element={<ProtectedRoute><RoleGuard allowedRoles={['admin', 'manager', 'cashier']}><LowStockPage /></RoleGuard></ProtectedRoute>}
         />
 
         <Route
           path="/billing"
           element={
             <ProtectedRoute>
-              <RoleGuard allowedRoles={['admin', 'cashier']}>
+              <RoleGuard allowedRoles={['admin', 'manager', 'cashier']}>
                 <BillingPage />
               </RoleGuard>
             </ProtectedRoute>
@@ -145,7 +156,7 @@ function AppRoutes() {
           path="/reports"
           element={
             <ProtectedRoute>
-              <RoleGuard allowedRoles={['admin']}>
+              <RoleGuard allowedRoles={['admin', 'manager']}>
                 <ReportsPage />
               </RoleGuard>
             </ProtectedRoute>

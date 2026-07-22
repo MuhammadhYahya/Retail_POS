@@ -30,6 +30,8 @@ function mapSettings(row) {
       receiptFooter: '',
       printerPort: '',
       paperWidth: 80,
+      cashierMaxDiscountPct: 10,
+      managerMaxDiscountPct: 25,
     };
   }
 
@@ -47,6 +49,8 @@ function mapSettings(row) {
     receiptFooter: row.receipt_footer || '',
     printerPort: row.printer_port || '',
     paperWidth: toNumber(row.paper_width, 80),
+    cashierMaxDiscountPct: toNumber(row.cashier_max_discount_pct, 10),
+    managerMaxDiscountPct: toNumber(row.manager_max_discount_pct, 25),
   };
 }
 
@@ -84,7 +88,19 @@ const settingsService = {
             ? 58
             : 80
           : current.paperWidth,
+      cashierMaxDiscountPct:
+        payload.cashierMaxDiscountPct !== undefined
+          ? Math.min(100, Math.max(0, toNumber(payload.cashierMaxDiscountPct, current.cashierMaxDiscountPct)))
+          : current.cashierMaxDiscountPct,
+      managerMaxDiscountPct:
+        payload.managerMaxDiscountPct !== undefined
+          ? Math.min(100, Math.max(0, toNumber(payload.managerMaxDiscountPct, current.managerMaxDiscountPct)))
+          : current.managerMaxDiscountPct,
     };
+
+    if (next.managerMaxDiscountPct < next.cashierMaxDiscountPct) {
+      throw new Error('Manager discount limit must be greater than or equal to cashier limit.');
+    }
 
     db.prepare(`
       UPDATE settings SET
@@ -100,6 +116,8 @@ const settingsService = {
         receipt_footer = ?,
         printer_port = ?,
         paper_width = ?,
+        cashier_max_discount_pct = ?,
+        manager_max_discount_pct = ?,
         updated_at = ?
       WHERE id = 1
     `).run(
@@ -115,6 +133,8 @@ const settingsService = {
       next.receiptFooter || null,
       next.printerPort || null,
       next.paperWidth,
+      next.cashierMaxDiscountPct,
+      next.managerMaxDiscountPct,
       now()
     );
 

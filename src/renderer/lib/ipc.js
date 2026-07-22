@@ -18,5 +18,7 @@ export async function invokeWithAuth(channel, data = {}) {
 }
 
 export function getDashboardPath(role) {
-  return role === 'admin' ? '/admin' : '/cashier';
+  if (role === 'admin') return '/admin';
+  if (role === 'manager') return '/manager';
+  return '/cashier';
 }

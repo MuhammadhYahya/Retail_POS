@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowDownUp,
   Barcode,
@@ -191,14 +191,14 @@ function buildVariantMatrix(productName, axes, existingRows = []) {
   });
 }
 
-function productToForm(product) {
+function productToForm(product, { step = 1 } = {}) {
   const variants = product.variants?.length ? product.variants : [null];
   const isMatrix = variants.length > 1;
   const axes = isMatrix ? deriveVariantAxes(product.variants || []) : { sizes: [], colors: [] };
 
   return {
     id: product.id,
-    step: 1,
+    step,
     name: product.name || '',
     description: product.description || '',
     brand: product.brand || '',
@@ -389,6 +389,7 @@ function prepareProductPayload(form) {
 
 export default function ProductsManagement() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const user = useAuthStore((state) => state.user);
   const isAdmin = user?.role === 'admin';
 
@@ -405,6 +406,7 @@ export default function ProductsManagement() {
   const [dateToDraft, setDateToDraft] = useState('');
   const [dateFilterMode, setDateFilterMode] = useState('single');
   const [appliedDateRange, setAppliedDateRange] = useState({ from: '', to: '' });
+  const [pendingFocusField, setPendingFocusField] = useState(null);
 
   const [productDialogOpen, setProductDialogOpen] = useState(false);
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
@@ -469,6 +471,70 @@ export default function ProductsManagement() {
     loadData();
   }, []);
 
+  useEffect(() => {
+    if (loading || !isAdmin) return;
+
+    const editId = searchParams.get('edit');
+    if (!editId || !products.length) return;
+
+    const product = products.find((item) => item.id === editId);
+    if (!product) {
+      setError('Product from low stock alert was not found.');
+      setSearchParams({}, { replace: true });
+      return;
+    }
+
+    const step = Number(searchParams.get('step') || 2);
+    const focus = searchParams.get('focus') || 'stock';
+    const variantId = searchParams.get('variantId');
+
+    setDialogError('');
+    setError('');
+    const nextForm = productToForm(product, { step: step === 1 ? 1 : 2 });
+
+    // Prefer the specific low-stock variant when opening from Fill Stock
+    if (variantId && nextForm.variantMode === 'matrix') {
+      const index = nextForm.variantRows.findIndex((row) => row.id === variantId);
+      if (index > 0) {
+        const rows = [...nextForm.variantRows];
+        const [selected] = rows.splice(index, 1);
+        rows.unshift(selected);
+        nextForm.variantRows = rows;
+      }
+    }
+
+    setForm(nextForm);
+    setPendingFocusField(focus);
+    setProductDialogOpen(true);
+    setSearchParams({}, { replace: true });
+  }, [loading, products, searchParams, isAdmin, setSearchParams]);
+
+  useEffect(() => {
+    if (!productDialogOpen || !pendingFocusField || form.step !== 2) return undefined;
+
+    const timer = window.setTimeout(() => {
+      let el = null;
+      if (pendingFocusField === 'stock') {
+        el = document.getElementById('single-stock')
+          || document.querySelector('[data-focus="variant-stock"]');
+      } else if (pendingFocusField === 'cost') {
+        el = document.getElementById('single-cost-price')
+          || document.querySelector('[data-focus="variant-cost"]');
+      } else {
+        // Default: second pricing field (cost price) on step 2
+        el = document.getElementById('single-cost-price')
+          || document.querySelector('[data-focus="variant-cost"]');
+      }
+      if (el) {
+        el.focus();
+        if (typeof el.select === 'function') el.select();
+      }
+      setPendingFocusField(null);
+    }, 120);
+
+    return () => window.clearTimeout(timer);
+  }, [productDialogOpen, pendingFocusField, form.step, form.variantMode]);
+
   const categoryById = useMemo(() => {
     const map = new Map();
     categories.forEach((category) => map.set(category.id, category));
@@ -507,11 +573,12 @@ export default function ProductsManagement() {
     setProductDialogOpen(true);
   };
 
-  const openEditProduct = (product) => {
+  const openEditProduct = (product, options = {}) => {
     if (!isAdmin) return;
     setDialogError('');
     setError('');
-    setForm(productToForm(product));
+    setForm(productToForm(product, { step: options.step || 1 }));
+    if (options.focus) setPendingFocusField(options.focus);
     setProductDialogOpen(true);
   };
 
@@ -1398,6 +1465,7 @@ export default function ProductsManagement() {
                               value={form.singleVariant.costPrice}
                               onChange={(e) => updateSingleVariant('costPrice', e.target.value)}
                               placeholder="0"
+                              data-focus="variant-cost"
                             />
                           </div>
                         </div>
@@ -1416,6 +1484,7 @@ export default function ProductsManagement() {
                               value={form.singleVariant.initialStock}
                               onChange={(e) => updateSingleVariant('initialStock', e.target.value)}
                               placeholder="0"
+                              data-focus="variant-stock"
                             />
                           </div>
                           <div>
@@ -1552,6 +1621,7 @@ export default function ProductsManagement() {
                                         value={variant.costPrice}
                                         onChange={(e) => updateVariantRow(index, 'costPrice', e.target.value)}
                                         placeholder="0"
+                                        data-focus={index === 0 ? 'variant-cost' : undefined}
                                       />
                                     </div>
                                     <div>
@@ -1564,6 +1634,7 @@ export default function ProductsManagement() {
                                         value={variant.initialStock}
                                         onChange={(e) => updateVariantRow(index, 'initialStock', e.target.value)}
                                         placeholder="0"
+                                        data-focus={index === 0 ? 'variant-stock' : undefined}
                                       />
                                     </div>
                                     <div>

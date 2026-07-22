@@ -267,10 +267,12 @@ export default function StaffManagement() {
                           className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${
                             user.role === 'admin'
                               ? 'bg-primary/15 text-primary'
-                              : 'bg-blue-500/15 text-blue-400'
+                              : user.role === 'manager'
+                                ? 'bg-amber-500/15 text-amber-600'
+                                : 'bg-blue-500/15 text-blue-400'
                           }`}
                         >
-                          {user.role === 'admin' && <Shield className="h-3 w-3" />}
+                          {(user.role === 'admin' || user.role === 'manager') && <Shield className="h-3 w-3" />}
                           {user.role}
                         </span>
                       </TableCell>
@@ -285,7 +287,7 @@ export default function StaffManagement() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
-                          {user.role === 'cashier' && (
+                          {(user.role === 'cashier' || user.role === 'manager') && (
                             <Button
                               variant="outline"
                               size="sm"
@@ -411,6 +413,7 @@ export default function StaffManagement() {
                 onChange={(e) => setForm({ ...form, role: e.target.value })}
               >
                 <option value="cashier">Cashier</option>
+                <option value="manager">Manager</option>
                 <option value="admin">Admin</option>
               </select>
             </div>

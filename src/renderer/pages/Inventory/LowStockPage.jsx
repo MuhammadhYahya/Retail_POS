@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import AppShell from '../../components/layout/AppShell';
 import { Button } from '../../components/ui/button';
 import { Alert, AlertDescription } from '../../components/ui/alert';
@@ -6,6 +7,7 @@ import { invokeWithAuth, notifyLowStockUpdated } from '../../lib/ipc';
 import { useAuthStore } from '../../store/authStore';
 
 export default function LowStockPage() {
+  const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
   const isAdmin = user?.role === 'admin';
   const [items, setItems] = useState([]);
@@ -28,21 +30,14 @@ export default function LowStockPage() {
 
   useEffect(() => { load(); }, []);
 
-  const fillStock = async (item) => {
-    const quantity = Number(window.prompt(`How many units should be added to ${item.productName}?`, String(item.alertThreshold)));
-    if (!Number.isFinite(quantity) || quantity <= 0) return;
-    try {
-      const response = await invokeWithAuth('inventory:adjustStock', {
-        variantId: item.variantId, quantity, transactionType: 'purchase', notes: 'Restocked from Low Stock page',
-      });
-      if (!response.success) setError(response.error || 'Failed to fill stock.');
-      else {
-        notifyLowStockUpdated();
-        await load();
-      }
-    } catch (err) {
-      setError(err.message || 'Failed to fill stock.');
-    }
+  const fillStock = (item) => {
+    const params = new URLSearchParams({
+      edit: item.productId,
+      variantId: item.variantId || '',
+      focus: 'stock',
+      step: '2',
+    });
+    navigate(`/products?${params.toString()}`);
   };
 
   const disableAlert = async (item) => {

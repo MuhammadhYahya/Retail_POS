@@ -14,6 +14,7 @@ import {
 } from '../../components/ui/dialog';
 import { invokeWithAuth, notifyLowStockUpdated } from '../../lib/ipc';
 import { useCartStore } from '../../store/cartStore';
+import { useAuthStore } from '../../store/authStore';
 import { cn } from '../../lib/utils';
 
 const inputClassName =
@@ -23,8 +24,21 @@ function formatMoney(value) {
   return `Rs. ${Number(value || 0).toFixed(2)}`;
 }
 
+function maxDiscountPctForRole(role, settings) {
+  if (role === 'admin') return null;
+  if (role === 'manager') return Number(settings?.managerMaxDiscountPct ?? 25);
+  return Number(settings?.cashierMaxDiscountPct ?? 10);
+}
+
+function discountExceedsLimit(base, discountAmount, maxPct) {
+  if (maxPct === null || maxPct === undefined) return false;
+  if (base <= 0) return discountAmount > 0;
+  return (discountAmount / base) * 100 > maxPct + 0.001;
+}
+
 export default function BillingPage() {
   const navigate = useNavigate();
+  const user = useAuthStore((state) => state.user);
   const barcodeRef = useRef(null);
   const [barcode, setBarcode] = useState('');
   const [catalog, setCatalog] = useState([]);
@@ -38,17 +52,24 @@ export default function BillingPage() {
   const [successOpen, setSuccessOpen] = useState(false);
   const [completedSale, setCompletedSale] = useState(null);
   const [receiptSeconds, setReceiptSeconds] = useState(120);
+  const [saleDiscDraftType, setSaleDiscDraftType] = useState('fixed');
+  const [saleDiscDraftValue, setSaleDiscDraftValue] = useState('');
 
   const items = useCartStore((state) => state.items);
+  const saleDiscountType = useCartStore((state) => state.saleDiscountType);
+  const saleDiscountValue = useCartStore((state) => state.saleDiscountValue);
   const addItem = useCartStore((state) => state.addItem);
   const removeItem = useCartStore((state) => state.removeItem);
   const updateQty = useCartStore((state) => state.updateQty);
-  const applyDiscount = useCartStore((state) => state.applyDiscount);
+  const applyItemDiscount = useCartStore((state) => state.applyItemDiscount);
+  const applySaleDiscount = useCartStore((state) => state.applySaleDiscount);
+  const clearSaleDiscount = useCartStore((state) => state.clearSaleDiscount);
   const clear = useCartStore((state) => state.clear);
   const getTotals = useCartStore((state) => state.getTotals);
   const setLastSale = useCartStore((state) => state.setLastSale);
 
-  const totals = useMemo(() => getTotals(), [items, getTotals]);
+  const totals = useMemo(() => getTotals(), [items, saleDiscountType, saleDiscountValue, getTotals]);
+  const maxPct = maxDiscountPctForRole(user?.role, settings);
   const change = useMemo(() => {
     if (paymentMethod !== 'cash') return 0;
     return Math.max(0, Number(tendered || 0) - totals.total);
@@ -103,6 +124,7 @@ export default function BillingPage() {
       sku: variant.sku,
       barcode: variant.barcode,
       sellingPrice: variant.sellingPrice,
+      costPrice: variant.costPrice,
       taxRate: variant.product?.taxRate ?? 0,
     });
     setBarcode('');
@@ -124,6 +146,7 @@ export default function BillingPage() {
       sku: variant.sku,
       barcode: variant.barcode,
       sellingPrice: variant.sellingPrice,
+      costPrice: variant.costPrice,
       taxRate: variant.product?.taxRate ?? 0,
     });
     setCatalogOpen(false);
@@ -166,12 +189,55 @@ export default function BillingPage() {
     });
   }, [catalog, catalogQuery]);
 
+  const validateDiscounts = () => {
+    if (totals.saleDiscountAmount > 0 && discountExceedsLimit(totals.subtotal, totals.saleDiscountAmount, maxPct)) {
+      setError(`Sale discount exceeds your limit of ${maxPct}%.`);
+      return false;
+    }
+
+    for (const line of totals.lines) {
+      if (line.discountAmount > 0 && totals.saleDiscountType === 'none') {
+        if (discountExceedsLimit(line.gross || line.originalLineTotal, line.discountAmount, maxPct)) {
+          setError(`Discount on "${line.productName}" exceeds your limit of ${maxPct}%.`);
+          return false;
+        }
+      }
+    }
+    return true;
+  };
+
+  const handleItemDiscountChange = (variantId, type, value) => {
+    setError('');
+    if (type === 'none' || value === '' || Number(value) <= 0) {
+      applyItemDiscount(variantId, 'none', 0);
+      return;
+    }
+    applyItemDiscount(variantId, type, value);
+  };
+
+  const handleApplySaleDiscount = () => {
+    setError('');
+    const value = Number(saleDiscDraftValue);
+    if (!Number.isFinite(value) || value <= 0) {
+      clearSaleDiscount();
+      setSaleDiscDraftValue('');
+      return;
+    }
+    applySaleDiscount(saleDiscDraftType, value);
+  };
+
+  const handleClearSaleDiscount = () => {
+    clearSaleDiscount();
+    setSaleDiscDraftValue('');
+  };
+
   const handleCompleteSale = async () => {
     setError('');
     if (!items.length) {
       setError('Cart is empty.');
       return;
     }
+    if (!validateDiscounts()) return;
     if (paymentMethod === 'cash' && Number(tendered || 0) + 0.001 < totals.total) {
       setError('Tendered amount is less than the total.');
       return;
@@ -183,9 +249,14 @@ export default function BillingPage() {
         variantId: item.variantId,
         quantity: item.quantity,
         unitPrice: item.unitPrice,
-        discountAmount: item.discountAmount,
+        discountType: item.discountType,
+        discountValue: item.discountValue,
         taxRate: item.taxRate,
       })),
+      saleDiscount: {
+        type: saleDiscountType,
+        value: saleDiscountValue,
+      },
       payment: {
         method: paymentMethod,
         amountTendered: paymentMethod === 'cash' ? Number(tendered || 0) : totals.total,
@@ -205,6 +276,8 @@ export default function BillingPage() {
     clear();
     setTendered('');
     setPaymentMethod('cash');
+    setSaleDiscDraftValue('');
+    setSaleDiscDraftType('fixed');
     setSuccessOpen(true);
   };
 
@@ -220,13 +293,15 @@ export default function BillingPage() {
     const lines = (completedSale.items || [])
       .map(
         (item) =>
-          `<tr><td>${item.productName}</td><td>${item.quantity}</td><td>${formatMoney(item.unitPrice)}</td><td>${formatMoney(item.lineTotal)}</td></tr>`
+          `<tr><td>${item.productName}</td><td>${item.quantity}</td><td>${formatMoney(item.unitPrice)}</td><td>${formatMoney(item.discountAmount)}</td><td>${formatMoney(item.lineTotal)}</td></tr>`
       )
       .join('');
 
     const qrImg = completedSale.ird?.qrData
       ? `<img src="${completedSale.ird.qrData}" alt="QR" style="width:140px;height:140px;margin:12px auto;display:block;" />`
       : '';
+
+    const soldBy = completedSale.cashierName || completedSale.cashierUsername || '';
 
     win.document.write(`
       <html><head><title>${completedSale.invoiceNumber}</title>
@@ -241,9 +316,10 @@ export default function BillingPage() {
         <p class="muted">${settings?.shopAddress || ''}</p>
         <p><strong>${completedSale.invoiceNumber}</strong></p>
         <p class="muted">${new Date(completedSale.saleDate).toLocaleString()}</p>
+        ${soldBy ? `<p class="muted">Sold by: ${soldBy}</p>` : ''}
         <hr />
         <table>
-          <thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead>
+          <thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Disc</th><th>Total</th></tr></thead>
           <tbody>${lines}</tbody>
         </table>
         <hr />
@@ -284,16 +360,23 @@ export default function BillingPage() {
   }, [successOpen]);
 
   const resetReceiptCountdown = () => setReceiptSeconds(120);
+  const saleDiscountActive = saleDiscountType !== 'none' && Number(saleDiscountValue) > 0;
 
   return (
     <AppShell title="New Sale" description="Scan barcode, take payment, save the sale.">
       <div className="grid gap-6 xl:grid-cols-[1.35fr_1fr]">
-        {/* Left Side: Ledger / Items List */}
         <div className="space-y-4">
           {error && (
             <Alert variant="destructive" className="rounded-xl border-destructive/20 bg-destructive/10">
               <AlertDescription className="text-destructive font-semibold">{error}</AlertDescription>
             </Alert>
+          )}
+
+          {maxPct !== null && (
+            <p className="text-xs text-muted-foreground">
+              Your discount limit: up to <span className="font-semibold text-foreground">{maxPct}%</span> of item or bill total.
+              {user?.role === 'admin' ? '' : ' Admins have no limit.'}
+            </p>
           )}
 
           <form onSubmit={handleLookup} className="flex gap-3">
@@ -325,7 +408,7 @@ export default function BillingPage() {
                     <th className="text-left p-4 font-bold text-xs uppercase tracking-wider">Item</th>
                     <th className="text-left p-4 font-bold text-xs uppercase tracking-wider w-[180px]">Qty</th>
                     <th className="text-left p-4 font-bold text-xs uppercase tracking-wider">Price</th>
-                    <th className="text-left p-4 font-bold text-xs uppercase tracking-wider w-[120px]">Disc.</th>
+                    <th className="text-left p-4 font-bold text-xs uppercase tracking-wider min-w-[200px]">Item discount</th>
                     <th className="text-right p-4 font-bold text-xs uppercase tracking-wider">Total</th>
                     <th className="p-4 w-[60px]" />
                   </tr>
@@ -338,71 +421,101 @@ export default function BillingPage() {
                       </td>
                     </tr>
                   )}
-                  {totals.lines.map((item) => (
-                    <tr key={item.variantId} className="hover:bg-muted/5 transition-colors">
-                      <td className="p-4 align-middle">
-                        <p className="font-bold text-base text-foreground leading-tight">{item.productName}</p>
-                        <p className="text-xs text-muted-foreground mt-1 font-mono tracking-wide">{item.barcode || item.sku}</p>
-                      </td>
-                      <td className="p-4 align-middle">
-                        <div className="flex items-center gap-1">
+                  {totals.lines.map((item) => {
+                    const lineType = saleDiscountActive ? 'none' : (item.discountType || 'none');
+                    const lineValue = saleDiscountActive ? '' : (item.discountValue || '');
+                    return (
+                      <tr key={item.variantId} className="hover:bg-muted/5 transition-colors">
+                        <td className="p-4 align-middle">
+                          <p className="font-bold text-base text-foreground leading-tight">{item.productName}</p>
+                          <p className="text-xs text-muted-foreground mt-1 font-mono tracking-wide">{item.barcode || item.sku}</p>
+                        </td>
+                        <td className="p-4 align-middle">
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => updateQty(item.variantId, item.quantity - 1)}
+                              className="h-10 w-10 rounded-xl border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/60 active:scale-95 transition-all select-none cursor-pointer"
+                            >
+                              <Minus className="h-4 w-4" />
+                            </button>
+                            <input
+                              type="number"
+                              min="1"
+                              className="w-14 h-10 rounded-xl border border-border bg-input text-center font-bold text-base focus:outline-none focus:ring-2 focus:ring-ring"
+                              value={item.quantity}
+                              onChange={(e) => updateQty(item.variantId, e.target.value)}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => updateQty(item.variantId, item.quantity + 1)}
+                              className="h-10 w-10 rounded-xl border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/60 active:scale-95 transition-all select-none cursor-pointer"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </td>
+                        <td className="p-4 align-middle font-bold text-foreground">{formatMoney(item.unitPrice)}</td>
+                        <td className="p-4 align-middle">
+                          <div className="flex gap-1.5 items-center">
+                            <select
+                              className="h-10 rounded-xl border border-border bg-input text-xs font-semibold px-2 disabled:opacity-50"
+                              disabled={saleDiscountActive}
+                              value={lineType === 'none' ? 'fixed' : lineType}
+                              onChange={(e) =>
+                                handleItemDiscountChange(
+                                  item.variantId,
+                                  e.target.value,
+                                  lineValue || 0
+                                )
+                              }
+                            >
+                              <option value="fixed">Rs.</option>
+                              <option value="percent">%</option>
+                            </select>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              disabled={saleDiscountActive}
+                              className="w-20 h-10 rounded-xl border border-border bg-input text-sm font-semibold px-2 focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+                              value={lineType === 'none' ? '' : lineValue}
+                              placeholder="0"
+                              onChange={(e) =>
+                                handleItemDiscountChange(
+                                  item.variantId,
+                                  lineType === 'none' ? 'fixed' : lineType,
+                                  e.target.value
+                                )
+                              }
+                            />
+                            {item.discountAmount > 0 && (
+                              <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                                −{formatMoney(item.discountAmount)}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-4 align-middle text-right font-bold text-base text-foreground">{formatMoney(item.lineTotal)}</td>
+                        <td className="p-4 align-middle text-right">
                           <button
                             type="button"
-                            onClick={() => updateQty(item.variantId, item.quantity - 1)}
-                            className="h-10 w-10 rounded-xl border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/60 active:scale-95 transition-all select-none cursor-pointer"
+                            onClick={() => removeItem(item.variantId)}
+                            className="p-2.5 rounded-xl text-destructive hover:bg-destructive/10 active:scale-95 transition-all cursor-pointer"
+                            title="Remove item"
                           >
-                            <Minus className="h-4 w-4" />
+                            <Trash2 className="h-5 w-5" />
                           </button>
-                          <input
-                            type="number"
-                            min="1"
-                            className="w-14 h-10 rounded-xl border border-border bg-input text-center font-bold text-base focus:outline-none focus:ring-2 focus:ring-ring"
-                            value={item.quantity}
-                            onChange={(e) => updateQty(item.variantId, e.target.value)}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => updateQty(item.variantId, item.quantity + 1)}
-                            className="h-10 w-10 rounded-xl border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/60 active:scale-95 transition-all select-none cursor-pointer"
-                          >
-                            <Plus className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </td>
-                      <td className="p-4 align-middle font-bold text-foreground">{formatMoney(item.unitPrice)}</td>
-                      <td className="p-4 align-middle">
-                        <div className="relative">
-                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-muted-foreground font-mono">Rs.</span>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            className="w-24 h-10 pl-8 rounded-xl border border-border bg-input text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-ring"
-                            value={item.discountAmount}
-                            onChange={(e) => applyDiscount(item.variantId, e.target.value)}
-                          />
-                        </div>
-                      </td>
-                      <td className="p-4 align-middle text-right font-bold text-base text-foreground">{formatMoney(item.lineTotal)}</td>
-                      <td className="p-4 align-middle text-right">
-                        <button 
-                          type="button" 
-                          onClick={() => removeItem(item.variantId)}
-                          className="p-2.5 rounded-xl text-destructive hover:bg-destructive/10 active:scale-95 transition-all cursor-pointer"
-                          title="Remove item"
-                        >
-                          <Trash2 className="h-5 w-5" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           </div>
         </div>
 
-        {/* Right Side: Payment Pane */}
         <div className="rounded-2xl border border-border bg-card p-6 space-y-6 h-fit shadow-md">
           <div>
             <h3 className="font-extrabold text-lg text-foreground mb-1">Select Payment</h3>
@@ -437,9 +550,45 @@ export default function BillingPage() {
             })}
           </div>
 
+          <div className="space-y-3 rounded-xl border border-border/60 bg-muted/20 p-4">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-bold text-foreground">Bill discount</p>
+              {saleDiscountActive && (
+                <button type="button" className="text-xs font-semibold text-destructive hover:underline" onClick={handleClearSaleDiscount}>
+                  Clear
+                </button>
+              )}
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Applies to the whole bill. Clears any item discounts (only one type at a time).
+            </p>
+            <div className="flex gap-2">
+              <select
+                className="h-11 rounded-xl border border-border bg-input text-sm font-semibold px-2"
+                value={saleDiscDraftType}
+                onChange={(e) => setSaleDiscDraftType(e.target.value)}
+              >
+                <option value="fixed">Rs. off</option>
+                <option value="percent">% off</option>
+              </select>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className="flex-1 h-11 rounded-xl border border-border bg-input text-sm font-semibold px-3"
+                value={saleDiscDraftValue}
+                onChange={(e) => setSaleDiscDraftValue(e.target.value)}
+                placeholder={saleDiscDraftType === 'percent' ? 'e.g. 5' : 'e.g. 200'}
+              />
+              <Button type="button" variant="outline" className="h-11" onClick={handleApplySaleDiscount}>
+                Apply
+              </Button>
+            </div>
+          </div>
+
           <div className="p-4 rounded-xl bg-muted/40 border border-border/40 space-y-3 text-sm">
             <div className="flex justify-between font-semibold">
-              <span className="text-muted-foreground">Subtotal</span>
+              <span className="text-muted-foreground">Subtotal (original)</span>
               <span className="text-foreground">{formatMoney(totals.subtotal)}</span>
             </div>
             <div className="flex justify-between font-semibold">
@@ -454,6 +603,12 @@ export default function BillingPage() {
               <span className="text-foreground">Grand Total</span>
               <span className="text-foreground text-xl">{formatMoney(totals.total)}</span>
             </div>
+            {user?.role === 'admin' && (
+              <div className="flex justify-between text-xs font-semibold pt-1 text-muted-foreground">
+                <span>Est. profit after discount</span>
+                <span>{formatMoney(totals.discountedProfit)}</span>
+              </div>
+            )}
           </div>
 
           {paymentMethod === 'cash' && (
@@ -470,7 +625,7 @@ export default function BillingPage() {
                   Set exact amount
                 </button>
               </div>
-              
+
               <div className="relative">
                 <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground font-mono">Rs.</span>
                 <input
@@ -485,7 +640,6 @@ export default function BillingPage() {
                 />
               </div>
 
-              {/* Quick Cash Buttons for Sri Lankan LKR / Rupees */}
               <div className="grid grid-cols-4 gap-2">
                 {[100, 500, 1000, 5000].map((amount) => (
                   <button
@@ -510,17 +664,17 @@ export default function BillingPage() {
           )}
 
           <div className="space-y-3 pt-2">
-            <button 
+            <button
               type="button"
-              disabled={saving || !items.length} 
+              disabled={saving || !items.length}
               onClick={handleCompleteSale}
               className="w-full h-14 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 font-bold text-white shadow-lg shadow-orange-500/20 active:scale-[0.98] transition-all disabled:opacity-50 disabled:pointer-events-none select-none cursor-pointer flex items-center justify-center gap-2"
             >
               {saving ? 'Processing...' : 'Complete Checkout'}
             </button>
-            
-            <button 
-              type="button" 
+
+            <button
+              type="button"
               onClick={() => navigate(-1)}
               className="w-full h-12 rounded-xl border border-border bg-card hover:bg-muted font-semibold text-muted-foreground hover:text-foreground transition-all cursor-pointer shadow-sm"
             >
@@ -582,7 +736,6 @@ export default function BillingPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Invoice receipt modal on success */}
       <Dialog open={successOpen} onOpenChange={(open) => { if (!open) startNewSale(); }}>
         <DialogContent className="max-w-md bg-card border border-border rounded-3xl p-6 shadow-2xl">
           <DialogHeader className="text-center">
@@ -594,7 +747,7 @@ export default function BillingPage() {
               Invoice #{completedSale?.invoiceNumber}
             </DialogDescription>
           </DialogHeader>
-          
+
           {completedSale && (
             <div onClick={resetReceiptCountdown} className="relative my-6 p-5 rounded-2xl bg-muted/30 border border-border/50 space-y-4 font-semibold cursor-pointer">
               <div className="absolute right-4 top-3 text-xs font-semibold text-amber-600">Starting new sale in 0:{String(receiptSeconds).padStart(2, '0')}...</div>
@@ -602,6 +755,12 @@ export default function BillingPage() {
                 <span className="text-muted-foreground">Total Sale</span>
                 <span className="font-extrabold text-foreground text-lg">{formatMoney(completedSale.total)}</span>
               </div>
+              {completedSale.discountTotal > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Discount applied</span>
+                  <span className="text-foreground">{formatMoney(completedSale.discountTotal)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-sm items-center">
                 <span className="text-muted-foreground">Payment Method</span>
                 <span className="text-xs uppercase font-extrabold tracking-widest bg-muted border border-border px-2.5 py-1 rounded-lg text-foreground">
@@ -616,7 +775,7 @@ export default function BillingPage() {
                 <span className="text-muted-foreground">Change Given</span>
                 <span className="font-black text-emerald-500 text-base">{formatMoney(completedSale.changeGiven)}</span>
               </div>
-              
+
               {completedSale.ird?.qrData && (
                 <div className="pt-4 flex flex-col items-center justify-center">
                   <div className="p-3 bg-white rounded-xl shadow-sm border border-border/40">
@@ -627,18 +786,18 @@ export default function BillingPage() {
               )}
             </div>
           )}
-          
+
           <DialogFooter className="grid grid-cols-2 gap-3 sm:space-x-0">
-            <button 
-              type="button" 
+            <button
+              type="button"
               onClick={handlePrintReceipt}
               className="h-12 rounded-xl border border-border hover:bg-muted font-bold text-sm text-foreground flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95"
             >
               <Printer className="h-4 w-4" />
               Print Receipt
             </button>
-            <button 
-              type="button" 
+            <button
+              type="button"
               onClick={startNewSale}
               className="h-12 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 font-bold text-sm text-white shadow-md shadow-orange-500/10 flex items-center justify-center cursor-pointer transition-all active:scale-95"
             >

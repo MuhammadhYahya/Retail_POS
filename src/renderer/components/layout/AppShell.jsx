@@ -17,6 +17,13 @@ const NAV_ITEMS = {
     { path: '/staff', label: 'Staff Management', icon: Users, color: 'text-rose-500' },
     { path: '/settings', label: 'Settings', icon: Settings, color: 'text-slate-500' },
   ],
+  manager: [
+    { path: '/manager', label: 'Dashboard', icon: LayoutDashboard, color: 'text-amber-500' },
+    { path: '/billing', label: 'New Sale', icon: ShoppingCart, color: 'text-emerald-500' },
+    { path: '/products', label: 'Products', icon: Package, color: 'text-violet-500' },
+    { path: '/low-stock', label: 'Low Stock', icon: AlertTriangle, color: 'text-red-500' },
+    { path: '/reports', label: 'Reports', icon: BarChart3, color: 'text-sky-500' },
+  ],
   cashier: [
     { path: '/cashier', label: 'POS Terminal', icon: LayoutDashboard, color: 'text-amber-500' },
     { path: '/billing', label: 'New Sale', icon: ShoppingCart, color: 'text-emerald-500' },

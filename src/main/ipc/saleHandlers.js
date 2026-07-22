@@ -16,6 +16,8 @@ export function registerSaleHandlers() {
         payment: payload.payment || {},
         cashierId: session.user.id,
         notes: payload.notes,
+        saleDiscount: payload.saleDiscount || {},
+        actorRole: session.user.role,
       });
 
       let ird = null;
@@ -89,7 +91,7 @@ export function registerSaleHandlers() {
       const token = extractToken(payload);
       const session = validateSession(token);
       if (!session.success) return session;
-      const roleCheck = requireRole(session, ['cashier']);
+      const roleCheck = requireRole(session, ['cashier', 'manager', 'admin']);
       if (!roleCheck.success) return roleCheck;
       return {
         success: true,
@@ -106,7 +108,7 @@ export function registerSaleHandlers() {
       const session = validateSession(token);
       if (!session.success) return session;
 
-      const roleCheck = requireRole(session, ['admin']);
+      const roleCheck = requireRole(session, ['admin', 'manager']);
       if (!roleCheck.success) return roleCheck;
 
       const sale = saleService.voidSale({

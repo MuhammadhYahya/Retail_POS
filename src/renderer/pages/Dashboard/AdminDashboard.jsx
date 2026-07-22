@@ -24,7 +24,7 @@ const MODULES = [
   },
   {
     title: 'Staff Management',
-    description: 'Create and manage cashier and admin accounts.',
+    description: 'Create and manage cashier, manager, and admin accounts.',
     icon: Users,
     path: '/staff',
     color: 'hover:border-rose-500/35 hover:shadow-rose-500/5',

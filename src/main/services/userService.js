@@ -114,7 +114,8 @@ const userService = {
     const db = getDb();
     const usernameClean = String(username || '').trim();
     const pinString = String(pin || '').trim();
-    const normalizedRole = role === 'admin' ? 'admin' : 'cashier';
+    const normalizedRole =
+      role === 'admin' ? 'admin' : role === 'manager' ? 'manager' : 'cashier';
 
     if (!usernameClean || usernameClean.length < 2) {
       throw new Error('Username must be at least 2 characters.');
