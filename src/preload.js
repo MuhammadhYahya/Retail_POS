@@ -47,10 +47,28 @@ const validChannels = [
   'report:salesByDay',
   'report:recentSales',
   'backup:create',
+  'backup:cancel',
   'backup:list',
   'backup:listDrives',
+  'backup:history',
+  'backup:verify',
+  'backup:preview',
   'backup:restore',
+  'backup:delete',
+  'backup:openFolder',
+  'backup:getSettings',
+  'backup:updateSettings',
+  'backup:runScheduled',
+  'dialog:showOpen',
+  'dialog:showSave',
+  'export:entities',
+  'export:run',
+  'import:preview',
+  'import:run',
+  'import:cancel',
 ];
+
+const validReceiveChannels = ['backup:progress', 'import:progress'];
 
 contextBridge.exposeInMainWorld('electronAPI', {
   invoke: (channel, data) => {
@@ -58,5 +76,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
       throw new Error(`Blocked IPC channel: ${channel}`);
     }
     return ipcRenderer.invoke(channel, data);
+  },
+  on: (channel, callback) => {
+    if (!validReceiveChannels.includes(channel)) {
+      throw new Error(`Blocked IPC receive channel: ${channel}`);
+    }
+    const subscription = (_event, payload) => callback(payload);
+    ipcRenderer.on(channel, subscription);
+    return () => {
+      ipcRenderer.removeListener(channel, subscription);
+    };
+  },
+  off: (channel, callback) => {
+    if (!validReceiveChannels.includes(channel)) {
+      throw new Error(`Blocked IPC receive channel: ${channel}`);
+    }
+    ipcRenderer.removeListener(channel, callback);
   },
 });

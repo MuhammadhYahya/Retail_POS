@@ -17,6 +17,13 @@ export async function invokeWithAuth(channel, data = {}) {
   return response;
 }
 
+export function subscribeProgress(channel, handler) {
+  if (!window.electronAPI?.on) {
+    return () => {};
+  }
+  return window.electronAPI.on(channel, handler);
+}
+
 export function getDashboardPath(role) {
   if (role === 'admin') return '/admin';
   if (role === 'manager') return '/manager';

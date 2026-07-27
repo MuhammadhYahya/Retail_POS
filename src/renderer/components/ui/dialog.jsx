@@ -12,7 +12,7 @@ function Dialog({ open, onOpenChange, children, dismissible = true }) {
           if (dismissible) onOpenChange?.(false);
         }}
       />
-      <div className="relative z-50 w-full max-w-md mx-4">{children}</div>
+      <div className="relative z-50 w-full max-w-2xl mx-4">{children}</div>
     </div>
   );
 }

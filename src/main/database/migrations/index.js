@@ -9,6 +9,7 @@ import * as migration008 from './008_products.js';
 import * as migration009 from './009_sales.js';
 import * as migration010 from './010_product_fields.js';
 import * as migration011 from './011_discounts.js';
+import * as migration012 from './012_backup_system.js';
 
 const migrations = [
   migration001,
@@ -22,9 +23,18 @@ const migrations = [
   migration009,
   migration010,
   migration011,
+  migration012,
 ];
 
-export function runMigrations(db) {
+export function getLatestMigrationVersion() {
+  return migrations[migrations.length - 1].version;
+}
+
+export function getMigrationVersions() {
+  return migrations.map((m) => m.version);
+}
+
+export function getPendingMigrations(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS _migrations (
       version TEXT PRIMARY KEY,
@@ -32,14 +42,35 @@ export function runMigrations(db) {
     );
   `);
 
-  const applied = db
-    .prepare('SELECT version FROM _migrations')
-    .all()
-    .map((m) => m.version);
+  const applied = new Set(
+    db
+      .prepare('SELECT version FROM _migrations')
+      .all()
+      .map((m) => m.version)
+  );
 
-  for (const migration of migrations) {
-    if (applied.includes(migration.version)) continue;
+  return migrations.filter((migration) => !applied.has(migration.version));
+}
 
+/**
+ * @param {import('better-sqlite3').Database} db
+ * @param {{ beforePending?: (pending: typeof migrations) => void }} [options]
+ */
+export function runMigrations(db, options = {}) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS _migrations (
+      version TEXT PRIMARY KEY,
+      applied_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  const pending = getPendingMigrations(db);
+
+  if (pending.length > 0 && typeof options.beforePending === 'function') {
+    options.beforePending(pending);
+  }
+
+  for (const migration of pending) {
     const transaction = db.transaction(() => {
       migration.up(db);
 

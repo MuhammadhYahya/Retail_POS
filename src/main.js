@@ -1,7 +1,7 @@
 import { app, BrowserWindow } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
-import { getDb } from './main/database/db.js';
+import { getDb, closeDb } from './main/database/db.js';
 import { registerAuthHandlers } from './main/ipc/authHandlers.js';
 import { registerUserHandlers } from './main/ipc/userHandlers.js';
 import { registerProductHandlers } from './main/ipc/productHandlers.js';
@@ -9,8 +9,11 @@ import { registerSaleHandlers } from './main/ipc/saleHandlers.js';
 import {
   registerSettingsHandlers,
   registerReportHandlers,
-  registerBackupHandlers,
 } from './main/ipc/settingsHandlers.js';
+import { registerBackupHandlers, registerDialogHandlers } from './main/ipc/backupHandlers.js';
+import { registerImportExportHandlers } from './main/ipc/importExportHandlers.js';
+import backupScheduleService from './main/services/backup/backupScheduleService.js';
+import { ensureReservedDataDirs } from './main/services/backup/dataRootRegistry.js';
 
 if (started) {
   app.quit();
@@ -55,6 +58,12 @@ function createWindow() {
 
 app.on('before-quit', () => {
   clearSessionStore();
+  backupScheduleService.stopScheduler();
+  try {
+    closeDb();
+  } catch {
+    // ignore
+  }
 });
 
 app.on('window-all-closed', () => {
@@ -69,8 +78,9 @@ app.on('activate', () => {
   }
 });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   getDb();
+  ensureReservedDataDirs();
   clearSessionStore();
   registerAuthHandlers();
   registerUserHandlers();
@@ -79,5 +89,15 @@ app.whenReady().then(() => {
   registerSettingsHandlers();
   registerReportHandlers();
   registerBackupHandlers();
+  registerDialogHandlers();
+  registerImportExportHandlers();
   createWindow();
+
+  // Missed scheduled backups + recurring timer
+  try {
+    await backupScheduleService.checkMissedAndRun();
+  } catch (error) {
+    console.error('[main] Missed backup check failed:', error.message);
+  }
+  backupScheduleService.startScheduler();
 });
