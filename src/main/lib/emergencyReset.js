@@ -35,7 +35,7 @@ export function requestEmergencyCode(userId, username) {
   const filePath = getEmergencyResetFilePath();
 
   const contents = [
-    'POSLY Emergency Admin PIN Reset',
+    'ZEN Emergency Admin PIN Reset',
     '================================',
     `Username: ${username}`,
     `Code: ${code}`,

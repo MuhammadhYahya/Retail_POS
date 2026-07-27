@@ -21,6 +21,7 @@ const validChannels = [
   'user:resetPin',
   'category:getAll',
   'category:create',
+  'category:update',
   'category:delete',
   'product:getAll',
   'product:getById',

@@ -194,6 +194,10 @@ function buildVariantMatrix(productName, axes, existingRows = []) {
 function productToForm(product, { step = 1 } = {}) {
   const variants = product.variants?.length ? product.variants : [null];
   const isMatrix = variants.length > 1;
+  const hasSharedVariantPrice = isMatrix && variants.every(
+    (variant) => Number(variant.sellingPrice) === Number(variants[0].sellingPrice)
+      && Number(variant.costPrice) === Number(variants[0].costPrice)
+  );
   const axes = isMatrix ? deriveVariantAxes(product.variants || []) : { sizes: [], colors: [] };
 
   return {
@@ -207,6 +211,10 @@ function productToForm(product, { step = 1 } = {}) {
     categoryId: product.categoryId || '',
     imageUrls: Array.isArray(product.imageUrls) ? [...product.imageUrls] : [],
     variantMode: isMatrix ? 'matrix' : 'single',
+    pricingMode: hasSharedVariantPrice ? 'single' : 'different',
+    quickSellingPrice: isMatrix ? String(variants[0]?.sellingPrice ?? '') : '',
+    quickCostPrice: isMatrix ? String(variants[0]?.costPrice ?? '') : '',
+    quickStock: isMatrix ? String(variants[0]?.inventory?.onHand ?? '') : '',
     singleVariant: !isMatrix && variants[0]
       ? {
           id: variants[0].id,
@@ -257,6 +265,10 @@ function emptyProductForm(categoryId = '') {
     categoryId: categoryId || '',
     imageUrls: [],
     variantMode: 'single',
+    pricingMode: 'single',
+    quickSellingPrice: '',
+    quickCostPrice: '',
+    quickStock: '',
     singleVariant: newVariantDraft(0),
     variantAxes: { sizes: '', colors: '' },
     variantRows: [],
@@ -275,6 +287,22 @@ function readFileAsDataUrl(file) {
 function categoryDisplayName(category) {
   if (!category) return 'Uncategorized';
   return category.path || category.name;
+}
+
+function formatVariantDetails(variant) {
+  const attributes = variant?.attributes && typeof variant.attributes === 'object'
+    ? variant.attributes
+    : {};
+  const preferredKeys = ['size', 'color', 'colour'];
+  const keys = [
+    ...preferredKeys.filter((key) => Object.prototype.hasOwnProperty.call(attributes, key)),
+    ...Object.keys(attributes).filter((key) => !preferredKeys.includes(key)),
+  ];
+  const details = keys
+    .map((key) => `${key.charAt(0).toUpperCase()}${key.slice(1)}: ${String(attributes[key]).trim()}`)
+    .filter((detail) => !detail.endsWith(':'));
+
+  return details.length ? details.join(' · ') : cleanText(variant?.name) || 'Variant';
 }
 
 function parseSearchQuery(rawQuery) {
@@ -344,9 +372,13 @@ function isWithinDateRange(product, from, to) {
   return true;
 }
 
-function hasRequiredBarcodes(form) {
+function findInvalidPriceVariant(form) {
   const variants = form.variantMode === 'matrix' ? form.variantRows : [form.singleVariant];
-  return variants.length > 0 && variants.every((variant) => cleanText(variant?.barcode));
+  return variants.find((variant) => {
+    const selling = Number(form.variantMode === 'matrix' && form.pricingMode === 'single' ? form.quickSellingPrice : variant?.sellingPrice);
+    const cost = Number(form.variantMode === 'matrix' && form.pricingMode === 'single' ? form.quickCostPrice : variant?.costPrice);
+    return Number.isFinite(selling) && Number.isFinite(cost) && selling < cost;
+  });
 }
 
 function prepareProductPayload(form) {
@@ -366,6 +398,9 @@ function prepareProductPayload(form) {
       variants: form.variantRows.map((variant, index) => {
         const parsed = normalizeVariantForPayload({
           ...variant,
+          ...(form.pricingMode === 'single'
+            ? { sellingPrice: form.quickSellingPrice, costPrice: form.quickCostPrice }
+            : {}),
           sortOrder: variant.sortOrder ?? index,
         });
         return {
@@ -415,7 +450,7 @@ export default function ProductsManagement() {
   const [deleteCategoryDialogOpen, setDeleteCategoryDialogOpen] = useState(false);
 
   const [form, setForm] = useState(emptyProductForm());
-  const [categoryForm, setCategoryForm] = useState({ name: '', parentId: '' });
+  const [categoryForm, setCategoryForm] = useState({ id: '', name: '', parentId: '', mode: 'create' });
   const [stockForm, setStockForm] = useState({
     variantId: '',
     quantity: '',
@@ -565,6 +600,15 @@ export default function ProductsManagement() {
     });
   }, [products, selectedCategoryId, appliedDateRange, searchQuery]);
 
+  const productRows = useMemo(() => filteredProducts.flatMap((product) => {
+    const variants = product.variants?.length ? product.variants : [null];
+    return variants.map((variant) => ({
+      product,
+      variant,
+      isVariantRow: variants.length > 1,
+    }));
+  }), [filteredProducts]);
+
   const openCreateProduct = (categoryId = '') => {
     if (!isAdmin) return;
     setDialogError('');
@@ -671,8 +715,9 @@ export default function ProductsManagement() {
       return;
     }
 
-    if (!hasRequiredBarcodes(form)) {
-      setDialogError('Barcode is required. Scan or type the product barcode.');
+    const invalidPriceVariant = findInvalidPriceVariant(form);
+    if (invalidPriceVariant) {
+      setDialogError(`Selling price cannot be lower than cost price for variant "${invalidPriceVariant.name || 'Unnamed variant'}".`);
       return;
     }
 
@@ -756,11 +801,63 @@ export default function ProductsManagement() {
 
     if (response.success) {
       setCategoryDialogOpen(false);
-      setCategoryForm({ name: '', parentId: '' });
+      setCategoryForm({ id: '', name: '', parentId: '', mode: 'create' });
       notifySuccess(`Category "${response.data?.name || categoryForm.name}" created.`);
       loadData();
     } else {
       setDialogError(response.error || 'Failed to save category');
+    }
+  };
+
+  const openEditCategoryDialog = (category) => {
+    if (!isAdmin) return;
+    setDialogError('');
+    setCategoryForm({
+      id: category.id,
+      name: category.name,
+      parentId: category.parentId || '',
+      mode: 'edit',
+    });
+    setCategoryDialogOpen(true);
+  };
+
+  const handleSaveCategory = async (event) => {
+    event.preventDefault();
+    setDialogError('');
+
+    const name = cleanText(categoryForm.name);
+    if (!name) {
+      setDialogError('Category name is required.');
+      return;
+    }
+
+    if (categoryForm.mode === 'create') {
+      await handleCreateCategory(event);
+      return;
+    }
+
+    const conflict = findCategoryNameConflict(name, categoryForm.parentId || null);
+    if (conflict && conflict.id !== categoryForm.id) {
+      setDialogError(
+        `A category named "${conflict.name}" already exists here. Names must be unique (case does not matter).`
+      );
+      return;
+    }
+
+    setSaving(true);
+    const response = await invokeWithAuth('category:update', {
+      categoryId: categoryForm.id,
+      name,
+    });
+    setSaving(false);
+
+    if (response.success) {
+      setCategoryDialogOpen(false);
+      setCategoryForm({ id: '', name: '', parentId: '', mode: 'create' });
+      notifySuccess(`Category "${response.data?.name || name}" updated.`);
+      await loadData();
+    } else {
+      setDialogError(response.error || 'Failed to update category');
     }
   };
 
@@ -894,8 +991,10 @@ export default function ProductsManagement() {
     if (!isAdmin) return;
     setDialogError('');
     setCategoryForm({
+      id: '',
       name: '',
       parentId: parentId || selectedCategoryId || '',
+      mode: 'create',
     });
     setCategoryDialogOpen(true);
   };
@@ -1062,17 +1161,30 @@ export default function ProductsManagement() {
                         <div className="flex items-center gap-2 min-w-0">
                           <p className="font-medium truncate">{category.name}</p>
                           {isAdmin && (
-                            <button
-                              type="button"
-                              className="rounded-md p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                              title="Delete category"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                requestDeleteCategory(category);
-                              }}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                className="rounded-md p-1 text-muted-foreground hover:text-primary hover:bg-primary/10"
+                                title="Edit category"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openEditCategoryDialog(category);
+                                }}
+                              >
+                                <PencilLine className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                className="rounded-md p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                title="Delete category"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  requestDeleteCategory(category);
+                                }}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
                           )}
                         </div>
                         <p className="text-xs text-muted-foreground mt-1">
@@ -1109,7 +1221,7 @@ export default function ProductsManagement() {
           <div className="px-4 py-3 border-b border-border flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-medium">
               {selectedCategory ? `Products in ${selectedCategory.name}` : 'All products'}
-              <span className="text-muted-foreground font-normal"> ({filteredProducts.length})</span>
+              <span className="text-muted-foreground font-normal"> ({productRows.length})</span>
             </p>
           </div>
 
@@ -1142,17 +1254,18 @@ export default function ProductsManagement() {
                   <TableHead>Product</TableHead>
                   <TableHead>Category</TableHead>
                   <TableHead>SKU / Barcode</TableHead>
-                  <TableHead>Price</TableHead>
+                  <TableHead>Selling Price</TableHead>
+                  <TableHead>Cost Price</TableHead>
                   <TableHead>Stock</TableHead>
                   {isAdmin && <TableHead className="text-right">Actions</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredProducts.map((product) => {
-                  const defaultVariant = product.defaultVariant || product.variants?.[0] || null;
+                {productRows.map(({ product, variant, isVariantRow }) => {
+                  const defaultVariant = variant || product.defaultVariant || product.variants?.[0] || null;
                   const thumb = product.imageUrls?.[0];
                   return (
-                    <TableRow key={product.id}>
+                    <TableRow key={`${product.id}-${defaultVariant?.id || 'product'}`}>
                       <TableCell>
                         <div className="flex items-center gap-3">
                           <div className="h-12 w-12 rounded-lg border border-border bg-muted/40 overflow-hidden shrink-0 flex items-center justify-center">
@@ -1163,12 +1276,12 @@ export default function ProductsManagement() {
                             )}
                           </div>
                           <div className="space-y-1 min-w-0">
-                            <p className="font-medium truncate">{product.name}</p>
-                            {(product.brand || (product.variants?.length || 0) > 1) && (
+                            <p className="font-medium truncate">{product.name}{isVariantRow ? ` / ${defaultVariant?.name || 'Variant'}` : ''}</p>
+                            {(product.brand || isVariantRow) && (
                               <p className="text-xs text-muted-foreground truncate">
                                 {product.brand || ''}
                                 {product.brand && (product.variants?.length || 0) > 1 ? ' · ' : ''}
-                                {(product.variants?.length || 0) > 1 ? `${product.variants.length} variants` : ''}
+                                {isVariantRow ? formatVariantDetails(defaultVariant) : ''}
                               </p>
                             )}
                           </div>
@@ -1201,9 +1314,12 @@ export default function ProductsManagement() {
                         )}
                       </TableCell>
                       <TableCell>
+                        {defaultVariant ? formatCurrency(defaultVariant.costPrice) : <span className="text-muted-foreground text-sm">—</span>}
+                      </TableCell>
+                      <TableCell>
                         <p className="font-medium flex items-center gap-1">
                           <Boxes className="h-4 w-4 text-primary" />
-                          {Number(product.inventoryTotal || 0)}
+                          {Number(defaultVariant?.inventory?.onHand ?? product.inventoryTotal ?? 0)}
                         </p>
                       </TableCell>
                       {isAdmin && (
@@ -1416,8 +1532,8 @@ export default function ProductsManagement() {
                             : 'border-border bg-card hover:bg-muted/40'
                         )}
                       >
-                        <p className="font-semibold">No, single price product</p>
-                        <p className="text-xs text-muted-foreground">One hidden default variant is created.</p>
+                        <p className="font-semibold">Single product</p>
+                        <p className="text-xs text-muted-foreground">One price and one default variant.</p>
                       </button>
                       <button
                         type="button"
@@ -1429,8 +1545,8 @@ export default function ProductsManagement() {
                             : 'border-border bg-card hover:bg-muted/40'
                         )}
                       >
-                        <p className="font-semibold">Yes, add variants</p>
-                        <p className="text-xs text-muted-foreground">Sizes or colors with separate prices.</p>
+                        <p className="font-semibold">Product variants</p>
+                        <p className="text-xs text-muted-foreground">Generate a simple size × color table.</p>
                       </button>
                     </div>
 
@@ -1517,7 +1633,7 @@ export default function ProductsManagement() {
                               placeholder="Scan or type"
                               autoComplete="off"
                             />
-                            {!cleanText(form.singleVariant.barcode) && <p className="mt-1 text-xs text-destructive">Barcode is required. Scan or type the product barcode.</p>}
+                            <p className="mt-1 text-xs text-muted-foreground">Optional. A barcode is generated automatically when you save.</p>
                           </div>
                           <div className="space-y-2">
                             <label className="block text-sm font-medium mb-2">SKU</label>
@@ -1568,111 +1684,42 @@ export default function ProductsManagement() {
                             Add variant row
                           </Button>
                         </div>
+                        <p className="text-xs text-muted-foreground">Generate matrix creates one variant row for every size × color combination and keeps values from matching rows.</p>
 
                         {form.variantRows.length > 0 ? (
                           <div className="space-y-4">
-                            {form.variantRows.map((variant, index) => {
-                              const skuPreview = cleanText(variant.sku);
-                              return (
-                                <div key={variant.id} className="rounded-xl border border-border p-4 space-y-4">
-                                  <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0">
-                                      <input
-                                        className={inputClassName}
-                                        value={variant.name}
-                                        onChange={(e) => updateVariantRow(index, 'name', e.target.value)}
-                                        placeholder={`Variant ${index + 1}`}
-                                      />
-                                      <div className="mt-2 text-xs text-muted-foreground">
-                                        SKU: {skuPreview || 'Will be generated on save'}
-                                      </div>
-                                    </div>
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => removeVariantRow(index)}
-                                      disabled={form.variantRows.length === 1}
-                                      title="Remove"
-                                    >
-                                      <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                  </div>
-                                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                                    <div>
-                                      <label className="block text-xs font-medium mb-1">Selling Price (Rs.)</label>
-                                      <input
-                                        type="number"
-                                        step="0.01"
-                                        min="0"
-                                        className={inputClassName}
-                                        value={variant.sellingPrice}
-                                        onChange={(e) => updateVariantRow(index, 'sellingPrice', e.target.value)}
-                                        placeholder="0"
-                                      />
-                                    </div>
-                                    <div>
-                                      <label className="block text-xs font-medium mb-1">Cost Price (Rs.)</label>
-                                      <input
-                                        type="number"
-                                        step="0.01"
-                                        min="0"
-                                        className={inputClassName}
-                                        value={variant.costPrice}
-                                        onChange={(e) => updateVariantRow(index, 'costPrice', e.target.value)}
-                                        placeholder="0"
-                                        data-focus={index === 0 ? 'variant-cost' : undefined}
-                                      />
-                                    </div>
-                                    <div>
-                                      <label className="block text-xs font-medium mb-1">Stock</label>
-                                      <input
-                                        type="number"
-                                        step="1"
-                                        min="0"
-                                        className={inputClassName}
-                                        value={variant.initialStock}
-                                        onChange={(e) => updateVariantRow(index, 'initialStock', e.target.value)}
-                                        placeholder="0"
-                                        data-focus={index === 0 ? 'variant-stock' : undefined}
-                                      />
-                                    </div>
-                                    <div>
-                                      <label className="block text-xs font-medium mb-1">Low Stock Alert</label>
-                                      <input
-                                        type="number"
-                                        step="1"
-                                        min="0"
-                                        className={inputClassName}
-                                        value={variant.lowStockAlert}
-                                        onChange={(e) => updateVariantRow(index, 'lowStockAlert', e.target.value)}
-                                        placeholder="0"
-                                      />
-                                    </div>
-                                    <div>
-                                      <label className="block text-xs font-medium mb-1">Barcode</label>
-                                      <input
-                                        className={inputClassName}
-                                        value={variant.barcode}
-                                        onChange={(e) => updateVariantRow(index, 'barcode', e.target.value)}
-                                        placeholder="Scan or type"
-                                        autoComplete="off"
-                                      />
-                                      {!cleanText(variant.barcode) && <p className="mt-1 text-xs text-destructive">Barcode is required. Scan or type the product barcode.</p>}
-                                    </div>
-                                    <div>
-                                      <label className="block text-xs font-medium mb-1">Attributes</label>
-                                      <textarea
-                                        className={cn(inputClassName, 'min-h-24')}
-                                        value={variant.attributesText}
-                                        onChange={(e) => updateVariantRow(index, 'attributesText', e.target.value)}
-                                        placeholder='{"size":"Large","color":"Red"}'
-                                      />
-                                    </div>
-                                  </div>
+                            <div className={cn('rounded-xl border p-4', form.pricingMode === 'different' ? 'border-border bg-muted/50 text-muted-foreground' : 'border-border bg-muted/20')}>
+                              <div className="flex flex-wrap items-end gap-3">
+                                <div>
+                                  <p className="text-sm font-semibold">Pricing mode</p>
+                                  <p className="text-xs text-muted-foreground">{form.pricingMode === 'different' ? 'Shared prices are locked. Edit prices in each variant row.' : 'Choose one price for all rows.'}</p>
                                 </div>
-                              );
-                            })}
+                                <label className="flex items-center gap-2 text-sm"><input type="radio" checked={form.pricingMode !== 'different'} onChange={() => setForm((prev) => ({ ...prev, pricingMode: 'single' }))} /> Single Price for All Variants</label>
+                                <label className="flex items-center gap-2 text-sm"><input type="radio" checked={form.pricingMode === 'different'} onChange={() => setForm((prev) => ({ ...prev, pricingMode: 'different' }))} /> Different Price per Variant</label>
+                              </div>
+                              <div className="mt-3 flex flex-wrap items-end gap-3">
+                                <div><label className="block text-xs font-medium mb-1">Selling Price</label><input disabled={form.pricingMode === 'different'} className={cn(inputClassName, 'w-36', form.pricingMode === 'different' && 'cursor-not-allowed opacity-60')} type="number" min="0" value={form.quickSellingPrice || ''} onChange={(e) => updateForm('quickSellingPrice', e.target.value)} placeholder="2500" /></div>
+                                <div><label className="block text-xs font-medium mb-1">Cost Price</label><input disabled={form.pricingMode === 'different'} className={cn(inputClassName, 'w-36', form.pricingMode === 'different' && 'cursor-not-allowed opacity-60')} type="number" min="0" value={form.quickCostPrice || ''} onChange={(e) => updateForm('quickCostPrice', e.target.value)} placeholder="1800" /></div>
+                                <Button type="button" variant="outline" disabled={form.pricingMode === 'different'} onClick={() => setForm((prev) => ({ ...prev, variantRows: prev.variantRows.map((row) => ({ ...row, sellingPrice: prev.quickSellingPrice, costPrice: prev.quickCostPrice })) }))}>Apply Prices to All</Button>
+                              </div>
+                            </div>
+                            <div className="overflow-x-auto rounded-xl border border-border">
+                              <table className="w-full text-sm">
+                                <thead className="bg-muted/40"><tr className="border-b border-border"><th className="p-3 text-left">Variant</th>{form.pricingMode === 'different' && <><th className="p-3 text-left">Selling</th><th className="p-3 text-left">Cost</th></>}<th className="p-3 text-left">Stock</th><th className="p-3 text-left">Barcode</th><th className="p-3" /></tr></thead>
+                                <tbody>
+                                  {form.variantRows.map((variant, index) => (
+                                    <tr key={variant.id} className="border-b border-border last:border-0">
+                                      <td className="p-2"><input className={cn(inputClassName, 'min-w-40')} value={variant.name} onChange={(e) => updateVariantRow(index, 'name', e.target.value)} placeholder={`Variant ${index + 1}`} /><div className="mt-1 text-xs text-muted-foreground">SKU: {variant.sku || 'Auto'}</div></td>
+                                      {form.pricingMode === 'different' && <><td className="p-2"><input className="w-28 rounded-lg border border-border bg-input p-2" type="number" min="0" value={variant.sellingPrice} onChange={(e) => updateVariantRow(index, 'sellingPrice', e.target.value)} /></td><td className="p-2"><input className="w-28 rounded-lg border border-border bg-input p-2" type="number" min="0" value={variant.costPrice} onChange={(e) => updateVariantRow(index, 'costPrice', e.target.value)} /></td></>}
+                                      <td className="p-2"><input className="w-24 rounded-lg border border-border bg-input p-2" type="number" min="0" value={variant.initialStock} onChange={(e) => updateVariantRow(index, 'initialStock', e.target.value)} /></td>
+                                      <td className="p-2 text-xs text-muted-foreground">{variant.barcode || 'AUTO-GEN'}</td>
+                                      <td className="p-2"><Button type="button" variant="ghost" size="sm" onClick={() => removeVariantRow(index)} disabled={form.variantRows.length === 1}><Trash2 className="h-4 w-4" /></Button></td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                            <p className="text-xs text-muted-foreground">Barcodes and SKUs are generated automatically. Use the advanced fields after creating the product if you need overrides.</p>
                           </div>
                         ) : (
                           <p className="text-sm text-muted-foreground">
@@ -1710,7 +1757,7 @@ export default function ProductsManagement() {
                       >
                         Back
                       </Button>
-                      <Button type="submit" disabled={saving || !hasRequiredBarcodes(form)}>
+                      <Button type="submit" disabled={saving}>
                         {saving ? 'Saving...' : form.id ? 'Update Product' : 'Create Product'}
                       </Button>
                     </>
@@ -1729,7 +1776,7 @@ export default function ProductsManagement() {
           >
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>New Category</DialogTitle>
+                <DialogTitle>{categoryForm.mode === 'edit' ? 'Edit Category' : 'New Category'}</DialogTitle>
                 <DialogDescription>
                   Category names must be unique under the same parent (case does not matter).
                 </DialogDescription>
@@ -1741,7 +1788,7 @@ export default function ProductsManagement() {
                 </Alert>
               )}
 
-              <form onSubmit={handleCreateCategory} className="space-y-4">
+              <form onSubmit={handleSaveCategory} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium mb-2">Category name</label>
                   <input
@@ -1757,6 +1804,7 @@ export default function ProductsManagement() {
                     className={inputClassName}
                     value={categoryForm.parentId}
                     onChange={(e) => setCategoryForm({ ...categoryForm, parentId: e.target.value })}
+                    disabled={categoryForm.mode === 'edit'}
                   >
                     <option value="">None (top level)</option>
                     {categories.map((category) => (
@@ -1772,7 +1820,7 @@ export default function ProductsManagement() {
                     Cancel
                   </Button>
                   <Button type="submit" disabled={saving}>
-                    {saving ? 'Saving...' : 'Create Category'}
+                    {saving ? 'Saving...' : categoryForm.mode === 'edit' ? 'Save Category' : 'Create Category'}
                   </Button>
                 </DialogFooter>
               </form>

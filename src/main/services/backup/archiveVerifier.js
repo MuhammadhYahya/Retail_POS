@@ -145,7 +145,7 @@ export async function verifyBackupArchive(archivePath, { extractDir = null } = {
 
     if (manifest.encryption?.enabled) {
       throw new Error(
-        'This backup is encrypted. Please update POSLY to a version that supports encrypted backups.'
+        'This backup is encrypted. Please update ZEN to a version that supports encrypted backups.'
       );
     }
 
@@ -204,7 +204,7 @@ export function checkVersionCompatibility(manifest, versionJson) {
         ok: false,
         needsMigration: false,
         reason:
-          'This backup was created with a newer version of POSLY. Please update POSLY first.',
+        'This backup was created with a newer version of ZEN. Please update ZEN first.',
       };
     }
   }

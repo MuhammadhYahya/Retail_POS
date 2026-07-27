@@ -137,10 +137,10 @@ export default function BackupRestorePanel({ onMessage, onError }) {
 
   const pickBackupFile = async () => {
     const res = await invokeWithAuth('dialog:showOpen', {
-      title: 'Select POSLY backup',
+      title: 'Select ZEN backup',
       properties: ['openFile'],
       filters: [
-        { name: 'POSLY Backup', extensions: ['poslybackup'] },
+        { name: 'ZEN Backup', extensions: ['poslybackup'] },
         { name: 'Legacy DB', extensions: ['db'] },
         { name: 'All Files', extensions: ['*'] },
       ],
@@ -301,7 +301,7 @@ export default function BackupRestorePanel({ onMessage, onError }) {
     const ext = exportFormat === 'excel' || exportFormat === 'xlsx' ? 'xlsx' : exportFormat;
     const saveRes = await invokeWithAuth('dialog:showSave', {
       title: 'Export data',
-      defaultPath: `posly-${exportEntity}.${ext}`,
+      defaultPath: `zen-${exportEntity}.${ext}`,
       filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
     });
     if (!saveRes.success || saveRes.data.canceled || !saveRes.data.filePath) return;
@@ -668,7 +668,7 @@ export default function BackupRestorePanel({ onMessage, onError }) {
             <div className="space-y-2 text-sm">
               <p><span className="text-muted-foreground">Business:</span> {restorePreview.manifest.businessName || '—'}</p>
               <p><span className="text-muted-foreground">Created:</span> {restorePreview.manifest.createdAt || `${restorePreview.manifest.date} ${restorePreview.manifest.time}`}</p>
-              <p><span className="text-muted-foreground">POSLY Version:</span> {restorePreview.manifest.applicationVersion || '—'}</p>
+            <p><span className="text-muted-foreground">ZEN Version:</span> {restorePreview.manifest.applicationVersion || '—'}</p>
               <p><span className="text-muted-foreground">Database Version:</span> {restorePreview.manifest.databaseVersion || '—'}</p>
               <p><span className="text-muted-foreground">Sales:</span> {restorePreview.manifest.salesCount ?? '—'}</p>
               <p><span className="text-muted-foreground">Products:</span> {restorePreview.manifest.productCount ?? '—'}</p>

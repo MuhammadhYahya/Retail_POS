@@ -13,7 +13,7 @@ const irdService = {
     const shop = settings || settingsService.get();
     return {
       seller_tin: shop.shopTin || '',
-      seller_name: shop.shopName || 'POSLY Store',
+      seller_name: shop.shopName || 'ZEN Store',
       invoice_no: sale.invoiceNumber,
       date: sale.saleDate,
       currency: shop.currency || 'LKR',

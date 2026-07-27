@@ -44,7 +44,7 @@ const importExportService = {
       const fmt = String(format).toLowerCase();
       if (entityId === 'reports' && fmt === 'pdf') {
         const lines = rows.map((r) => JSON.stringify(r));
-        await writePdfReport(filePath, { title: `POSLY ${reportType || 'Report'}`, lines });
+        await writePdfReport(filePath, { title: `ZEN ${reportType || 'Report'}`, lines });
         emitProgress(id, { stage: 'Completed', percent: 100, channel: 'import:progress' });
         return { path: filePath, format: 'pdf', rowCount: rows.length };
       }

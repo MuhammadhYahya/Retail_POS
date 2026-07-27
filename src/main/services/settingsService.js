@@ -17,7 +17,7 @@ function cleanText(value) {
 function mapSettings(row) {
   if (!row) {
     return {
-      shopName: 'POSLY Store',
+      shopName: 'ZEN Store',
       shopAddress: '',
       shopPhone: '',
       shopTin: '',
@@ -36,7 +36,7 @@ function mapSettings(row) {
   }
 
   return {
-    shopName: row.shop_name || 'POSLY Store',
+    shopName: !row.shop_name || row.shop_name === 'POSLY Store' ? 'ZEN Store' : row.shop_name,
     shopAddress: row.shop_address || '',
     shopPhone: row.shop_phone || '',
     shopTin: row.shop_tin || '',

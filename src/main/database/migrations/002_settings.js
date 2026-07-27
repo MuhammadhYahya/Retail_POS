@@ -5,7 +5,7 @@ export function up(db) {
     CREATE TABLE IF NOT EXISTS settings (
       id INTEGER PRIMARY KEY CHECK(id = 1),
 
-      shop_name TEXT DEFAULT 'POSLY Store',
+      shop_name TEXT DEFAULT 'ZEN Store',
       currency TEXT DEFAULT 'LKR',
       language TEXT DEFAULT 'en',
 
@@ -24,7 +24,7 @@ export function up(db) {
       (id, shop_name, currency, language)
       VALUES (1, ?, ?, ?)
     `).run(
-      'POSLY Store',
+      'ZEN Store',
       'LKR',
       'en'
     );

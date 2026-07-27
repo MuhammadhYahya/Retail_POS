@@ -6,7 +6,7 @@ export function AuthLayout({ children, title, subtitle }) {
     <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-6">
       <div className="w-full max-w-lg">
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-black text-primary tracking-tight">POSLY</h1>
+          <img src="/logo.png" alt="ZEN" className="mx-auto h-16 w-auto object-contain" />
           {title && <p className="text-xl font-semibold mt-4">{title}</p>}
           {subtitle && <p className="text-muted-foreground text-sm mt-2">{subtitle}</p>}
         </div>

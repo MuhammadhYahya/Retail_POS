@@ -283,7 +283,7 @@ export default function BillingPage() {
 
   const handlePrintReceipt = () => {
     if (!completedSale) return;
-    const shopName = settings?.shopName || 'POSLY Store';
+    const shopName = settings?.shopName || 'ZEN Store';
     const win = window.open('', '_blank', 'width=400,height=700');
     if (!win) {
       setError('Pop-up blocked. Allow pop-ups to print the receipt.');

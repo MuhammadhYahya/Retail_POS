@@ -20,7 +20,7 @@ export function requestAdminRecoveryCode() {
   const filePath = getAdminRecoveryFilePath();
 
   const contents = [
-    'POSLY Admin Recovery',
+    'ZEN Admin Recovery',
     '====================',
     `Code: ${code}`,
     `ExpiresAt: ${expiresAt}`,

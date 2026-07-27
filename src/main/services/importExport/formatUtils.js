@@ -129,7 +129,7 @@ export async function writePdfReport(filePath, { title, lines }) {
     const doc = new PDFDocument({ margin: 50 });
     const stream = fs.createWriteStream(filePath);
     doc.pipe(stream);
-    doc.fontSize(18).text(title || 'POSLY Report', { underline: true });
+    doc.fontSize(18).text(title || 'ZEN Report', { underline: true });
     doc.moveDown();
     doc.fontSize(11);
     for (const line of lines || []) {

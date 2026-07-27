@@ -219,12 +219,10 @@ export default function LoginPage() {
           <div>
             {/* Logo and Brand */}
             <div className="flex items-center gap-3 mb-6">
-              <span className="p-3 bg-gradient-to-tr from-amber-500 to-orange-600 rounded-2xl shadow-lg shadow-orange-500/20 text-white font-extrabold text-2xl tracking-wider select-none">
-                P
-              </span>
+              <img src="/logo.png" alt="ZEN" className="h-16 w-16 rounded-2xl object-contain shadow-lg shadow-orange-500/20" />
               <div>
                 <h1 className="text-3xl font-black tracking-tight bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">
-                  POSLY
+                  ZEN
                 </h1>
                 <p className="text-xs text-muted-foreground font-semibold uppercase tracking-widest mt-0.5">Point of Sale</p>
               </div>
@@ -327,7 +325,7 @@ export default function LoginPage() {
             )}
           </div>
           <div className="text-xs text-muted-foreground/60 mt-6 pt-4 border-t border-border/40">
-            POSLY Terminal v1.0.0 &bull; Secure offline database
+            ZEN Terminal v1.0.0 &bull; Secure offline database
           </div>
         </div>
 

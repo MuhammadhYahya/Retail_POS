@@ -57,8 +57,9 @@ function AuthBootstrap() {
 
   if (!isInitialized) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background text-muted-foreground">
-        Loading...
+      <div className="min-h-screen flex flex-col items-center justify-center gap-5 bg-background text-muted-foreground">
+        <img src="/front loading image.png" alt="ZEN loading" className="max-h-56 max-w-[min(80vw,28rem)] object-contain" />
+        <p className="text-sm">Loading ZEN...</p>
       </div>
     );
   }

@@ -97,12 +97,10 @@ export default function AppShell({ children, title, description }) {
       {/* Sidebar navigation */}
       <aside className="w-64 h-screen border-r border-border bg-card flex flex-col shrink-0 select-none">
         <button type="button" onClick={() => navigate(getDashboardPath(user?.role))} className="p-6 border-b border-border/40 flex items-center gap-3 text-left cursor-pointer hover:bg-muted/30">
-          <span className="p-2.5 bg-gradient-to-tr from-amber-500 to-orange-600 rounded-xl shadow-md shadow-orange-500/10 text-white font-extrabold text-lg select-none">
-            P
-          </span>
+          <img src="/logo.png" alt="ZEN" className="h-11 w-11 rounded-xl object-contain shadow-md shadow-orange-500/10" />
           <div>
             <h1 className="text-xl font-black tracking-tight bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">
-              POSLY
+              ZEN
             </h1>
             <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest mt-0.5">Point of Sale</p>
           </div>

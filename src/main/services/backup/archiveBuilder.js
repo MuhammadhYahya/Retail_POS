@@ -46,8 +46,8 @@ function tableExists(db, name) {
 export function collectManifestStats(db = getDb()) {
   const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get() || {};
   return {
-    businessName: settings.shop_name || 'POSLY Store',
-    storeName: settings.shop_name || 'POSLY Store',
+    businessName: settings.shop_name || 'ZEN Store',
+    storeName: settings.shop_name || 'ZEN Store',
     currency: settings.currency || 'LKR',
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
     productCount: countSafe(db, 'SELECT COUNT(*) AS c FROM products WHERE deleted_at IS NULL'),

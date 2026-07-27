@@ -72,6 +72,10 @@ function generateDailySku(db, timestamp = now(), sequenceOffset = 0) {
   return `PRD-${day}-${String(nextSequence).padStart(4, '0')}`;
 }
 
+function generateBarcode() {
+  return `AUTO-${Date.now()}-${crypto.randomUUID().split('-')[0].toUpperCase()}`;
+}
+
 function normalizeCategoryRow(row, depth = 0, path = []) {
   return {
     id: row.id,
@@ -232,8 +236,12 @@ function prepareVariantPayload(productName, variant, index = 0, isSimpleDefault 
   const normalized = parseJsonObject(variant?.attributes || variant?.attributesJson);
   const variantName = cleanText(variant?.name) || productName;
   const sku = cleanText(variant?.sku);
-  const barcode = cleanText(variant?.barcode);
-  assertTruthy(barcode, 'Barcode is required. Scan or type the product barcode.');
+  const barcode = cleanText(variant?.barcode) || generateBarcode();
+  const sellingPrice = toNumber(variant?.sellingPrice ?? variant?.selling_price, 0);
+  const costPrice = toNumber(variant?.costPrice ?? variant?.cost_price, 0);
+  if (sellingPrice < costPrice) {
+    throw new Error(`Selling price cannot be lower than cost price for variant "${variantName}".`);
+  }
 
   return {
     id: cleanText(variant?.id) || crypto.randomUUID(),
@@ -241,8 +249,8 @@ function prepareVariantPayload(productName, variant, index = 0, isSimpleDefault 
     sku,
     barcode,
     attributesJson: JSON.stringify(normalized),
-    sellingPrice: toNumber(variant?.sellingPrice ?? variant?.selling_price, 0),
-    costPrice: toNumber(variant?.costPrice ?? variant?.cost_price, 0),
+    sellingPrice,
+    costPrice,
     lowStockAlert: normalizeLowStockAlert(variant?.lowStockAlert ?? variant?.low_stock_alert),
     trackInventory: variant?.trackInventory === false || variant?.track_inventory === 0 ? 0 : 1,
     isDefault: (variant?.isDefault || isSimpleDefault) ? 1 : 0,
@@ -328,6 +336,45 @@ const productService = {
       parentId: parentId || null,
       isActive: true,
       createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+  },
+
+  updateCategory(categoryId, { name } = {}) {
+    const db = getDb();
+    const cleanCategoryId = cleanText(categoryId);
+    const categoryName = cleanText(name);
+    assertTruthy(cleanCategoryId, 'Category ID is required.');
+    assertTruthy(categoryName, 'Category name is required.');
+
+    const category = db.prepare(`
+      SELECT id, name, parent_id, is_active
+      FROM categories
+      WHERE id = ? AND deleted_at IS NULL
+    `).get(cleanCategoryId);
+    if (!category) throw new Error('Category not found.');
+
+    const duplicate = findCategoryDuplicate(db, categoryName, category.parent_id, cleanCategoryId);
+    if (duplicate) {
+      throw new Error(
+        `A category named "${duplicate.name}" already exists here. Category names must be unique (case does not matter).`
+      );
+    }
+
+    const timestamp = now();
+    wrapDbCall(() => {
+      db.prepare(`
+        UPDATE categories
+        SET name = ?, updated_at = ?
+        WHERE id = ? AND deleted_at IS NULL
+      `).run(categoryName, timestamp, cleanCategoryId);
+    });
+
+    return {
+      id: category.id,
+      name: categoryName,
+      parentId: category.parent_id || null,
+      isActive: Boolean(category.is_active),
       updatedAt: timestamp,
     };
   },

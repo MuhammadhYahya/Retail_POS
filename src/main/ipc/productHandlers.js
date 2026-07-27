@@ -45,6 +45,26 @@ export function registerProductHandlers() {
     }
   });
 
+  ipcMain.handle('category:update', async (event, payload = {}) => {
+    try {
+      const token = extractToken(payload);
+      const session = validateSession(token);
+      if (!session.success) return session;
+
+      const roleCheck = requireAdmin(session);
+      if (!roleCheck.success) return roleCheck;
+
+      const category = productService.updateCategory(payload.categoryId, {
+        name: payload.name,
+      });
+      writeAuditLog(`category_update:${category.name}`, session.user.id);
+
+      return { success: true, data: category };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
   ipcMain.handle('category:delete', async (event, payload = {}) => {
     try {
       const token = extractToken(payload);
