@@ -1088,6 +1088,16 @@ const productService = {
     const timestamp = now();
 
     const tx = db.transaction(() => {
+      if (delta < 0) {
+        const balance = db
+          .prepare(`SELECT on_hand FROM inventory_balances WHERE variant_id = ?`)
+          .get(cleanVariantId);
+        const onHand = balance ? toNumber(balance.on_hand) : 0;
+        if (onHand + delta < -0.0001) {
+          throw new Error('Insufficient stock for this adjustment.');
+        }
+      }
+
       db.prepare(`
         INSERT INTO inventory_transactions (
           id, variant_id, transaction_type, quantity, unit_cost,

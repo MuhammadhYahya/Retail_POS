@@ -233,23 +233,18 @@ export default function LoginPage() {
 
             {/* Registration/Recovery CTA */}
             <div className="mb-6">
-              {registrationContext?.mode === 'recovery' ? (
+              {registrationContext?.mode === 'bootstrap' || registrationContext?.mode === 'recovery' ? (
                 <button
                   type="button"
                   className="inline-flex items-center gap-1 text-sm font-semibold text-primary hover:text-primary/80 transition-colors cursor-pointer"
                   onClick={() => navigate('/register')}
                 >
-                  Recover Admin Access &rarr;
+                  {registrationContext?.mode === 'recovery' ? 'Recover Admin Access →' : 'Create Admin Account →'}
                 </button>
               ) : (
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:text-primary/85 transition-colors cursor-pointer"
-                  onClick={() => navigate('/register')}
-                >
-                  <span className="flex items-center justify-center w-5 h-5 rounded-full bg-primary/10 text-xs font-bold text-primary">+</span>
-                  Create New Account
-                </button>
+                <p className="text-xs text-muted-foreground">
+                  Staff accounts are created by an administrator under Staff Management.
+                </p>
               )}
             </div>
 

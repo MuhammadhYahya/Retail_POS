@@ -188,7 +188,7 @@ export function registerProductHandlers() {
       const session = validateSession(token);
       if (!session.success) return session;
 
-      const roleCheck = requireAdmin(session);
+      const roleCheck = requireRole(session, ['admin', 'manager']);
       if (!roleCheck.success) return roleCheck;
 
       const summary = productService.adjustStock({

@@ -110,30 +110,34 @@ export default function CashierDashboard() {
           </button>
         </div>
 
-        {/* Coming Soon Section */}
-        <div className="pt-4">
-          <h4 className="text-xs font-extrabold text-muted-foreground uppercase tracking-widest mb-4">Module Addons</h4>
-          <div className="grid gap-6 md:grid-cols-2">
-            <div className="flex gap-4 p-5 rounded-2xl border border-border bg-muted/20 opacity-60">
-              <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center text-muted-foreground shrink-0">
-                <Receipt className="h-5 w-5" />
+        {/* Day controls */}
+        <div className="grid gap-6 md:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => navigate('/day-close')}
+            className="group relative overflow-hidden rounded-3xl border border-border bg-card p-8 text-left shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5 duration-200 cursor-pointer flex flex-col justify-between h-48 hover:border-teal-500/35 focus:outline-none focus:ring-2 focus:ring-primary"
+          >
+            <div className="space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-teal-500/10 text-teal-500 flex items-center justify-center">
+                <Clock className="h-6 w-6" />
               </div>
-              <div className="space-y-1">
-                <h5 className="font-bold text-sm text-foreground">Recent Orders Log</h5>
-                <p className="text-xs text-muted-foreground">Detailed history of past invoices issued on this terminal.</p>
-              </div>
+              <h3 className="text-lg font-extrabold">Day Open / Z-Close</h3>
+              <p className="text-sm text-muted-foreground">Opening float, X-report, and end-of-day Z-report.</p>
             </div>
-
-            <div className="flex gap-4 p-5 rounded-2xl border border-border bg-muted/20 opacity-60">
-              <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center text-muted-foreground shrink-0">
-                <Clock className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate('/expenses')}
+            className="group relative overflow-hidden rounded-3xl border border-border bg-card p-8 text-left shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5 duration-200 cursor-pointer flex flex-col justify-between h-48 hover:border-lime-500/35 focus:outline-none focus:ring-2 focus:ring-primary"
+          >
+            <div className="space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-lime-500/10 text-lime-600 flex items-center justify-center">
+                <Receipt className="h-6 w-6" />
               </div>
-              <div className="space-y-1">
-                <h5 className="font-bold text-sm text-foreground">Shift Summary Reports</h5>
-                <p className="text-xs text-muted-foreground">End of day reconciliations and total register balance checks.</p>
-              </div>
+              <h3 className="text-lg font-extrabold">Expenses</h3>
+              <p className="text-sm text-muted-foreground">Record petty cash and shop costs for today&apos;s drawer.</p>
             </div>
-          </div>
+          </button>
         </div>
       </div>
       <Dialog open={Boolean(receipt)} onOpenChange={(open) => !open && setReceipt(null)}>

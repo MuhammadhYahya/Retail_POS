@@ -3,15 +3,20 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { useThemeStore } from '../../store/themeStore';
 import { Button } from '../ui/button';
-import { LogOut, LayoutDashboard, Users, ShoppingCart, Package, BarChart3, Settings, Sun, Moon, AlertTriangle } from 'lucide-react';
+import { LogOut, LayoutDashboard, Users, ShoppingCart, Package, BarChart3, Settings, Sun, Moon, AlertTriangle, Wallet, Truck, Undo2, Receipt, Tag } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { getDashboardPath, invokeWithAuth, LOW_STOCK_UPDATED_EVENT } from '../../lib/ipc';
 
 const NAV_ITEMS = {
   admin: [
     { path: '/admin', label: 'Dashboard', icon: LayoutDashboard, color: 'text-amber-500' },
+    { path: '/day-close', label: 'Day Open/Close', icon: Wallet, color: 'text-teal-500' },
     { path: '/billing', label: 'New Sale', icon: ShoppingCart, color: 'text-emerald-500' },
+    { path: '/purchases', label: 'Purchases', icon: Truck, color: 'text-cyan-500' },
     { path: '/products', label: 'Products', icon: Package, color: 'text-violet-500' },
+    { path: '/labels', label: 'Labels', icon: Tag, color: 'text-fuchsia-500' },
+    { path: '/returns', label: 'Returns', icon: Undo2, color: 'text-orange-500' },
+    { path: '/expenses', label: 'Expenses', icon: Receipt, color: 'text-lime-600' },
     { path: '/low-stock', label: 'Low Stock', icon: AlertTriangle, color: 'text-red-500' },
     { path: '/reports', label: 'Reports', icon: BarChart3, color: 'text-sky-500' },
     { path: '/staff', label: 'Staff Management', icon: Users, color: 'text-rose-500' },
@@ -19,14 +24,21 @@ const NAV_ITEMS = {
   ],
   manager: [
     { path: '/manager', label: 'Dashboard', icon: LayoutDashboard, color: 'text-amber-500' },
+    { path: '/day-close', label: 'Day Open/Close', icon: Wallet, color: 'text-teal-500' },
     { path: '/billing', label: 'New Sale', icon: ShoppingCart, color: 'text-emerald-500' },
+    { path: '/purchases', label: 'Purchases', icon: Truck, color: 'text-cyan-500' },
     { path: '/products', label: 'Products', icon: Package, color: 'text-violet-500' },
+    { path: '/labels', label: 'Labels', icon: Tag, color: 'text-fuchsia-500' },
+    { path: '/returns', label: 'Returns', icon: Undo2, color: 'text-orange-500' },
+    { path: '/expenses', label: 'Expenses', icon: Receipt, color: 'text-lime-600' },
     { path: '/low-stock', label: 'Low Stock', icon: AlertTriangle, color: 'text-red-500' },
     { path: '/reports', label: 'Reports', icon: BarChart3, color: 'text-sky-500' },
   ],
   cashier: [
     { path: '/cashier', label: 'POS Terminal', icon: LayoutDashboard, color: 'text-amber-500' },
+    { path: '/day-close', label: 'Day Open/Close', icon: Wallet, color: 'text-teal-500' },
     { path: '/billing', label: 'New Sale', icon: ShoppingCart, color: 'text-emerald-500' },
+    { path: '/expenses', label: 'Expenses', icon: Receipt, color: 'text-lime-600' },
     { path: '/products', label: 'Products', icon: Package, color: 'text-violet-500' },
     { path: '/low-stock', label: 'Low Stock', icon: AlertTriangle, color: 'text-red-500' },
   ],

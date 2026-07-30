@@ -2,10 +2,18 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import AppShell from '../../components/layout/AppShell';
-import { ShoppingCart, Package, Users, BarChart3, Settings } from 'lucide-react';
+import { ShoppingCart, Package, Users, BarChart3, Settings, Wallet, Truck, Undo2 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 const MODULES = [
+  {
+    title: 'Day Open / Close',
+    description: 'Opening float and Z-report for the cash drawer.',
+    icon: Wallet,
+    path: '/day-close',
+    color: 'hover:border-teal-500/35 hover:shadow-teal-500/5',
+    iconBg: 'bg-teal-500/10 text-teal-500',
+  },
   {
     title: 'New Sale',
     description: 'Open the register — scan, pay, and save invoices.',
@@ -15,12 +23,28 @@ const MODULES = [
     iconBg: 'bg-emerald-500/10 text-emerald-500',
   },
   {
+    title: 'Purchases / GRN',
+    description: 'Receive supplier stock into inventory.',
+    icon: Truck,
+    path: '/purchases',
+    color: 'hover:border-cyan-500/35 hover:shadow-cyan-500/5',
+    iconBg: 'bg-cyan-500/10 text-cyan-500',
+  },
+  {
     title: 'Product Module',
     description: 'Manage products, variants, categories, and inventory ledgers.',
     icon: Package,
     path: '/products',
     color: 'hover:border-violet-500/35 hover:shadow-violet-500/5',
     iconBg: 'bg-violet-500/10 text-violet-500',
+  },
+  {
+    title: 'Returns',
+    description: 'Invoice returns and refunds with stock restore.',
+    icon: Undo2,
+    path: '/returns',
+    color: 'hover:border-orange-500/35 hover:shadow-orange-500/5',
+    iconBg: 'bg-orange-500/10 text-orange-500',
   },
   {
     title: 'Staff Management',
@@ -40,7 +64,7 @@ const MODULES = [
   },
   {
     title: 'Settings',
-    description: 'Configure store preferences and system options.',
+    description: 'Shop info, tax, printer, backups, and data import/export.',
     icon: Settings,
     path: '/settings',
     color: 'hover:border-slate-500/35 hover:shadow-slate-500/5',
@@ -55,7 +79,6 @@ export default function AdminDashboard() {
   return (
     <AppShell title="Admin Dashboard" description="Manage your POS system and team.">
       <div className="space-y-8">
-        {/* Welcome Greeting Banner */}
         <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-neutral-900 via-neutral-900 to-neutral-800 dark:from-neutral-950 dark:to-neutral-900 border border-neutral-800 p-8 shadow-xl">
           <div className="relative z-10 space-y-2">
             <span className="px-3 py-1 rounded-full bg-rose-500/15 border border-rose-500/25 text-xs font-bold text-rose-400 tracking-wider uppercase">
@@ -68,21 +91,21 @@ export default function AdminDashboard() {
           <div className="absolute right-0 top-0 bottom-0 w-1/3 bg-gradient-to-l from-rose-500/5 to-transparent pointer-events-none" />
         </div>
 
-        {/* Modules Grid */}
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {MODULES.map((mod) => {
             const Icon = mod.icon;
             return (
               <button
                 key={mod.title}
+                type="button"
                 onClick={() => navigate(mod.path)}
                 className={cn(
-                  "group relative overflow-hidden rounded-2xl border border-border bg-card p-6 text-left shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5 duration-200 cursor-pointer flex flex-col justify-between h-56 focus:outline-none focus:ring-2 focus:ring-primary",
+                  'group relative overflow-hidden rounded-2xl border border-border bg-card p-6 text-left shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5 duration-200 cursor-pointer flex flex-col justify-between h-56 focus:outline-none focus:ring-2 focus:ring-primary',
                   mod.color
                 )}
               >
                 <div className="space-y-4">
-                  <div className={cn("w-12 h-12 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110", mod.iconBg)}>
+                  <div className={cn('w-12 h-12 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110', mod.iconBg)}>
                     <Icon className="h-6 w-6" />
                   </div>
                   <div className="space-y-1">

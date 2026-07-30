@@ -14,6 +14,11 @@ import BillingPage from './pages/Billing/BillingPage';
 import ReportsPage from './pages/Reports/ReportsPage';
 import SettingsPage from './pages/Settings/SettingsPage';
 import LowStockPage from './pages/Inventory/LowStockPage';
+import DayClosePage from './pages/Cash/DayClosePage';
+import PurchasesPage from './pages/Purchases/PurchasesPage';
+import ReturnsPage from './pages/Returns/ReturnsPage';
+import ExpensesPage from './pages/Expenses/ExpensesPage';
+import LabelsPage from './pages/Labels/LabelsPage';
 import RecoverySetupDialog from './components/auth/RecoverySetupDialog';
 
 function ProtectedRoute({ children }) {
@@ -170,6 +175,61 @@ function AppRoutes() {
             <ProtectedRoute>
               <RoleGuard allowedRoles={['admin']}>
                 <SettingsPage />
+              </RoleGuard>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/day-close"
+          element={
+            <ProtectedRoute>
+              <RoleGuard allowedRoles={['admin', 'manager', 'cashier']}>
+                <DayClosePage />
+              </RoleGuard>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/purchases"
+          element={
+            <ProtectedRoute>
+              <RoleGuard allowedRoles={['admin', 'manager']}>
+                <PurchasesPage />
+              </RoleGuard>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/returns"
+          element={
+            <ProtectedRoute>
+              <RoleGuard allowedRoles={['admin', 'manager']}>
+                <ReturnsPage />
+              </RoleGuard>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/expenses"
+          element={
+            <ProtectedRoute>
+              <RoleGuard allowedRoles={['admin', 'manager', 'cashier']}>
+                <ExpensesPage />
+              </RoleGuard>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/labels"
+          element={
+            <ProtectedRoute>
+              <RoleGuard allowedRoles={['admin', 'manager']}>
+                <LabelsPage />
               </RoleGuard>
             </ProtectedRoute>
           }

@@ -1,6 +1,8 @@
 import crypto from 'crypto';
 import { getDb } from '../database/db.js';
 import settingsService from './settingsService.js';
+import cashSessionService from './cashSessionService.js';
+import { colomboDateString, colomboDayCompact, colomboDayBounds } from '../lib/colomboTime.js';
 import {
   DISCOUNT_TYPES,
   assertDiscountWithinLimit,
@@ -308,6 +310,8 @@ const saleService = {
     assertTruthy(cleanCashierId, 'Cashier is required.');
     assertTruthy(Array.isArray(cartItems) && cartItems.length, 'Cart is empty.');
 
+    const openSession = cashSessionService.requireOpenSession();
+
     const paymentMethod = cleanText(payment.method || payment.paymentMethod || 'cash').toLowerCase() || 'cash';
     const allowedMethods = new Set(['cash', 'card', 'qr']);
     if (!allowedMethods.has(paymentMethod)) {
@@ -454,7 +458,7 @@ const saleService = {
       const seqRow = db.prepare('SELECT next_invoice_seq, invoice_prefix FROM settings WHERE id = 1').get();
       const invoiceSeq = toNumber(seqRow.next_invoice_seq, 1);
       const prefix = cleanText(seqRow.invoice_prefix) || 'POS';
-      const day = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const day = colomboDayCompact();
       const invoiceNumber = `${prefix}-${day}-${String(invoiceSeq).padStart(6, '0')}`;
 
       const saleId = crypto.randomUUID();
@@ -466,8 +470,8 @@ const saleService = {
           subtotal, discount_total, vat_total, total,
           payment_method, amount_tendered, change_given, status,
           ird_status, notes, is_synced, created_at, updated_at,
-          sale_discount_type, sale_discount_value
-        ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, 'completed', 'none', ?, 0, ?, ?, ?, ?)
+          sale_discount_type, sale_discount_value, session_id
+        ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, 'completed', 'none', ?, 0, ?, ?, ?, ?, ?)
       `).run(
         saleId,
         invoiceNumber,
@@ -485,7 +489,8 @@ const saleService = {
         timestamp,
         timestamp,
         totals.saleDiscountType,
-        totals.saleDiscountValue
+        totals.saleDiscountValue,
+        openSession.id
       );
 
       const insertItem = db.prepare(`
@@ -586,9 +591,10 @@ const saleService = {
     return rows.map((row) => mapSaleRow(row, []));
   },
 
-  listTodayForCashier({ cashierId, date = new Date().toISOString().slice(0, 10), limit = 100 } = {}) {
+  listTodayForCashier({ cashierId, date = colomboDateString(), limit = 100 } = {}) {
     const db = getDb();
     const take = Math.min(Math.max(toNumber(limit, 100), 1), 200);
+    const { start, end } = colomboDayBounds(date);
     const rows = db.prepare(`
       SELECT s.*, COUNT(si.id) AS item_count,
         u.display_name AS cashier_name,
@@ -599,11 +605,12 @@ const saleService = {
       WHERE s.deleted_at IS NULL
         AND s.status = 'completed'
         AND s.cashier_id = ?
-        AND substr(s.sale_date, 1, 10) = ?
+        AND s.sale_date >= ?
+        AND s.sale_date <= ?
       GROUP BY s.id
       ORDER BY s.sale_date DESC
       LIMIT ?
-    `).all(cleanText(cashierId), String(date).slice(0, 10), take);
+    `).all(cleanText(cashierId), start, end, take);
     return rows.map((row) => ({
       ...mapSaleRow(row, []),
       itemCount: Number(row.item_count || 0),

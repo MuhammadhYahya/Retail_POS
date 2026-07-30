@@ -54,6 +54,7 @@ export default function BillingPage() {
   const [receiptSeconds, setReceiptSeconds] = useState(120);
   const [saleDiscDraftType, setSaleDiscDraftType] = useState('fixed');
   const [saleDiscDraftValue, setSaleDiscDraftValue] = useState('');
+  const [dayOpen, setDayOpen] = useState(null);
 
   const items = useCartStore((state) => state.items);
   const saleDiscountType = useCartStore((state) => state.saleDiscountType);
@@ -77,9 +78,14 @@ export default function BillingPage() {
 
   useEffect(() => {
     barcodeRef.current?.focus();
-    Promise.all([invokeWithAuth('settings:get'), invokeWithAuth('product:getAll')]).then(([settingsResponse, productsResponse]) => {
+    Promise.all([
+      invokeWithAuth('settings:get'),
+      invokeWithAuth('product:getAll'),
+      invokeWithAuth('cashSession:getOpen'),
+    ]).then(([settingsResponse, productsResponse, sessionResponse]) => {
       if (settingsResponse.success) setSettings(settingsResponse.data);
       if (productsResponse.success) setCatalog(productsResponse.data || []);
+      if (sessionResponse.success) setDayOpen(sessionResponse.data);
     });
   }, []);
 
@@ -281,8 +287,17 @@ export default function BillingPage() {
     setSuccessOpen(true);
   };
 
-  const handlePrintReceipt = () => {
+  const handlePrintReceipt = async () => {
     if (!completedSale) return;
+
+    const thermal = await invokeWithAuth('printer:printReceipt', {
+      saleId: completedSale.id,
+      openDrawer: completedSale.paymentMethod === 'cash',
+    });
+    if (thermal.success && thermal.data?.success) {
+      return;
+    }
+
     const shopName = settings?.shopName || 'ZEN Store';
     const win = window.open('', '_blank', 'width=400,height=700');
     if (!win) {
@@ -366,6 +381,16 @@ export default function BillingPage() {
     <AppShell title="New Sale" description="Scan barcode, take payment, save the sale.">
       <div className="grid gap-6 xl:grid-cols-[1.35fr_1fr]">
         <div className="space-y-4">
+          {!dayOpen && (
+            <Alert variant="destructive" className="rounded-xl">
+              <AlertDescription className="font-semibold">
+                Cash day is not open. Open the day with float cash before selling.{' '}
+                <button type="button" className="underline" onClick={() => navigate('/day-close')}>
+                  Open day
+                </button>
+              </AlertDescription>
+            </Alert>
+          )}
           {error && (
             <Alert variant="destructive" className="rounded-xl border-destructive/20 bg-destructive/10">
               <AlertDescription className="text-destructive font-semibold">{error}</AlertDescription>
@@ -781,7 +806,7 @@ export default function BillingPage() {
                   <div className="p-3 bg-white rounded-xl shadow-sm border border-border/40">
                     <img src={completedSale.ird.qrData} alt="Invoice QR" className="h-32 w-32 object-contain" />
                   </div>
-                  <span className="text-[10px] text-muted-foreground font-semibold mt-2 tracking-wider">IRD GOVERNMENT QR REGISTERED</span>
+                  <span className="text-[10px] text-muted-foreground font-semibold mt-2 tracking-wider">LOCAL INVOICE QR</span>
                 </div>
               )}
             </div>

@@ -20,6 +20,7 @@ const emptyForm = {
   invoicePrefix: 'POS',
   receiptHeader: '',
   receiptFooter: '',
+  printerPort: '',
   paperWidth: 80,
   cashierMaxDiscountPct: 10,
   managerMaxDiscountPct: 25,
@@ -143,6 +144,16 @@ export default function SettingsPage() {
                   />
                 </div>
                 <div>
+                  <label className="block text-sm font-medium mb-2">Currency</label>
+                  <input
+                    className={inputClassName}
+                    value={form.currency}
+                    onChange={(e) => setForm({ ...form, currency: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
                   <label className="block text-sm font-medium mb-2">Language</label>
                   <select
                     className={inputClassName}
@@ -154,6 +165,15 @@ export default function SettingsPage() {
                     <option value="ta">Tamil</option>
                   </select>
                 </div>
+                <div>
+                  <label className="block text-sm font-medium mb-2">Receipt header</label>
+                  <input
+                    className={inputClassName}
+                    value={form.receiptHeader}
+                    onChange={(e) => setForm({ ...form, receiptHeader: e.target.value })}
+                    placeholder="Optional header line"
+                  />
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-2">Receipt footer</label>
@@ -163,6 +183,28 @@ export default function SettingsPage() {
                   onChange={(e) => setForm({ ...form, receiptFooter: e.target.value })}
                   placeholder="Thank you for shopping"
                 />
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium mb-2">Printer port</label>
+                  <input
+                    className={inputClassName}
+                    value={form.printerPort || ''}
+                    onChange={(e) => setForm({ ...form, printerPort: e.target.value })}
+                    placeholder="COM3 or \\\\.\\COM3"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-2">Paper width (mm)</label>
+                  <select
+                    className={inputClassName}
+                    value={form.paperWidth}
+                    onChange={(e) => setForm({ ...form, paperWidth: Number(e.target.value) })}
+                  >
+                    <option value={80}>80</option>
+                    <option value={58}>58</option>
+                  </select>
+                </div>
               </div>
 
               <div className="border-t border-border pt-4 space-y-4">

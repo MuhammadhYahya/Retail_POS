@@ -427,6 +427,7 @@ export default function ProductsManagement() {
   const [searchParams, setSearchParams] = useSearchParams();
   const user = useAuthStore((state) => state.user);
   const isAdmin = user?.role === 'admin';
+  const canManageStock = isAdmin || user?.role === 'manager';
 
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -507,7 +508,7 @@ export default function ProductsManagement() {
   }, []);
 
   useEffect(() => {
-    if (loading || !isAdmin) return;
+    if (loading || !canManageStock) return;
 
     const editId = searchParams.get('edit');
     if (!editId || !products.length) return;
@@ -542,7 +543,7 @@ export default function ProductsManagement() {
     setPendingFocusField(focus);
     setProductDialogOpen(true);
     setSearchParams({}, { replace: true });
-  }, [loading, products, searchParams, isAdmin, setSearchParams]);
+  }, [loading, products, searchParams, canManageStock, setSearchParams]);
 
   useEffect(() => {
     if (!productDialogOpen || !pendingFocusField || form.step !== 2) return undefined;
@@ -1257,7 +1258,7 @@ export default function ProductsManagement() {
                   <TableHead>Selling Price</TableHead>
                   <TableHead>Cost Price</TableHead>
                   <TableHead>Stock</TableHead>
-                  {isAdmin && <TableHead className="text-right">Actions</TableHead>}
+                  {canManageStock && <TableHead className="text-right">Actions</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1322,7 +1323,7 @@ export default function ProductsManagement() {
                           {Number(defaultVariant?.inventory?.onHand ?? product.inventoryTotal ?? 0)}
                         </p>
                       </TableCell>
-                      {isAdmin && (
+                      {canManageStock && (
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
                             <Button
@@ -1333,26 +1334,30 @@ export default function ProductsManagement() {
                             >
                               <ArrowDownUp className="h-4 w-4" />
                             </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => openEditProduct(product)}
-                              title="Edit product"
-                            >
-                              <PencilLine className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              onClick={() => {
-                                setDialogError('');
-                                setDeleteTarget(product);
-                                setDeleteProductDialogOpen(true);
-                              }}
-                              title="Delete product"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                            {isAdmin && (
+                              <>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => openEditProduct(product)}
+                                  title="Edit product"
+                                >
+                                  <PencilLine className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
+                                  onClick={() => {
+                                    setDialogError('');
+                                    setDeleteTarget(product);
+                                    setDeleteProductDialogOpen(true);
+                                  }}
+                                  title="Delete product"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </>
+                            )}
                           </div>
                         </TableCell>
                       )}

@@ -1,17 +1,35 @@
 import Database from 'better-sqlite3';
-import { app } from 'electron';
 import path from 'path';
 import fs from 'fs';
+import { createRequire } from 'module';
 import { runMigrations } from './migrations/index.js';
+
+const require = createRequire(import.meta.url);
+
+function getElectronApp() {
+  try {
+    return require('electron').app;
+  } catch {
+    return null;
+  }
+}
 
 let db;
 let skipMigrationSafetyBackup = false;
 
 export function getDbPath() {
+  const app = getElectronApp();
+  if (!app) {
+    throw new Error('Electron app is not available. Use openDbAtPath() for headless runs.');
+  }
   return path.join(app.getPath('userData'), 'posly.db');
 }
 
 export function getDataDir() {
+  const app = getElectronApp();
+  if (!app) {
+    throw new Error('Electron app is not available. Use openDbAtPath() for headless runs.');
+  }
   return app.getPath('userData');
 }
 
@@ -112,6 +130,21 @@ export function reopenDb() {
 
 export function isDbOpen() {
   return Boolean(db);
+}
+
+/** Headless / simulation: open a specific SQLite file and run migrations (no Electron app). */
+export function openDbAtPath(dbPath, { skipSafetyBackup = true } = {}) {
+  if (db) closeDb();
+  const dir = path.dirname(dbPath);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  skipMigrationSafetyBackup = skipSafetyBackup;
+  db = new Database(dbPath);
+  db.pragma('journal_mode = WAL');
+  db.pragma('foreign_keys = ON');
+  runMigrations(db, {
+    beforePending: () => {},
+  });
+  return db;
 }
 
 export { maybeSafetyBackupBeforeMigrations };

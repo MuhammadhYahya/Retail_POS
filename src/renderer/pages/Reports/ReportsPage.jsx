@@ -12,19 +12,27 @@ function formatMoney(value) {
   return `Rs. ${Number(value || 0).toFixed(2)}`;
 }
 
+function todayColombo() {
+  const shifted = new Date(Date.now() + (5 * 60 + 30) * 60 * 1000);
+  return shifted.toISOString().slice(0, 10);
+}
+
 export default function ReportsPage() {
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => todayColombo());
   const [summary, setSummary] = useState(null);
   const [topProducts, setTopProducts] = useState([]);
   const [salesByDay, setSalesByDay] = useState([]);
   const [recentSales, setRecentSales] = useState([]);
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const [voidingId, setVoidingId] = useState(null);
 
   const load = async (selectedDate = date) => {
     setLoading(true);
     setError('');
-    const from = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const fromDate = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000 + (5 * 60 + 30) * 60 * 1000);
+    const from = fromDate.toISOString().slice(0, 10);
 
     const [daily, top, byDay, sales] = await Promise.all([
       invokeWithAuth('report:dailySummary', { date: selectedDate }),
@@ -50,19 +58,41 @@ export default function ReportsPage() {
     load();
   }, []);
 
+  const handleVoid = async (sale) => {
+    if (sale.status === 'voided') return;
+    const reason = window.prompt(`Void invoice ${sale.invoiceNumber}. Reason:`);
+    if (!reason || !reason.trim()) return;
+    setVoidingId(sale.id);
+    setMessage('');
+    setError('');
+    const response = await invokeWithAuth('sale:void', { saleId: sale.id, reason: reason.trim() });
+    setVoidingId(null);
+    if (!response.success) {
+      setError(response.error || 'Void failed.');
+      return;
+    }
+    setMessage(`Voided ${sale.invoiceNumber}.`);
+    load(date);
+  };
+
   return (
-    <AppShell title="Sales Reports" description="Daily summary, margins, and who made each sale.">
+    <AppShell title="Sales Reports" description="Daily summary, margins, voids, and who made each sale.">
       <div className="space-y-6">
         {error && (
           <Alert variant="destructive">
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
+        {message && (
+          <Alert>
+            <AlertDescription>{message}</AlertDescription>
+          </Alert>
+        )}
 
         <div className="flex flex-wrap items-end gap-3">
           <div>
             <label className="block text-sm font-medium mb-2" htmlFor="report-date">
-              Date
+              Date (Asia/Colombo)
             </label>
             <input
               id="report-date"
@@ -113,7 +143,7 @@ export default function ReportsPage() {
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription>Cash in hand</CardDescription>
+              <CardDescription>Cash sales</CardDescription>
               <CardTitle>{formatMoney(summary?.cashTotal)}</CardTitle>
             </CardHeader>
           </Card>
@@ -134,7 +164,7 @@ export default function ReportsPage() {
         <Card>
           <CardHeader>
             <CardTitle>Sales log — {date}</CardTitle>
-            <CardDescription>Who made each sale, original vs discounted totals, and profit.</CardDescription>
+            <CardDescription>Void mistaken sales (manager/admin). Stock is restored.</CardDescription>
           </CardHeader>
           <CardContent>
             {!recentSales.length ? (
@@ -152,6 +182,7 @@ export default function ReportsPage() {
                       <th className="px-3 py-2">Paid</th>
                       <th className="px-3 py-2">Profit</th>
                       <th className="px-3 py-2">Status</th>
+                      <th className="px-3 py-2">Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -167,6 +198,21 @@ export default function ReportsPage() {
                         <td className="px-3 py-3 font-semibold">{formatMoney(sale.total)}</td>
                         <td className="px-3 py-3">{formatMoney(sale.discountedProfit)}</td>
                         <td className="px-3 py-3 capitalize">{sale.status}</td>
+                        <td className="px-3 py-3">
+                          {sale.status === 'completed' ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={voidingId === sale.id}
+                              onClick={() => handleVoid(sale)}
+                            >
+                              {voidingId === sale.id ? 'Voiding...' : 'Void'}
+                            </Button>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

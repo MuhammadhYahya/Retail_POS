@@ -11,7 +11,8 @@
     "make": "electron-forge make",
     "publish": "electron-forge publish",
     "lint": "echo \"No linting configured\"",
-    "test:backup": "node src/main/services/backup/selftest.mjs"
+    "test:backup": "node src/main/services/backup/selftest.mjs",
+    "test:v1-sim": "electron scripts/v1-shop-simulation.mjs"
   },
   "keywords": [],
   "author": "spt",

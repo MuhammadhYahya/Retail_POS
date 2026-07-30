@@ -1,4 +1,5 @@
 import { getDb } from '../database/db.js';
+import { colomboDateString, colomboDayBounds } from '../lib/colomboTime.js';
 
 function toNumber(value, fallback = 0) {
   const parsed = Number(value);
@@ -10,12 +11,7 @@ function roundMoney(value) {
 }
 
 function dayBounds(dateInput) {
-  const raw = String(dateInput || new Date().toISOString().slice(0, 10)).slice(0, 10);
-  return {
-    start: `${raw}T00:00:00.000Z`,
-    end: `${raw}T23:59:59.999Z`,
-    date: raw,
-  };
+  return colomboDayBounds(dateInput || colomboDateString());
 }
 
 const reportService = {
@@ -133,22 +129,24 @@ const reportService = {
 
   salesByDay(fromDate, toDate) {
     const db = getDb();
-    const from = String(fromDate || new Date().toISOString().slice(0, 10)).slice(0, 10);
+    const from = String(fromDate || colomboDateString()).slice(0, 10);
     const to = String(toDate || from).slice(0, 10);
+    const fromBounds = colomboDayBounds(from);
+    const toBounds = colomboDayBounds(to);
 
     return db.prepare(`
       SELECT
-        substr(sale_date, 1, 10) AS day,
+        date(sale_date, '+5 hours', '+30 minutes') AS day,
         COUNT(*) AS sale_count,
         COALESCE(SUM(total), 0) AS revenue
       FROM sales
       WHERE deleted_at IS NULL
         AND status = 'completed'
-        AND substr(sale_date, 1, 10) >= ?
-        AND substr(sale_date, 1, 10) <= ?
-      GROUP BY substr(sale_date, 1, 10)
+        AND sale_date >= ?
+        AND sale_date <= ?
+      GROUP BY date(sale_date, '+5 hours', '+30 minutes')
       ORDER BY day ASC
-    `).all(from, to).map((row) => ({
+    `).all(fromBounds.start, toBounds.end).map((row) => ({
       date: row.day,
       saleCount: toNumber(row.sale_count),
       revenue: toNumber(row.revenue),
@@ -160,7 +158,8 @@ const reportService = {
     const take = Math.min(Math.max(toNumber(limit, 50), 1), 200);
     const day = date ? String(date).slice(0, 10) : null;
 
-    const rows = day
+    const dayWindow = day ? colomboDayBounds(day) : null;
+    const rows = dayWindow
       ? db.prepare(`
           SELECT
             s.id,
@@ -180,10 +179,11 @@ const reportService = {
           FROM sales s
           LEFT JOIN users u ON u.id = s.cashier_id
           WHERE s.deleted_at IS NULL
-            AND substr(s.sale_date, 1, 10) = ?
+            AND s.sale_date >= ?
+            AND s.sale_date <= ?
           ORDER BY s.sale_date DESC
           LIMIT ?
-        `).all(day, take)
+        `).all(dayWindow.start, dayWindow.end, take)
       : db.prepare(`
           SELECT
             s.id,

@@ -257,7 +257,10 @@ export function registerAuthHandlers() {
       if (context.mode === 'bootstrap' || context.mode === 'recovery') {
         allowedRole = 'admin';
       } else {
-        allowedRole = 'cashier';
+        return {
+          success: false,
+          message: 'Public registration is disabled. Ask an administrator to create staff accounts.',
+        };
       }
 
       if (requestedRole !== allowedRole) {
