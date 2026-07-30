@@ -239,6 +239,12 @@ function prepareVariantPayload(productName, variant, index = 0, isSimpleDefault 
   const barcode = cleanText(variant?.barcode) || generateBarcode();
   const sellingPrice = toNumber(variant?.sellingPrice ?? variant?.selling_price, 0);
   const costPrice = toNumber(variant?.costPrice ?? variant?.cost_price, 0);
+  if (sellingPrice <= 0) {
+    throw new Error(`Selling price must be greater than 0 for variant "${variantName}".`);
+  }
+  if (costPrice < 0 || Number.isNaN(costPrice)) {
+    throw new Error(`Cost price must be 0 or greater for variant "${variantName}".`);
+  }
   if (sellingPrice < costPrice) {
     throw new Error(`Selling price cannot be lower than cost price for variant "${variantName}".`);
   }
@@ -790,6 +796,10 @@ const productService = {
 
       if (!variantsInput) return;
 
+      if (!Array.isArray(variantsInput) || !variantsInput.length) {
+        throw new Error('At least one variant with selling and cost prices is required.');
+      }
+
       const currentVariants = db.prepare(`
         SELECT id
         FROM product_variants
@@ -797,14 +807,12 @@ const productService = {
           AND deleted_at IS NULL
       `).all(productId);
       const existingVariantIds = new Set(currentVariants.map((variant) => variant.id));
-      const normalizedVariants = variantsInput.length
-        ? variantsInput.map((variant, index) => prepareVariantPayload(
-          nextName,
-          variant,
-          index,
-          variantsInput.length === 1
-        ))
-        : [prepareVariantPayload(nextName, {}, 0, true)];
+      const normalizedVariants = variantsInput.map((variant, index) => prepareVariantPayload(
+        nextName,
+        variant,
+        index,
+        variantsInput.length === 1
+      ));
 
       let skuIndex = 0;
       for (const variant of normalizedVariants) {
@@ -922,6 +930,18 @@ const productService = {
       }
 
       for (const variantId of existingVariantIds) {
+        const balance = db.prepare(`
+          SELECT COALESCE(on_hand, 0) AS on_hand
+          FROM inventory_balances
+          WHERE variant_id = ?
+        `).get(variantId);
+        const onHand = toNumber(balance?.on_hand, 0);
+        if (onHand > 0) {
+          const row = db.prepare(`SELECT name FROM product_variants WHERE id = ?`).get(variantId);
+          throw new Error(
+            `Cannot remove variant "${row?.name || variantId}" while ${onHand} units remain in stock. Adjust stock to 0 first.`
+          );
+        }
         db.prepare(`
           UPDATE product_variants
           SET is_active = 0,
@@ -936,8 +956,47 @@ const productService = {
     return this.getProductById(productId);
   },
 
+  getProductStockTotal(productId) {
+    const db = getDb();
+    const row = db.prepare(`
+      SELECT COALESCE(SUM(b.on_hand), 0) AS total
+      FROM product_variants v
+      LEFT JOIN inventory_balances b ON b.variant_id = v.id
+      WHERE v.product_id = ?
+        AND v.deleted_at IS NULL
+    `).get(productId);
+    return toNumber(row?.total, 0);
+  },
+
+  getVariantStock(variantId) {
+    const db = getDb();
+    const row = db.prepare(`
+      SELECT COALESCE(b.on_hand, 0) AS on_hand
+      FROM product_variants v
+      LEFT JOIN inventory_balances b ON b.variant_id = v.id
+      WHERE v.id = ?
+        AND v.deleted_at IS NULL
+    `).get(variantId);
+    return row ? toNumber(row.on_hand, 0) : 0;
+  },
+
   deleteProduct(productId) {
     const db = getDb();
+    const cleanId = cleanText(productId);
+    assertTruthy(cleanId, 'Product ID is required.');
+
+    const product = db.prepare(`
+      SELECT id, name FROM products WHERE id = ? AND deleted_at IS NULL
+    `).get(cleanId);
+    if (!product) throw new Error('Product not found.');
+
+    const stockTotal = this.getProductStockTotal(cleanId);
+    if (stockTotal > 0) {
+      throw new Error(
+        `Cannot delete "${product.name}" while ${stockTotal} units remain in stock. Adjust stock to 0 (or receive returns) before archiving.`
+      );
+    }
+
     const timestamp = now();
     const tx = db.transaction(() => {
       db.prepare(`
@@ -946,7 +1005,7 @@ const productService = {
             deleted_at = ?,
             updated_at = ?
         WHERE id = ?
-      `).run(timestamp, timestamp, productId);
+      `).run(timestamp, timestamp, cleanId);
 
       db.prepare(`
         UPDATE product_variants
@@ -954,10 +1013,78 @@ const productService = {
             deleted_at = ?,
             updated_at = ?
         WHERE product_id = ?
-      `).run(timestamp, timestamp, productId);
+          AND deleted_at IS NULL
+      `).run(timestamp, timestamp, cleanId);
     });
 
     tx();
+    return true;
+  },
+
+  deleteVariant(variantId) {
+    const db = getDb();
+    const cleanId = cleanText(variantId);
+    assertTruthy(cleanId, 'Variant ID is required.');
+
+    const variant = db.prepare(`
+      SELECT v.id, v.name, v.product_id, p.name AS product_name
+      FROM product_variants v
+      JOIN products p ON p.id = v.product_id
+      WHERE v.id = ?
+        AND v.deleted_at IS NULL
+        AND p.deleted_at IS NULL
+    `).get(cleanId);
+    if (!variant) throw new Error('Variant not found.');
+
+    const onHand = this.getVariantStock(cleanId);
+    if (onHand > 0) {
+      throw new Error(
+        `Cannot delete variant "${variant.name}" while ${onHand} units remain in stock. Adjust stock to 0 first.`
+      );
+    }
+
+    const activeCount = db.prepare(`
+      SELECT COUNT(*) AS count
+      FROM product_variants
+      WHERE product_id = ?
+        AND deleted_at IS NULL
+    `).get(variant.product_id).count;
+
+    if (activeCount <= 1) {
+      throw new Error(
+        `Cannot remove the last variant of "${variant.product_name}". Delete the product instead.`
+      );
+    }
+
+    const timestamp = now();
+    db.prepare(`
+      UPDATE product_variants
+      SET is_active = 0,
+          deleted_at = ?,
+          updated_at = ?
+      WHERE id = ?
+    `).run(timestamp, timestamp, cleanId);
+
+    // Keep a default variant if we removed the previous default
+    const defaultLeft = db.prepare(`
+      SELECT id FROM product_variants
+      WHERE product_id = ? AND deleted_at IS NULL AND is_default = 1
+      LIMIT 1
+    `).get(variant.product_id);
+    if (!defaultLeft) {
+      const next = db.prepare(`
+        SELECT id FROM product_variants
+        WHERE product_id = ? AND deleted_at IS NULL
+        ORDER BY sort_order ASC, created_at ASC
+        LIMIT 1
+      `).get(variant.product_id);
+      if (next) {
+        db.prepare(`
+          UPDATE product_variants SET is_default = 1, updated_at = ? WHERE id = ?
+        `).run(timestamp, next.id);
+      }
+    }
+
     return true;
   },
 

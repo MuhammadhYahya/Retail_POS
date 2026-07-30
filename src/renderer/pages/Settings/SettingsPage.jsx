@@ -132,6 +132,9 @@ export default function SettingsPage() {
                     value={form.vatRate}
                     onChange={(e) => setForm({ ...form, vatRate: e.target.value })}
                   />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Applied to new products when VAT is marked Applicable on Add Product.
+                  </p>
                 </div>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">

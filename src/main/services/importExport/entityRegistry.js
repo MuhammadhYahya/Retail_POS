@@ -156,6 +156,7 @@ registerEntity({
           v.barcode,
           v.selling_price AS sellingPrice,
           v.cost_price AS costPrice,
+          v.low_stock_alert AS lowStockAlert,
           v.track_inventory AS trackInventory,
           COALESCE(b.on_hand, 0) AS stockOnHand
         FROM products p
@@ -202,8 +203,8 @@ registerEntity({
     const insertVariant = db.prepare(`
       INSERT INTO product_variants (
         id, product_id, name, sku, barcode, attributes_json, selling_price, cost_price,
-        track_inventory, is_default, sort_order, is_active, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, '{}', ?, ?, 1, 1, 0, 1, ?, ?)
+        low_stock_alert, track_inventory, is_default, sort_order, is_active, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, '{}', ?, ?, ?, 1, 1, 0, 1, ?, ?)
     `);
     const insertBalance = db.prepare(`
       INSERT INTO inventory_balances (variant_id, on_hand, reserved, available, updated_at)
@@ -211,11 +212,11 @@ registerEntity({
     `);
     const updateVariant = db.prepare(`
       UPDATE product_variants SET
-        selling_price = ?, cost_price = ?, barcode = ?, updated_at = ?
+        selling_price = ?, cost_price = ?, barcode = ?, low_stock_alert = ?, updated_at = ?
       WHERE id = ?
     `);
     const updateProduct = db.prepare(`
-      UPDATE products SET name = ?, brand = ?, tax_rate = ?, updated_at = ? WHERE id = ?
+      UPDATE products SET name = ?, brand = ?, tax_rate = ?, unit = ?, updated_at = ? WHERE id = ?
     `);
     const upsertBalance = db.prepare(`
       INSERT INTO inventory_balances (variant_id, on_hand, reserved, available, updated_at)
@@ -238,7 +239,9 @@ registerEntity({
         const sellingPrice = Number(row.sellingPrice ?? row.selling_price ?? 0) || 0;
         const costPrice = Number(row.costPrice ?? row.cost_price ?? 0) || 0;
         const taxRate = Number(row.taxRate ?? row.tax_rate ?? 0) || 0;
+        const lowStockAlert = Math.max(0, Number(row.lowStockAlert ?? row.low_stock_alert ?? 0) || 0);
         const brand = String(row.brand || '').trim() || null;
+        const unit = String(row.unit || '').trim() || null;
         const barcode = String(row.barcode || '').trim() || null;
         const stock = Number(row.stockOnHand ?? row.stock ?? row.on_hand ?? 0) || 0;
         let categoryId = null;
@@ -253,8 +256,8 @@ registerEntity({
           if (mode === 'skip') {
             report.skipped += 1;
           } else if (mode === 'update') {
-            updateVariant.run(sellingPrice, costPrice, barcode, now(), existing.id);
-            updateProduct.run(productName, brand, taxRate, now(), existing.product_id);
+            updateVariant.run(sellingPrice, costPrice, barcode, lowStockAlert, now(), existing.id);
+            updateProduct.run(productName, brand, taxRate, unit, now(), existing.product_id);
             upsertBalance.run(existing.id, stock, stock, now());
             report.updated += 1;
           } else {
@@ -265,7 +268,7 @@ registerEntity({
         } else {
           const productId = crypto.randomUUID();
           const variantId = crypto.randomUUID();
-          insertProduct.run(productId, productName, brand, taxRate, categoryId, row.unit || null, now(), now());
+          insertProduct.run(productId, productName, brand, taxRate, categoryId, unit, now(), now());
           insertVariant.run(
             variantId,
             productId,
@@ -274,6 +277,7 @@ registerEntity({
             barcode,
             sellingPrice,
             costPrice,
+            lowStockAlert,
             now(),
             now()
           );

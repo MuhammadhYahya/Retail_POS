@@ -121,6 +121,10 @@ export default function BillingPage() {
     }
 
     const variant = response.data;
+    if (!(Number(variant.sellingPrice) > 0)) {
+      setError('This variant has no selling price. Set a price in Products before selling.');
+      return;
+    }
     addItem({
       id: variant.id,
       variantId: variant.id,
@@ -140,6 +144,10 @@ export default function BillingPage() {
   const addVariantToSale = (variant) => {
     if (!variant?.barcode) {
       setError('Only barcode-enabled variants can be added to a sale.');
+      return;
+    }
+    if (!(Number(variant.sellingPrice) > 0)) {
+      setError('This variant has no selling price. Set a price in Products before selling.');
       return;
     }
 

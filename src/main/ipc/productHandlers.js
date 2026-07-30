@@ -167,6 +167,24 @@ export function registerProductHandlers() {
     }
   });
 
+  ipcMain.handle('product:deleteVariant', async (event, payload = {}) => {
+    try {
+      const token = extractToken(payload);
+      const session = validateSession(token);
+      if (!session.success) return session;
+
+      const roleCheck = requireAdmin(session);
+      if (!roleCheck.success) return roleCheck;
+
+      productService.deleteVariant(payload.variantId);
+      writeAuditLog(`variant_delete:${payload.variantId}`, session.user.id);
+
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
   ipcMain.handle('product:lookupBarcode', async (event, payload = {}) => {
     try {
       const token = extractToken(payload);

@@ -32,6 +32,22 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../..
 import { invokeWithAuth, notifyLowStockUpdated } from '../../lib/ipc';
 import { useAuthStore } from '../../store/authStore';
 import { cn } from '../../lib/utils';
+import { CUSTOM_UNIT_VALUE, PRODUCT_UNITS, resolveUnitSelectValue } from '../../lib/productUnits';
+import {
+  CLOTHING_SIZES,
+  countAttributeSets,
+  buildAttributeSets,
+  detectSizeMode,
+  expandNumericSizeRange,
+  hydrateVariantBuilder,
+  groupsFromVariants,
+  newVariantGroup,
+  NUMERIC_SIZES,
+  PRODUCT_COLORS,
+  VARIANT_AXIS_TYPES,
+  VARIANT_BUILD_MODES,
+  variantDisplayName,
+} from '../../lib/productVariantOptions';
 
 const inputClassName =
   'w-full p-3 rounded-lg bg-input border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-ring';
@@ -67,11 +83,16 @@ function newVariantDraft(index = 0, overrides = {}) {
   };
 }
 
-function splitList(value) {
-  return String(value || '')
-    .split(/[\n,]+/)
-    .map((item) => item.trim())
-    .filter(Boolean);
+function uniquePreserveOrder(items) {
+  const seen = new Set();
+  const result = [];
+  items.forEach((item) => {
+    const key = String(item).toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    result.push(item);
+  });
+  return result;
 }
 
 function parseAttributes(value) {
@@ -123,41 +144,11 @@ function variantKeyFromAttributes(attributes = {}) {
   return entries.map(([key, value]) => `${key}:${String(value).trim().toLowerCase()}`).join('|');
 }
 
-function deriveVariantAxes(variants = []) {
-  const sizes = new Set();
-  const colors = new Set();
+function buildVariantsFromPairs(productName, pairs = [], existingRows = []) {
+  const combinations = Array.isArray(pairs) ? pairs : [];
 
-  variants.forEach((variant) => {
-    const attrs = variant.attributes || parseAttributes(variant.attributesText);
-    if (attrs.size) sizes.add(String(attrs.size).trim());
-    if (attrs.color) colors.add(String(attrs.color).trim());
-  });
-
-  return {
-    sizes: Array.from(sizes),
-    colors: Array.from(colors),
-  };
-}
-
-function buildVariantMatrix(productName, axes, existingRows = []) {
-  const sizes = splitList(axes.sizes);
-  const colors = splitList(axes.colors);
-  const combinations = [];
-
-  if (!sizes.length && !colors.length) {
+  if (!combinations.length) {
     return existingRows.length ? existingRows : [newVariantDraft(0)];
-  }
-
-  if (sizes.length && colors.length) {
-    sizes.forEach((size) => {
-      colors.forEach((color) => {
-        combinations.push({ size, color });
-      });
-    });
-  } else if (sizes.length) {
-    sizes.forEach((size) => combinations.push({ size }));
-  } else if (colors.length) {
-    colors.forEach((color) => combinations.push({ color }));
   }
 
   const existingByKey = new Map(
@@ -170,7 +161,7 @@ function buildVariantMatrix(productName, axes, existingRows = []) {
   return combinations.map((attributes, index) => {
     const key = variantKeyFromAttributes(attributes);
     const existing = existingByKey.get(key);
-    const name = [attributes.size, attributes.color].filter(Boolean).join(' / ') || `${productName} Variant`;
+    const name = variantDisplayName(attributes, `${productName} Variant`);
 
     if (existing) {
       return {
@@ -198,7 +189,19 @@ function productToForm(product, { step = 1 } = {}) {
     (variant) => Number(variant.sellingPrice) === Number(variants[0].sellingPrice)
       && Number(variant.costPrice) === Number(variants[0].costPrice)
   );
-  const axes = isMatrix ? deriveVariantAxes(product.variants || []) : { sizes: [], colors: [] };
+  const hydrated = isMatrix
+    ? hydrateVariantBuilder(product.variants || [])
+    : {
+        axisType: VARIANT_AXIS_TYPES.sizeAndColor,
+        buildMode: VARIANT_BUILD_MODES.colorHasSizes,
+        variantGroups: [],
+        simpleValues: [],
+        customAttributeName: '',
+        sizeMode: 'numeric',
+        activeGroupId: '',
+      };
+  const taxRate = Number(product.taxRate ?? 0);
+  const unitValue = product.unit || '';
 
   return {
     id: product.id,
@@ -206,8 +209,10 @@ function productToForm(product, { step = 1 } = {}) {
     name: product.name || '',
     description: product.description || '',
     brand: product.brand || '',
-    unit: product.unit || '',
-    taxRate: String(product.taxRate ?? 0),
+    unit: unitValue,
+    unitSelect: resolveUnitSelectValue(unitValue),
+    vatApplicable: taxRate > 0,
+    taxRate: String(taxRate),
     categoryId: product.categoryId || '',
     imageUrls: Array.isArray(product.imageUrls) ? [...product.imageUrls] : [],
     variantMode: isMatrix ? 'matrix' : 'single',
@@ -215,6 +220,20 @@ function productToForm(product, { step = 1 } = {}) {
     quickSellingPrice: isMatrix ? String(variants[0]?.sellingPrice ?? '') : '',
     quickCostPrice: isMatrix ? String(variants[0]?.costPrice ?? '') : '',
     quickStock: isMatrix ? String(variants[0]?.inventory?.onHand ?? '') : '',
+    quickLowStockAlert: isMatrix ? String(variants[0]?.lowStockAlert ?? '') : '',
+    sizePicker: '',
+    sizeRangeFrom: '',
+    sizeRangeTo: '',
+    colorPicker: '',
+    customColor: '',
+    customValuePicker: '',
+    activeGroupId: hydrated.activeGroupId,
+    variantAxisType: hydrated.axisType,
+    variantBuildMode: hydrated.buildMode,
+    sizeMode: hydrated.sizeMode || detectSizeMode([]),
+    variantGroups: hydrated.variantGroups || [],
+    simpleValues: hydrated.simpleValues || [],
+    customAttributeName: hydrated.customAttributeName || '',
     singleVariant: !isMatrix && variants[0]
       ? {
           id: variants[0].id,
@@ -232,7 +251,6 @@ function productToForm(product, { step = 1 } = {}) {
           initialStock: String(variants[0].inventory?.onHand ?? 0),
         }
       : newVariantDraft(0),
-    variantAxes: axes,
     variantRows: isMatrix
       ? product.variants.map((variant, index) => ({
           id: variant.id,
@@ -253,7 +271,9 @@ function productToForm(product, { step = 1 } = {}) {
   };
 }
 
-function emptyProductForm(categoryId = '') {
+function emptyProductForm(categoryId = '', { defaultVatRate = 0 } = {}) {
+  const rate = Number(defaultVatRate);
+  const vatApplicable = Number.isFinite(rate) && rate > 0;
   return {
     id: null,
     step: 1,
@@ -261,7 +281,9 @@ function emptyProductForm(categoryId = '') {
     description: '',
     brand: '',
     unit: '',
-    taxRate: '0',
+    unitSelect: '',
+    vatApplicable,
+    taxRate: vatApplicable ? String(rate) : '0',
     categoryId: categoryId || '',
     imageUrls: [],
     variantMode: 'single',
@@ -269,8 +291,21 @@ function emptyProductForm(categoryId = '') {
     quickSellingPrice: '',
     quickCostPrice: '',
     quickStock: '',
+    quickLowStockAlert: '',
+    sizePicker: '',
+    sizeRangeFrom: '',
+    sizeRangeTo: '',
+    colorPicker: '',
+    customColor: '',
+    customValuePicker: '',
+    activeGroupId: '',
+    variantAxisType: VARIANT_AXIS_TYPES.sizeAndColor,
+    variantBuildMode: VARIANT_BUILD_MODES.colorHasSizes,
+    sizeMode: 'numeric',
+    variantGroups: [],
+    simpleValues: [],
+    customAttributeName: '',
     singleVariant: newVariantDraft(0),
-    variantAxes: { sizes: '', colors: '' },
     variantRows: [],
   };
 }
@@ -372,22 +407,118 @@ function isWithinDateRange(product, from, to) {
   return true;
 }
 
+function resolveVariantPrices(form, variant) {
+  if (form.variantMode === 'matrix' && form.pricingMode === 'single') {
+    return {
+      sellingPrice: form.quickSellingPrice,
+      costPrice: form.quickCostPrice,
+    };
+  }
+  return {
+    sellingPrice: variant?.sellingPrice,
+    costPrice: variant?.costPrice,
+  };
+}
+
+function resolveVariantStockFields(form, variant) {
+  if (form.variantMode === 'matrix' && form.pricingMode === 'single') {
+    return {
+      initialStock: form.quickStock !== '' && form.quickStock != null
+        ? form.quickStock
+        : variant?.initialStock,
+      lowStockAlert: form.quickLowStockAlert !== '' && form.quickLowStockAlert != null
+        ? form.quickLowStockAlert
+        : variant?.lowStockAlert,
+    };
+  }
+  return {
+    initialStock: variant?.initialStock,
+    lowStockAlert: variant?.lowStockAlert,
+  };
+}
+
+function getFormVariantDrafts(form) {
+  return form.variantMode === 'matrix' ? form.variantRows : [form.singleVariant];
+}
+
 function findInvalidPriceVariant(form) {
-  const variants = form.variantMode === 'matrix' ? form.variantRows : [form.singleVariant];
-  return variants.find((variant) => {
-    const selling = Number(form.variantMode === 'matrix' && form.pricingMode === 'single' ? form.quickSellingPrice : variant?.sellingPrice);
-    const cost = Number(form.variantMode === 'matrix' && form.pricingMode === 'single' ? form.quickCostPrice : variant?.costPrice);
+  return getFormVariantDrafts(form).find((variant) => {
+    const { sellingPrice, costPrice } = resolveVariantPrices(form, variant);
+    const sellingRaw = cleanText(sellingPrice);
+    const costRaw = cleanText(costPrice);
+    if (sellingRaw === '' || costRaw === '') return false;
+    const selling = Number(sellingRaw);
+    const cost = Number(costRaw);
     return Number.isFinite(selling) && Number.isFinite(cost) && selling < cost;
   });
 }
 
+function findMissingPriceError(form) {
+  const drafts = getFormVariantDrafts(form);
+  for (const variant of drafts) {
+    const label = cleanText(variant?.name) || 'Unnamed variant';
+    const { sellingPrice, costPrice } = resolveVariantPrices(form, variant);
+    const sellingRaw = cleanText(sellingPrice);
+    const costRaw = cleanText(costPrice);
+    const selling = Number(sellingRaw);
+    const cost = Number(costRaw);
+
+    if (sellingRaw === '' || !Number.isFinite(selling) || selling <= 0) {
+      return form.variantMode === 'matrix' && form.pricingMode === 'single'
+        ? 'Selling price is required and must be greater than 0.'
+        : `Selling price is required and must be greater than 0 for variant "${label}".`;
+    }
+    if (costRaw === '' || !Number.isFinite(cost) || cost < 0) {
+      return form.variantMode === 'matrix' && form.pricingMode === 'single'
+        ? 'Cost price is required and must be 0 or greater.'
+        : `Cost price is required and must be 0 or greater for variant "${label}".`;
+    }
+  }
+  return null;
+}
+
+function collectProductSoftWarnings(form) {
+  const warnings = [];
+  const drafts = getFormVariantDrafts(form);
+  let anyCostZero = false;
+  let anyStockEmpty = false;
+  let anyLowStockOff = false;
+
+  drafts.forEach((variant) => {
+    const prices = resolveVariantPrices(form, variant);
+    const stockFields = resolveVariantStockFields(form, variant);
+    const cost = Number(cleanText(prices.costPrice));
+    const stockRaw = cleanText(stockFields.initialStock);
+    const lowRaw = cleanText(stockFields.lowStockAlert);
+    if (Number.isFinite(cost) && cost === 0) anyCostZero = true;
+    if (stockRaw === '' || !Number.isFinite(Number(stockRaw)) || Number(stockRaw) <= 0) {
+      anyStockEmpty = true;
+    }
+    if (lowRaw === '' || !Number.isFinite(Number(lowRaw)) || Number(lowRaw) <= 0) {
+      anyLowStockOff = true;
+    }
+  });
+
+  if (anyCostZero) {
+    warnings.push('Cost price is 0 — profit reports will be inaccurate until you set a real cost.');
+  }
+  if (anyStockEmpty) {
+    warnings.push('Opening stock is 0 / empty. You can receive stock later via Purchases / GRN.');
+  }
+  if (anyLowStockOff) {
+    warnings.push('Low stock level is empty or 0 — low-stock alerts are disabled for those variants.');
+  }
+  return warnings;
+}
+
 function prepareProductPayload(form) {
+  const taxRate = form.vatApplicable ? Number(form.taxRate || 0) : 0;
   const base = {
     name: cleanText(form.name),
     description: cleanText(form.description) || undefined,
     brand: cleanText(form.brand) || undefined,
     unit: cleanText(form.unit) || undefined,
-    taxRate: Number(form.taxRate || 0),
+    taxRate: Number.isFinite(taxRate) ? taxRate : 0,
     categoryId: form.categoryId || undefined,
     imageUrls: form.imageUrls,
   };
@@ -396,10 +527,16 @@ function prepareProductPayload(form) {
     return {
       ...base,
       variants: form.variantRows.map((variant, index) => {
+        const stockFields = resolveVariantStockFields(form, variant);
         const parsed = normalizeVariantForPayload({
           ...variant,
           ...(form.pricingMode === 'single'
-            ? { sellingPrice: form.quickSellingPrice, costPrice: form.quickCostPrice }
+            ? {
+                sellingPrice: form.quickSellingPrice,
+                costPrice: form.quickCostPrice,
+                initialStock: stockFields.initialStock,
+                lowStockAlert: stockFields.lowStockAlert,
+              }
             : {}),
           sortOrder: variant.sortOrder ?? index,
         });
@@ -436,6 +573,7 @@ export default function ProductsManagement() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [dialogError, setDialogError] = useState('');
+  const [defaultVatRate, setDefaultVatRate] = useState(18);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategoryId, setSelectedCategoryId] = useState(null);
   const [dateFromDraft, setDateFromDraft] = useState('');
@@ -477,9 +615,10 @@ export default function ProductsManagement() {
     setError('');
 
     try {
-      const [productsResponse, categoriesResponse] = await Promise.all([
+      const [productsResponse, categoriesResponse, settingsResponse] = await Promise.all([
         invokeWithAuth('product:getAll'),
         invokeWithAuth('category:getAll'),
+        invokeWithAuth('settings:get'),
       ]);
 
       if (productsResponse.success) {
@@ -494,6 +633,11 @@ export default function ProductsManagement() {
         // keep the product error if both fail
       } else {
         setError(categoriesResponse.error || 'Failed to load categories');
+      }
+
+      if (settingsResponse.success) {
+        const rate = Number(settingsResponse.data?.vatRate);
+        if (Number.isFinite(rate) && rate >= 0) setDefaultVatRate(rate);
       }
     } catch (err) {
       console.error(err);
@@ -610,11 +754,16 @@ export default function ProductsManagement() {
     }));
   }), [filteredProducts]);
 
+  const productSoftWarnings = useMemo(() => {
+    if (!productDialogOpen || form.step !== 2) return [];
+    return collectProductSoftWarnings(form);
+  }, [productDialogOpen, form]);
+
   const openCreateProduct = (categoryId = '') => {
     if (!isAdmin) return;
     setDialogError('');
     setError('');
-    setForm(emptyProductForm(categoryId || selectedCategoryId || ''));
+    setForm(emptyProductForm(categoryId || selectedCategoryId || '', { defaultVatRate }));
     setProductDialogOpen(true);
   };
 
@@ -653,16 +802,287 @@ export default function ProductsManagement() {
   };
 
   const removeVariantRow = (index) => {
+    const row = form.variantRows[index];
+    if (!row) return;
+    if (form.id && row.id && form.variantRows.length <= 1) {
+      setDialogError('Cannot remove the last variant. Use Delete Product instead.');
+      return;
+    }
+    const stock = Number(row.initialStock);
+    if (form.id && row.id && Number.isFinite(stock) && stock > 0) {
+      setDialogError(
+        `Cannot remove "${row.name || 'this variant'}" while ${stock} units remain in stock. Adjust stock to 0 first.`
+      );
+      return;
+    }
+    setDialogError('');
     setForm((prev) => ({
       ...prev,
       variantRows: prev.variantRows.filter((_, variantIndex) => variantIndex !== index),
     }));
   };
 
-  const generateMatrix = () => {
+  const builderConfig = () => ({
+    axisType: form.variantAxisType || VARIANT_AXIS_TYPES.sizeAndColor,
+    buildMode: form.variantBuildMode || VARIANT_BUILD_MODES.colorHasSizes,
+    simpleValues: form.simpleValues || [],
+    groups: form.variantGroups || [],
+    customAttributeName: form.customAttributeName || '',
+  });
+
+  const addSimpleValue = (value) => {
+    const next = cleanText(value);
+    if (!next) return;
     setForm((prev) => ({
       ...prev,
-      variantRows: buildVariantMatrix(prev.name, prev.variantAxes, prev.variantRows),
+      sizePicker: '',
+      colorPicker: '',
+      customColor: '',
+      customValuePicker: '',
+      simpleValues: uniquePreserveOrder([...(prev.simpleValues || []), next]),
+    }));
+  };
+
+  const removeSimpleValue = (value) => {
+    setForm((prev) => ({
+      ...prev,
+      simpleValues: (prev.simpleValues || []).filter(
+        (item) => String(item).toLowerCase() !== String(value).toLowerCase()
+      ),
+    }));
+  };
+
+  const addSimpleSizeRange = () => {
+    const range = expandNumericSizeRange(form.sizeRangeFrom, form.sizeRangeTo);
+    if (!range.length) {
+      setDialogError('Enter a valid size range between 1 and 50.');
+      return;
+    }
+    setDialogError('');
+    setForm((prev) => ({
+      ...prev,
+      sizeRangeFrom: '',
+      sizeRangeTo: '',
+      simpleValues: uniquePreserveOrder([...(prev.simpleValues || []), ...range]),
+    }));
+  };
+
+  const addVariantGroup = (label) => {
+    const nextLabel = cleanText(label);
+    if (!nextLabel) return;
+    const exists = (form.variantGroups || []).some(
+      (group) => String(group.label).toLowerCase() === nextLabel.toLowerCase()
+    );
+    if (exists) {
+      setDialogError(
+        form.variantBuildMode === VARIANT_BUILD_MODES.sizeHasColors
+          ? `Size "${nextLabel}" is already added.`
+          : `Color "${nextLabel}" is already added.`
+      );
+      return;
+    }
+    setDialogError('');
+    const group = newVariantGroup(nextLabel, []);
+    setForm((prev) => ({
+      ...prev,
+      colorPicker: '',
+      customColor: '',
+      sizePicker: '',
+      activeGroupId: group.id,
+      variantGroups: [...(prev.variantGroups || []), group],
+    }));
+  };
+
+  const removeVariantGroup = (groupId) => {
+    setForm((prev) => {
+      const nextGroups = (prev.variantGroups || []).filter((group) => group.id !== groupId);
+      return {
+        ...prev,
+        variantGroups: nextGroups,
+        activeGroupId: prev.activeGroupId === groupId ? (nextGroups[0]?.id || '') : prev.activeGroupId,
+      };
+    });
+  };
+
+  const addValueToGroup = (groupId, value) => {
+    const next = cleanText(value);
+    if (!groupId || !next) return;
+    setForm((prev) => ({
+      ...prev,
+      variantGroups: (prev.variantGroups || []).map((group) => (
+        group.id === groupId
+          ? { ...group, values: uniquePreserveOrder([...(group.values || []), next]) }
+          : group
+      )),
+    }));
+  };
+
+  const removeValueFromGroup = (groupId, value) => {
+    setForm((prev) => ({
+      ...prev,
+      variantGroups: (prev.variantGroups || []).map((group) => (
+        group.id === groupId
+          ? {
+              ...group,
+              values: (group.values || []).filter(
+                (item) => String(item).toLowerCase() !== String(value).toLowerCase()
+              ),
+            }
+          : group
+      )),
+    }));
+  };
+
+  const addSizeToActiveGroup = () => {
+    if (!form.activeGroupId || !form.sizePicker) return;
+    addValueToGroup(form.activeGroupId, form.sizePicker);
+    updateForm('sizePicker', '');
+  };
+
+  const addSizeRangeToActiveGroup = () => {
+    if (!form.activeGroupId) {
+      setDialogError(
+        form.variantBuildMode === VARIANT_BUILD_MODES.sizeHasColors
+          ? 'Select or add a size group first.'
+          : 'Select or add a color group first.'
+      );
+      return;
+    }
+    const range = expandNumericSizeRange(form.sizeRangeFrom, form.sizeRangeTo);
+    if (!range.length) {
+      setDialogError('Enter a valid size range between 1 and 50.');
+      return;
+    }
+    setDialogError('');
+    setForm((prev) => ({
+      ...prev,
+      sizeRangeFrom: '',
+      sizeRangeTo: '',
+      variantGroups: (prev.variantGroups || []).map((group) => (
+        group.id === prev.activeGroupId
+          ? { ...group, values: uniquePreserveOrder([...(group.values || []), ...range]) }
+          : group
+      )),
+    }));
+  };
+
+  const addColorToActiveGroup = () => {
+    if (!form.activeGroupId || !form.colorPicker) return;
+    addValueToGroup(form.activeGroupId, form.colorPicker);
+    updateForm('colorPicker', '');
+  };
+
+  const addCustomColorToActiveGroup = () => {
+    const custom = cleanText(form.customColor);
+    if (!form.activeGroupId || !custom) return;
+    addValueToGroup(form.activeGroupId, custom);
+    updateForm('customColor', '');
+  };
+
+  const switchAxisType = (axisType) => {
+    setDialogError('');
+    setForm((prev) => {
+      const sourceVariants = (prev.variantRows || []).map((row) => ({
+        attributes: parseAttributes(row.attributesText),
+      }));
+      const hydrated = sourceVariants.some((v) => Object.keys(v.attributes || {}).length)
+        ? hydrateVariantBuilder(sourceVariants)
+        : null;
+
+      // Prefer hydrated data when switching to matching type from existing rows
+      if (hydrated && hydrated.axisType === axisType) {
+        return {
+          ...prev,
+          variantAxisType: axisType,
+          variantBuildMode: hydrated.buildMode,
+          variantGroups: hydrated.variantGroups,
+          simpleValues: hydrated.simpleValues,
+          customAttributeName: hydrated.customAttributeName,
+          sizeMode: hydrated.sizeMode,
+          activeGroupId: hydrated.activeGroupId,
+          sizePicker: '',
+          colorPicker: '',
+          customColor: '',
+          customValuePicker: '',
+          sizeRangeFrom: '',
+          sizeRangeTo: '',
+        };
+      }
+
+      return {
+        ...prev,
+        variantAxisType: axisType,
+        variantBuildMode: VARIANT_BUILD_MODES.colorHasSizes,
+        variantGroups: [],
+        simpleValues: [],
+        customAttributeName: axisType === VARIANT_AXIS_TYPES.custom ? (prev.customAttributeName || 'Option') : '',
+        activeGroupId: '',
+        sizePicker: '',
+        colorPicker: '',
+        customColor: '',
+        customValuePicker: '',
+        sizeRangeFrom: '',
+        sizeRangeTo: '',
+      };
+    });
+  };
+
+  const switchBuildMode = (mode) => {
+    setForm((prev) => {
+      const sourceVariants = (prev.variantRows || []).map((row) => ({
+        attributes: parseAttributes(row.attributesText),
+      }));
+      const nextGroups = sourceVariants.some((v) => v.attributes?.size || v.attributes?.color)
+        ? groupsFromVariants(sourceVariants, mode)
+        : [];
+      return {
+        ...prev,
+        variantBuildMode: mode,
+        variantGroups: nextGroups,
+        activeGroupId: nextGroups[0]?.id || '',
+        sizePicker: '',
+        colorPicker: '',
+        customColor: '',
+        sizeRangeFrom: '',
+        sizeRangeTo: '',
+      };
+    });
+  };
+
+  const buildVariants = () => {
+    const config = builderConfig();
+    const pairs = buildAttributeSets(config);
+    if (!pairs.length) {
+      let message = 'Add at least one option before building variants.';
+      if (config.axisType === VARIANT_AXIS_TYPES.sizeOnly) message = 'Add at least one size before building variants.';
+      if (config.axisType === VARIANT_AXIS_TYPES.colorOnly) message = 'Add at least one color before building variants.';
+      if (config.axisType === VARIANT_AXIS_TYPES.custom) {
+        message = cleanText(form.customAttributeName)
+          ? 'Add at least one custom value before building variants.'
+          : 'Enter a custom field name and at least one value.';
+      }
+      if (config.axisType === VARIANT_AXIS_TYPES.sizeAndColor) {
+        message = config.buildMode === VARIANT_BUILD_MODES.sizeHasColors
+          ? 'Add at least one size group with colors before building variants.'
+          : 'Add at least one color group with sizes before building variants.';
+      }
+      setDialogError(message);
+      return;
+    }
+    setDialogError('');
+    setForm((prev) => ({
+      ...prev,
+      variantRows: buildVariantsFromPairs(
+        prev.name,
+        buildAttributeSets({
+          axisType: prev.variantAxisType,
+          buildMode: prev.variantBuildMode,
+          simpleValues: prev.simpleValues,
+          groups: prev.variantGroups,
+          customAttributeName: prev.customAttributeName,
+        }),
+        prev.variantRows
+      ),
     }));
   };
 
@@ -711,8 +1131,22 @@ export default function ProductsManagement() {
       return;
     }
 
+    if (form.vatApplicable) {
+      const rate = Number(form.taxRate);
+      if (!Number.isFinite(rate) || rate <= 0) {
+        setDialogError('Enter a VAT rate greater than 0, or mark VAT as not applicable.');
+        return;
+      }
+    }
+
     if (form.variantMode === 'matrix' && !form.variantRows.length) {
       setDialogError('Generate at least one variant before saving.');
+      return;
+    }
+
+    const missingPriceError = findMissingPriceError(form);
+    if (missingPriceError) {
+      setDialogError(missingPriceError);
       return;
     }
 
@@ -750,6 +1184,8 @@ export default function ProductsManagement() {
       }
     }
 
+    const softWarnings = collectProductSoftWarnings(form);
+
     setSaving(true);
     const response = form.id
       ? await invokeWithAuth('product:update', { productId: form.id, ...payload })
@@ -758,8 +1194,9 @@ export default function ProductsManagement() {
 
     if (response.success) {
       setProductDialogOpen(false);
-      setForm(emptyProductForm());
-      notifySuccess(form.id ? 'Product updated successfully.' : 'Product added successfully.');
+      setForm(emptyProductForm('', { defaultVatRate }));
+      const baseMsg = form.id ? 'Product updated successfully.' : 'Product added successfully.';
+      notifySuccess(softWarnings.length ? `${baseMsg} ${softWarnings[0]}` : baseMsg);
       loadData();
     } else {
       setDialogError(response.error || 'Failed to save product');
@@ -927,17 +1364,57 @@ export default function ProductsManagement() {
 
     setSaving(true);
     setDialogError('');
-    const response = await invokeWithAuth('product:delete', { productId: deleteTarget.id });
+
+    const response = deleteTarget.kind === 'variant'
+      ? await invokeWithAuth('product:deleteVariant', { variantId: deleteTarget.variant.id })
+      : await invokeWithAuth('product:delete', { productId: deleteTarget.product.id });
+
     setSaving(false);
 
     if (response.success) {
       setDeleteProductDialogOpen(false);
       setDeleteTarget(null);
-      notifySuccess('Product deleted.');
+      notifySuccess(deleteTarget.kind === 'variant' ? 'Variant deleted.' : 'Product deleted.');
       loadData();
     } else {
-      setDialogError(response.error || 'Failed to delete product');
+      setDialogError(response.error || 'Failed to delete');
     }
+  };
+
+  const requestDeleteProduct = (product) => {
+    const stockTotal = Number(product.inventoryTotal ?? 0)
+      || (product.variants || []).reduce((sum, v) => sum + Number(v.inventory?.onHand ?? 0), 0);
+    setDialogError(stockTotal > 0
+      ? `Cannot delete while ${stockTotal} units remain in stock. Adjust stock to 0 first.`
+      : '');
+    setDeleteTarget({
+      kind: 'product',
+      product,
+      name: product.name,
+      stock: stockTotal,
+    });
+    setDeleteProductDialogOpen(true);
+  };
+
+  const requestDeleteVariant = (product, variant) => {
+    const stock = Number(variant?.inventory?.onHand ?? 0);
+    const activeCount = (product.variants || []).length;
+    let error = '';
+    if (stock > 0) {
+      error = `Cannot delete this variant while ${stock} units remain in stock. Adjust stock to 0 first.`;
+    } else if (activeCount <= 1) {
+      error = 'Cannot remove the last variant. Delete the product instead.';
+    }
+    setDialogError(error);
+    setDeleteTarget({
+      kind: 'variant',
+      product,
+      variant,
+      name: `${product.name} / ${variant?.name || 'Variant'}`,
+      stock,
+      activeCount,
+    });
+    setDeleteProductDialogOpen(true);
   };
 
   const handleDeleteCategory = async () => {
@@ -1007,7 +1484,11 @@ export default function ProductsManagement() {
       step: 2,
       variantRows: prev.variantRows.length
         ? prev.variantRows
-        : buildVariantMatrix(prev.name, prev.variantAxes, [newVariantDraft(0)]),
+        : [],
+      variantGroups: prev.variantGroups?.length
+        ? prev.variantGroups
+        : [],
+      activeGroupId: prev.activeGroupId || prev.variantGroups?.[0]?.id || '',
     }));
   };
 
@@ -1348,11 +1829,13 @@ export default function ProductsManagement() {
                                   variant="destructive"
                                   size="sm"
                                   onClick={() => {
-                                    setDialogError('');
-                                    setDeleteTarget(product);
-                                    setDeleteProductDialogOpen(true);
+                                    if (isVariantRow && defaultVariant) {
+                                      requestDeleteVariant(product, defaultVariant);
+                                    } else {
+                                      requestDeleteProduct(product);
+                                    }
                                   }}
-                                  title="Delete product"
+                                  title={isVariantRow ? 'Delete this variant' : 'Delete product'}
                                 >
                                   <Trash2 className="h-4 w-4" />
                                 </Button>
@@ -1383,13 +1866,25 @@ export default function ProductsManagement() {
               <DialogHeader>
                 <DialogTitle>{form.id ? 'Edit Product' : 'Add Product'}</DialogTitle>
                 <DialogDescription>
-                  Step 1: details. Step 2: choose single pricing or variant matrix.
+                  Product master: identity, prices, and barcodes. Receive stock via Purchases / GRN; print from Labels.
                 </DialogDescription>
               </DialogHeader>
 
               {dialogError && (
                 <Alert variant="destructive">
                   <AlertDescription>{dialogError}</AlertDescription>
+                </Alert>
+              )}
+
+              {productSoftWarnings.length > 0 && (
+                <Alert>
+                  <AlertDescription>
+                    <ul className="list-disc space-y-1 pl-4">
+                      {productSoftWarnings.map((warning) => (
+                        <li key={warning}>{warning}</li>
+                      ))}
+                    </ul>
+                  </AlertDescription>
                 </Alert>
               )}
 
@@ -1433,27 +1928,74 @@ export default function ProductsManagement() {
                         <label className="block text-sm font-medium mb-2" htmlFor="product-unit">
                           Unit
                         </label>
-                        <input
+                        <select
                           id="product-unit"
                           className={inputClassName}
-                          value={form.unit}
-                          onChange={(e) => updateForm('unit', e.target.value)}
-                          placeholder="e.g. pack, kg, bottle"
-                        />
+                          value={form.unitSelect || ''}
+                          onChange={(e) => {
+                            const next = e.target.value;
+                            setForm((prev) => ({
+                              ...prev,
+                              unitSelect: next,
+                              unit: next === CUSTOM_UNIT_VALUE ? (PRODUCT_UNITS.includes(prev.unit) ? '' : prev.unit) : next,
+                            }));
+                          }}
+                        >
+                          <option value="">Select unit</option>
+                          {PRODUCT_UNITS.map((unit) => (
+                            <option key={unit} value={unit}>{unit}</option>
+                          ))}
+                          <option value={CUSTOM_UNIT_VALUE}>Custom…</option>
+                        </select>
+                        {form.unitSelect === CUSTOM_UNIT_VALUE && (
+                          <input
+                            className={cn(inputClassName, 'mt-2')}
+                            value={form.unit}
+                            onChange={(e) => updateForm('unit', e.target.value)}
+                            placeholder="e.g. carton, dozen"
+                          />
+                        )}
                       </div>
                       <div>
-                        <label className="block text-sm font-medium mb-2" htmlFor="product-vat">
-                          VAT (%)
-                        </label>
-                        <input
-                          id="product-vat"
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          className={inputClassName}
-                          value={form.taxRate}
-                          onChange={(e) => updateForm('taxRate', e.target.value)}
-                        />
+                        <label className="block text-sm font-medium mb-2">VAT</label>
+                        <div className="flex flex-wrap gap-3 mb-2">
+                          <label className="flex items-center gap-2 text-sm">
+                            <input
+                              type="radio"
+                              checked={Boolean(form.vatApplicable)}
+                              onChange={() => setForm((prev) => ({
+                                ...prev,
+                                vatApplicable: true,
+                                taxRate: Number(prev.taxRate) > 0 ? prev.taxRate : String(defaultVatRate),
+                              }))}
+                            />
+                            Applicable
+                          </label>
+                          <label className="flex items-center gap-2 text-sm">
+                            <input
+                              type="radio"
+                              checked={!form.vatApplicable}
+                              onChange={() => setForm((prev) => ({
+                                ...prev,
+                                vatApplicable: false,
+                                taxRate: '0',
+                              }))}
+                            />
+                            Not applicable
+                          </label>
+                        </div>
+                        {form.vatApplicable && (
+                          <input
+                            id="product-vat"
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            className={inputClassName}
+                            value={form.taxRate}
+                            onChange={(e) => updateForm('taxRate', e.target.value)}
+                            placeholder={String(defaultVatRate)}
+                          />
+                        )}
                       </div>
                     </div>
 
@@ -1566,11 +2108,12 @@ export default function ProductsManagement() {
                               id="single-selling-price"
                               type="number"
                               step="0.01"
-                              min="0"
+                              min="0.01"
                               className={inputClassName}
                               value={form.singleVariant.sellingPrice}
                               onChange={(e) => updateSingleVariant('sellingPrice', e.target.value)}
-                              placeholder="0"
+                              placeholder="Required"
+                              required
                             />
                           </div>
                           <div>
@@ -1587,14 +2130,20 @@ export default function ProductsManagement() {
                               onChange={(e) => updateSingleVariant('costPrice', e.target.value)}
                               placeholder="0"
                               data-focus="variant-cost"
+                              required
                             />
                           </div>
+                        </div>
+
+                        <div className="rounded-xl border border-border bg-muted/20 p-3 text-xs text-muted-foreground space-y-1">
+                          <p>This screen is the product master (identity, prices, barcodes). Opening stock is optional.</p>
+                          <p>Future inventory is normally received through <strong>Purchases / GRN</strong>. Print labels from the Labels module after stock arrives.</p>
                         </div>
 
                         <div className="grid gap-4 md:grid-cols-2">
                           <div>
                             <label className="block text-sm font-medium mb-2" htmlFor="single-stock">
-                              Stock
+                              Opening Stock (optional)
                             </label>
                             <input
                               id="single-stock"
@@ -1607,10 +2156,11 @@ export default function ProductsManagement() {
                               placeholder="0"
                               data-focus="variant-stock"
                             />
+                            <p className="mt-1 text-xs text-muted-foreground">Leave 0 to receive stock later via Purchases / GRN.</p>
                           </div>
                           <div>
                             <label className="block text-sm font-medium mb-2" htmlFor="single-low-stock">
-                              Low Stock Alert
+                              Low Stock Level (optional)
                             </label>
                             <input
                               id="single-low-stock"
@@ -1622,6 +2172,7 @@ export default function ProductsManagement() {
                               onChange={(e) => updateSingleVariant('lowStockAlert', e.target.value)}
                               placeholder="0"
                             />
+                            <p className="mt-1 text-xs text-muted-foreground">Empty or 0 disables low-stock alerts.</p>
                           </div>
                         </div>
 
@@ -1650,50 +2201,321 @@ export default function ProductsManagement() {
                       </div>
                     ) : (
                       <div className="space-y-5">
-                        <div className="grid gap-4 md:grid-cols-2">
+                        <div className="rounded-xl border border-border p-4 space-y-4">
                           <div>
-                            <label className="block text-sm font-medium mb-2">Sizes</label>
-                            <textarea
-                              className={cn(inputClassName, 'min-h-24')}
-                              value={form.variantAxes.sizes}
-                              onChange={(e) =>
-                                setForm((prev) => ({
-                                  ...prev,
-                                  variantAxes: { ...prev.variantAxes, sizes: e.target.value },
-                                }))
-                              }
-                              placeholder="Small, Medium, Large"
-                            />
+                            <p className="text-sm font-semibold">1. What do variants differ by?</p>
+                            <p className="text-xs text-muted-foreground">Pick one path — keep it simple.</p>
                           </div>
-                          <div>
-                            <label className="block text-sm font-medium mb-2">Colors</label>
-                            <textarea
-                              className={cn(inputClassName, 'min-h-24')}
-                              value={form.variantAxes.colors}
-                              onChange={(e) =>
-                                setForm((prev) => ({
-                                  ...prev,
-                                  variantAxes: { ...prev.variantAxes, colors: e.target.value },
-                                }))
-                              }
-                              placeholder="Red, Blue"
-                            />
+                          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                            {[
+                              { id: VARIANT_AXIS_TYPES.sizeOnly, title: 'Size only', hint: 'e.g. 40, 41, 42' },
+                              { id: VARIANT_AXIS_TYPES.colorOnly, title: 'Color only', hint: 'e.g. Black, Blue' },
+                              { id: VARIANT_AXIS_TYPES.sizeAndColor, title: 'Size + Color', hint: 'Assign per group' },
+                              { id: VARIANT_AXIS_TYPES.custom, title: 'Custom field', hint: 'Material, Style…' },
+                            ].map((option) => (
+                              <button
+                                key={option.id}
+                                type="button"
+                                onClick={() => switchAxisType(option.id)}
+                                className={cn(
+                                  'rounded-xl border px-3 py-3 text-left transition-colors',
+                                  form.variantAxisType === option.id
+                                    ? 'border-primary bg-primary/10 text-primary'
+                                    : 'border-border bg-card hover:bg-muted/40'
+                                )}
+                              >
+                                <p className="text-sm font-semibold">{option.title}</p>
+                                <p className="text-xs text-muted-foreground">{option.hint}</p>
+                              </button>
+                            ))}
                           </div>
+
+                          {form.variantAxisType === VARIANT_AXIS_TYPES.sizeOnly && (
+                            <div className="space-y-3 border-t border-border pt-4">
+                              <p className="text-sm font-semibold">2. Add sizes</p>
+                              <div className="flex flex-wrap gap-2 text-xs">
+                                <label className="flex items-center gap-1">
+                                  <input type="radio" checked={(form.sizeMode || 'numeric') === 'numeric'} onChange={() => updateForm('sizeMode', 'numeric')} />
+                                  Numbers 1–50
+                                </label>
+                                <label className="flex items-center gap-1">
+                                  <input type="radio" checked={form.sizeMode === 'clothing'} onChange={() => updateForm('sizeMode', 'clothing')} />
+                                  Clothing
+                                </label>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                <select className={cn(inputClassName, 'max-w-xs')} value={form.sizePicker || ''} onChange={(e) => updateForm('sizePicker', e.target.value)}>
+                                  <option value="">Select size</option>
+                                  {(form.sizeMode === 'clothing' ? CLOTHING_SIZES : NUMERIC_SIZES)
+                                    .filter((size) => !(form.simpleValues || []).includes(size))
+                                    .map((size) => <option key={size} value={size}>{size}</option>)}
+                                </select>
+                                <Button type="button" variant="outline" disabled={!form.sizePicker} onClick={() => addSimpleValue(form.sizePicker)}>Add</Button>
+                              </div>
+                              {(form.sizeMode || 'numeric') === 'numeric' && (
+                                <div className="flex flex-wrap items-end gap-2">
+                                  <div>
+                                    <label className="block text-xs font-medium mb-1">From</label>
+                                    <select className={cn(inputClassName, 'w-24 !p-2')} value={form.sizeRangeFrom || ''} onChange={(e) => updateForm('sizeRangeFrom', e.target.value)}>
+                                      <option value="">—</option>
+                                      {NUMERIC_SIZES.map((size) => <option key={`sf-${size}`} value={size}>{size}</option>)}
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs font-medium mb-1">To</label>
+                                    <select className={cn(inputClassName, 'w-24 !p-2')} value={form.sizeRangeTo || ''} onChange={(e) => updateForm('sizeRangeTo', e.target.value)}>
+                                      <option value="">—</option>
+                                      {NUMERIC_SIZES.map((size) => <option key={`st-${size}`} value={size}>{size}</option>)}
+                                    </select>
+                                  </div>
+                                  <Button type="button" variant="outline" onClick={addSimpleSizeRange}>Add range</Button>
+                                </div>
+                              )}
+                              <div className="flex flex-wrap gap-2 min-h-8">
+                                {(form.simpleValues || []).length === 0 && <p className="text-xs text-muted-foreground">No sizes yet.</p>}
+                                {(form.simpleValues || []).map((value) => (
+                                  <button key={value} type="button" className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs" onClick={() => removeSimpleValue(value)}>
+                                    {value}<X className="h-3 w-3" />
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {form.variantAxisType === VARIANT_AXIS_TYPES.colorOnly && (
+                            <div className="space-y-3 border-t border-border pt-4">
+                              <p className="text-sm font-semibold">2. Add colors</p>
+                              <div className="flex flex-wrap gap-2">
+                                <select className={cn(inputClassName, 'max-w-xs')} value={form.colorPicker || ''} onChange={(e) => updateForm('colorPicker', e.target.value)}>
+                                  <option value="">Select color</option>
+                                  {PRODUCT_COLORS
+                                    .filter((color) => !(form.simpleValues || []).some((c) => String(c).toLowerCase() === color.toLowerCase()))
+                                    .map((color) => <option key={color} value={color}>{color}</option>)}
+                                </select>
+                                <Button type="button" variant="outline" disabled={!form.colorPicker} onClick={() => addSimpleValue(form.colorPicker)}>Add</Button>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                <input
+                                  className={cn(inputClassName, 'max-w-xs')}
+                                  value={form.customColor || ''}
+                                  onChange={(e) => updateForm('customColor', e.target.value)}
+                                  placeholder="Custom color"
+                                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addSimpleValue(form.customColor); } }}
+                                />
+                                <Button type="button" variant="outline" disabled={!cleanText(form.customColor)} onClick={() => addSimpleValue(form.customColor)}>Add custom</Button>
+                              </div>
+                              <div className="flex flex-wrap gap-2 min-h-8">
+                                {(form.simpleValues || []).length === 0 && <p className="text-xs text-muted-foreground">No colors yet.</p>}
+                                {(form.simpleValues || []).map((value) => (
+                                  <button key={value} type="button" className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs" onClick={() => removeSimpleValue(value)}>
+                                    {value}<X className="h-3 w-3" />
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {form.variantAxisType === VARIANT_AXIS_TYPES.custom && (
+                            <div className="space-y-3 border-t border-border pt-4">
+                              <p className="text-sm font-semibold">2. Custom field</p>
+                              <div>
+                                <label className="block text-xs font-medium mb-1">Field name</label>
+                                <input
+                                  className={cn(inputClassName, 'max-w-sm')}
+                                  value={form.customAttributeName || ''}
+                                  onChange={(e) => updateForm('customAttributeName', e.target.value)}
+                                  placeholder="e.g. Material, Style, Pack, Flavor"
+                                />
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                <input
+                                  className={cn(inputClassName, 'max-w-xs')}
+                                  value={form.customValuePicker || ''}
+                                  onChange={(e) => updateForm('customValuePicker', e.target.value)}
+                                  placeholder="Add a value"
+                                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addSimpleValue(form.customValuePicker); } }}
+                                />
+                                <Button type="button" variant="outline" disabled={!cleanText(form.customValuePicker)} onClick={() => addSimpleValue(form.customValuePicker)}>Add value</Button>
+                              </div>
+                              <div className="flex flex-wrap gap-2 min-h-8">
+                                {(form.simpleValues || []).length === 0 && <p className="text-xs text-muted-foreground">No values yet.</p>}
+                                {(form.simpleValues || []).map((value) => (
+                                  <button key={value} type="button" className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs" onClick={() => removeSimpleValue(value)}>
+                                    {value}<X className="h-3 w-3" />
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {form.variantAxisType === VARIANT_AXIS_TYPES.sizeAndColor && (
+                            <div className="space-y-4 border-t border-border pt-4">
+                              <div className="flex flex-wrap items-center justify-between gap-3">
+                                <p className="text-sm font-semibold">2. Link sizes and colors</p>
+                                <div className="flex flex-wrap gap-3 text-sm">
+                                  <label className="flex items-center gap-2">
+                                    <input type="radio" checked={form.variantBuildMode !== VARIANT_BUILD_MODES.sizeHasColors} onChange={() => switchBuildMode(VARIANT_BUILD_MODES.colorHasSizes)} />
+                                    Color → sizes
+                                  </label>
+                                  <label className="flex items-center gap-2">
+                                    <input type="radio" checked={form.variantBuildMode === VARIANT_BUILD_MODES.sizeHasColors} onChange={() => switchBuildMode(VARIANT_BUILD_MODES.sizeHasColors)} />
+                                    Size → colors
+                                  </label>
+                                </div>
+                              </div>
+
+                              {form.variantBuildMode !== VARIANT_BUILD_MODES.sizeHasColors ? (
+                                <div className="flex flex-wrap gap-2">
+                                  <select className={cn(inputClassName, 'max-w-xs')} value={form.colorPicker || ''} onChange={(e) => updateForm('colorPicker', e.target.value)}>
+                                    <option value="">Add color group</option>
+                                    {PRODUCT_COLORS
+                                      .filter((color) => !(form.variantGroups || []).some((g) => String(g.label).toLowerCase() === color.toLowerCase()))
+                                      .map((color) => <option key={color} value={color}>{color}</option>)}
+                                  </select>
+                                  <Button type="button" variant="outline" disabled={!form.colorPicker} onClick={() => addVariantGroup(form.colorPicker)}>Add</Button>
+                                  <input
+                                    className={cn(inputClassName, 'max-w-[10rem]')}
+                                    value={form.customColor || ''}
+                                    onChange={(e) => updateForm('customColor', e.target.value)}
+                                    placeholder="Custom color"
+                                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addVariantGroup(form.customColor); updateForm('customColor', ''); } }}
+                                  />
+                                </div>
+                              ) : (
+                                <div className="space-y-2">
+                                  <div className="flex flex-wrap gap-2 text-xs">
+                                    <label className="flex items-center gap-1"><input type="radio" checked={(form.sizeMode || 'numeric') === 'numeric'} onChange={() => updateForm('sizeMode', 'numeric')} /> Numbers</label>
+                                    <label className="flex items-center gap-1"><input type="radio" checked={form.sizeMode === 'clothing'} onChange={() => updateForm('sizeMode', 'clothing')} /> Clothing</label>
+                                  </div>
+                                  <div className="flex flex-wrap gap-2">
+                                    <select className={cn(inputClassName, 'max-w-xs')} value={form.sizePicker || ''} onChange={(e) => updateForm('sizePicker', e.target.value)}>
+                                      <option value="">Add size group</option>
+                                      {(form.sizeMode === 'clothing' ? CLOTHING_SIZES : NUMERIC_SIZES)
+                                        .filter((size) => !(form.variantGroups || []).some((g) => String(g.label) === size))
+                                        .map((size) => <option key={size} value={size}>{size}</option>)}
+                                    </select>
+                                    <Button type="button" variant="outline" disabled={!form.sizePicker} onClick={() => addVariantGroup(form.sizePicker)}>Add</Button>
+                                  </div>
+                                </div>
+                              )}
+
+                              {(form.variantGroups || []).length === 0 ? (
+                                <p className="text-sm text-muted-foreground">
+                                  {form.variantBuildMode === VARIANT_BUILD_MODES.sizeHasColors
+                                    ? 'Add a size, then assign colors for that size only.'
+                                    : 'Add a color, then assign sizes for that color only.'}
+                                </p>
+                              ) : (
+                                <div className="space-y-3">
+                                  <div className="flex flex-wrap gap-2">
+                                    {(form.variantGroups || []).map((group) => (
+                                      <button
+                                        key={group.id}
+                                        type="button"
+                                        className={cn(
+                                          'rounded-full border px-3 py-1.5 text-sm',
+                                          form.activeGroupId === group.id ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-muted/30'
+                                        )}
+                                        onClick={() => updateForm('activeGroupId', group.id)}
+                                      >
+                                        {group.label} <span className="text-xs text-muted-foreground">({(group.values || []).length})</span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                  {(form.variantGroups || []).map((group) => (
+                                    form.activeGroupId === group.id ? (
+                                      <div key={`panel-${group.id}`} className="rounded-lg border border-border bg-muted/20 p-4 space-y-3">
+                                        <div className="flex items-center justify-between gap-2">
+                                          <p className="text-sm font-semibold">
+                                            {form.variantBuildMode === VARIANT_BUILD_MODES.sizeHasColors
+                                              ? `Size ${group.label} colors`
+                                              : `${group.label} sizes`}
+                                          </p>
+                                          <Button type="button" variant="ghost" size="sm" onClick={() => removeVariantGroup(group.id)}>Remove</Button>
+                                        </div>
+                                        {form.variantBuildMode !== VARIANT_BUILD_MODES.sizeHasColors ? (
+                                          <>
+                                            <div className="flex flex-wrap gap-2 text-xs">
+                                              <label className="flex items-center gap-1"><input type="radio" checked={(form.sizeMode || 'numeric') === 'numeric'} onChange={() => updateForm('sizeMode', 'numeric')} /> Numbers</label>
+                                              <label className="flex items-center gap-1"><input type="radio" checked={form.sizeMode === 'clothing'} onChange={() => updateForm('sizeMode', 'clothing')} /> Clothing</label>
+                                            </div>
+                                            <div className="flex flex-wrap gap-2">
+                                              <select className={cn(inputClassName, 'max-w-xs')} value={form.sizePicker || ''} onChange={(e) => updateForm('sizePicker', e.target.value)}>
+                                                <option value="">Select size</option>
+                                                {(form.sizeMode === 'clothing' ? CLOTHING_SIZES : NUMERIC_SIZES)
+                                                  .filter((size) => !(group.values || []).includes(size))
+                                                  .map((size) => <option key={size} value={size}>{size}</option>)}
+                                              </select>
+                                              <Button type="button" variant="outline" disabled={!form.sizePicker} onClick={addSizeToActiveGroup}>Add</Button>
+                                            </div>
+                                            {(form.sizeMode || 'numeric') === 'numeric' && (
+                                              <div className="flex flex-wrap items-end gap-2">
+                                                <select className={cn(inputClassName, 'w-24 !p-2')} value={form.sizeRangeFrom || ''} onChange={(e) => updateForm('sizeRangeFrom', e.target.value)}>
+                                                  <option value="">From</option>
+                                                  {NUMERIC_SIZES.map((size) => <option key={`gf-${size}`} value={size}>{size}</option>)}
+                                                </select>
+                                                <select className={cn(inputClassName, 'w-24 !p-2')} value={form.sizeRangeTo || ''} onChange={(e) => updateForm('sizeRangeTo', e.target.value)}>
+                                                  <option value="">To</option>
+                                                  {NUMERIC_SIZES.map((size) => <option key={`gt-${size}`} value={size}>{size}</option>)}
+                                                </select>
+                                                <Button type="button" variant="outline" onClick={addSizeRangeToActiveGroup}>Add range</Button>
+                                              </div>
+                                            )}
+                                          </>
+                                        ) : (
+                                          <>
+                                            <div className="flex flex-wrap gap-2">
+                                              <select className={cn(inputClassName, 'max-w-xs')} value={form.colorPicker || ''} onChange={(e) => updateForm('colorPicker', e.target.value)}>
+                                                <option value="">Select color</option>
+                                                {PRODUCT_COLORS
+                                                  .filter((color) => !(group.values || []).some((c) => String(c).toLowerCase() === color.toLowerCase()))
+                                                  .map((color) => <option key={color} value={color}>{color}</option>)}
+                                              </select>
+                                              <Button type="button" variant="outline" disabled={!form.colorPicker} onClick={addColorToActiveGroup}>Add</Button>
+                                            </div>
+                                            <div className="flex flex-wrap gap-2">
+                                              <input className={cn(inputClassName, 'max-w-xs')} value={form.customColor || ''} onChange={(e) => updateForm('customColor', e.target.value)} placeholder="Custom color" onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustomColorToActiveGroup(); } }} />
+                                              <Button type="button" variant="outline" disabled={!cleanText(form.customColor)} onClick={addCustomColorToActiveGroup}>Add custom</Button>
+                                            </div>
+                                          </>
+                                        )}
+                                        <div className="flex flex-wrap gap-2 min-h-8">
+                                          {(group.values || []).length === 0 && <p className="text-xs text-muted-foreground">Nothing assigned yet.</p>}
+                                          {(group.values || []).map((value) => (
+                                            <button key={value} type="button" className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2.5 py-1 text-xs" onClick={() => removeValueFromGroup(group.id, value)}>
+                                              {value}<X className="h-3 w-3" />
+                                            </button>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    ) : null
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
 
-                        <div className="flex flex-wrap gap-2">
-                          <Button type="button" variant="outline" onClick={generateMatrix}>
-                            Generate matrix
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button type="button" onClick={buildVariants}>
+                            3. Build variants
                           </Button>
                           <Button type="button" variant="ghost" onClick={addVariantRow}>
-                            Add variant row
+                            Add row manually
                           </Button>
+                          <p className="text-xs text-muted-foreground">
+                            {countAttributeSets(builderConfig())} variant{countAttributeSets(builderConfig()) === 1 ? '' : 's'} ready
+                            . Matching rows keep prices and stock.
+                          </p>
                         </div>
-                        <p className="text-xs text-muted-foreground">Generate matrix creates one variant row for every size × color combination and keeps values from matching rows.</p>
 
                         {form.variantRows.length > 0 ? (
                           <div className="space-y-4">
-                            <div className={cn('rounded-xl border p-4', form.pricingMode === 'different' ? 'border-border bg-muted/50 text-muted-foreground' : 'border-border bg-muted/20')}>
+                            <div className="rounded-xl border border-border bg-muted/20 p-3 text-xs text-muted-foreground space-y-1">
+                              <p>Product master sets variants, prices, and barcodes. Opening stock is optional.</p>
+                              <p>Receive inventory later via <strong>Purchases / GRN</strong>, then print from Labels.</p>
+                            </div>
+                            <div className={cn('rounded-xl border p-4', form.pricingMode === 'different' ? 'border-border bg-muted/50' : 'border-border bg-muted/20')}>
                               <div className="flex flex-wrap items-end gap-3">
                                 <div>
                                   <p className="text-sm font-semibold">Pricing mode</p>
@@ -1702,23 +2524,110 @@ export default function ProductsManagement() {
                                 <label className="flex items-center gap-2 text-sm"><input type="radio" checked={form.pricingMode !== 'different'} onChange={() => setForm((prev) => ({ ...prev, pricingMode: 'single' }))} /> Single Price for All Variants</label>
                                 <label className="flex items-center gap-2 text-sm"><input type="radio" checked={form.pricingMode === 'different'} onChange={() => setForm((prev) => ({ ...prev, pricingMode: 'different' }))} /> Different Price per Variant</label>
                               </div>
-                              <div className="mt-3 flex flex-wrap items-end gap-3">
-                                <div><label className="block text-xs font-medium mb-1">Selling Price</label><input disabled={form.pricingMode === 'different'} className={cn(inputClassName, 'w-36', form.pricingMode === 'different' && 'cursor-not-allowed opacity-60')} type="number" min="0" value={form.quickSellingPrice || ''} onChange={(e) => updateForm('quickSellingPrice', e.target.value)} placeholder="2500" /></div>
-                                <div><label className="block text-xs font-medium mb-1">Cost Price</label><input disabled={form.pricingMode === 'different'} className={cn(inputClassName, 'w-36', form.pricingMode === 'different' && 'cursor-not-allowed opacity-60')} type="number" min="0" value={form.quickCostPrice || ''} onChange={(e) => updateForm('quickCostPrice', e.target.value)} placeholder="1800" /></div>
+                              <div className={cn('mt-3 flex flex-wrap items-end gap-3', form.pricingMode === 'different' && 'opacity-60')}>
+                                <div>
+                                  <label className="block text-xs font-medium mb-1">Selling Price</label>
+                                  <input disabled={form.pricingMode === 'different'} className={cn(inputClassName, 'w-36', form.pricingMode === 'different' && 'cursor-not-allowed')} type="number" min="0.01" step="0.01" value={form.quickSellingPrice || ''} onChange={(e) => updateForm('quickSellingPrice', e.target.value)} placeholder="2500" />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium mb-1">Cost Price</label>
+                                  <input disabled={form.pricingMode === 'different'} className={cn(inputClassName, 'w-36', form.pricingMode === 'different' && 'cursor-not-allowed')} type="number" min="0" step="0.01" value={form.quickCostPrice || ''} onChange={(e) => updateForm('quickCostPrice', e.target.value)} placeholder="1800" />
+                                </div>
                                 <Button type="button" variant="outline" disabled={form.pricingMode === 'different'} onClick={() => setForm((prev) => ({ ...prev, variantRows: prev.variantRows.map((row) => ({ ...row, sellingPrice: prev.quickSellingPrice, costPrice: prev.quickCostPrice })) }))}>Apply Prices to All</Button>
                               </div>
+                              <div className={cn('mt-3 flex flex-wrap items-end gap-3 border-t border-border pt-3', form.pricingMode === 'different' && 'opacity-60')}>
+                                <div>
+                                  <label className="block text-xs font-medium mb-1">Opening Stock</label>
+                                  <input disabled={form.pricingMode === 'different'} className={cn(inputClassName, 'w-36', form.pricingMode === 'different' && 'cursor-not-allowed')} type="number" min="0" step="1" value={form.quickStock || ''} onChange={(e) => updateForm('quickStock', e.target.value)} placeholder="0" />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium mb-1">Low Stock Level</label>
+                                  <input disabled={form.pricingMode === 'different'} className={cn(inputClassName, 'w-36', form.pricingMode === 'different' && 'cursor-not-allowed')} type="number" min="0" step="1" value={form.quickLowStockAlert || ''} onChange={(e) => updateForm('quickLowStockAlert', e.target.value)} placeholder="0" />
+                                </div>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  disabled={form.pricingMode === 'different'}
+                                  onClick={() => setForm((prev) => ({
+                                    ...prev,
+                                    variantRows: prev.variantRows.map((row) => ({
+                                      ...row,
+                                      initialStock: prev.quickStock,
+                                    })),
+                                  }))}
+                                >
+                                  Apply Stock to All
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  disabled={form.pricingMode === 'different'}
+                                  onClick={() => setForm((prev) => ({
+                                    ...prev,
+                                    variantRows: prev.variantRows.map((row) => ({
+                                      ...row,
+                                      lowStockAlert: prev.quickLowStockAlert === '' ? '0' : prev.quickLowStockAlert,
+                                    })),
+                                  }))}
+                                >
+                                  Apply Low Stock to All
+                                </Button>
+                              </div>
+                              <p className="mt-2 text-xs text-muted-foreground">
+                                Opening stock is optional (receive later via Purchases / GRN). Low stock empty/0 disables alerts. You can still edit each row manually.
+                              </p>
                             </div>
                             <div className="overflow-x-auto rounded-xl border border-border">
-                              <table className="w-full text-sm">
-                                <thead className="bg-muted/40"><tr className="border-b border-border"><th className="p-3 text-left">Variant</th>{form.pricingMode === 'different' && <><th className="p-3 text-left">Selling</th><th className="p-3 text-left">Cost</th></>}<th className="p-3 text-left">Stock</th><th className="p-3 text-left">Barcode</th><th className="p-3" /></tr></thead>
+                              <table className="w-full text-sm min-w-[640px]">
+                                <thead className="bg-muted/40">
+                                  <tr className="border-b border-border">
+                                    <th className="p-3 text-left">Variant</th>
+                                    {form.pricingMode === 'different' && (
+                                      <>
+                                        <th className="p-3 text-left">Selling</th>
+                                        <th className="p-3 text-left">Cost</th>
+                                      </>
+                                    )}
+                                    <th className="p-3 text-left">Stock</th>
+                                    <th className="p-3 text-left">Low Stock</th>
+                                    <th className="p-3 text-left">Barcode</th>
+                                    <th className="sticky right-0 z-10 bg-muted/40 p-3 text-left shadow-[-6px_0_8px_-6px_rgba(0,0,0,0.15)]">Actions</th>
+                                  </tr>
+                                </thead>
                                 <tbody>
                                   {form.variantRows.map((variant, index) => (
                                     <tr key={variant.id} className="border-b border-border last:border-0">
-                                      <td className="p-2"><input className={cn(inputClassName, 'min-w-40')} value={variant.name} onChange={(e) => updateVariantRow(index, 'name', e.target.value)} placeholder={`Variant ${index + 1}`} /><div className="mt-1 text-xs text-muted-foreground">SKU: {variant.sku || 'Auto'}</div></td>
-                                      {form.pricingMode === 'different' && <><td className="p-2"><input className="w-28 rounded-lg border border-border bg-input p-2" type="number" min="0" value={variant.sellingPrice} onChange={(e) => updateVariantRow(index, 'sellingPrice', e.target.value)} /></td><td className="p-2"><input className="w-28 rounded-lg border border-border bg-input p-2" type="number" min="0" value={variant.costPrice} onChange={(e) => updateVariantRow(index, 'costPrice', e.target.value)} /></td></>}
-                                      <td className="p-2"><input className="w-24 rounded-lg border border-border bg-input p-2" type="number" min="0" value={variant.initialStock} onChange={(e) => updateVariantRow(index, 'initialStock', e.target.value)} /></td>
-                                      <td className="p-2 text-xs text-muted-foreground">{variant.barcode || 'AUTO-GEN'}</td>
-                                      <td className="p-2"><Button type="button" variant="ghost" size="sm" onClick={() => removeVariantRow(index)} disabled={form.variantRows.length === 1}><Trash2 className="h-4 w-4" /></Button></td>
+                                      <td className="p-2">
+                                        <input
+                                          className={cn(inputClassName, 'min-w-[8rem] p-2')}
+                                          value={variant.name}
+                                          onChange={(e) => updateVariantRow(index, 'name', e.target.value)}
+                                          placeholder={`Variant ${index + 1}`}
+                                        />
+                                        <div className="mt-1 text-xs text-muted-foreground">SKU: {variant.sku || 'Auto'}</div>
+                                      </td>
+                                      {form.pricingMode === 'different' && (
+                                        <>
+                                          <td className="p-2">
+                                            <input className="w-24 rounded-lg border border-border bg-input p-2" type="number" min="0.01" step="0.01" value={variant.sellingPrice} onChange={(e) => updateVariantRow(index, 'sellingPrice', e.target.value)} />
+                                          </td>
+                                          <td className="p-2">
+                                            <input className="w-24 rounded-lg border border-border bg-input p-2" type="number" min="0" step="0.01" value={variant.costPrice} onChange={(e) => updateVariantRow(index, 'costPrice', e.target.value)} data-focus="variant-cost" />
+                                          </td>
+                                        </>
+                                      )}
+                                      <td className="p-2">
+                                        <input className="w-20 rounded-lg border border-border bg-input p-2" type="number" min="0" step="1" value={variant.initialStock} onChange={(e) => updateVariantRow(index, 'initialStock', e.target.value)} data-focus="variant-stock" />
+                                      </td>
+                                      <td className="p-2">
+                                        <input className="w-20 rounded-lg border border-border bg-input p-2" type="number" min="0" step="1" value={variant.lowStockAlert} onChange={(e) => updateVariantRow(index, 'lowStockAlert', e.target.value)} />
+                                      </td>
+                                      <td className="p-2 text-xs text-muted-foreground whitespace-nowrap">{variant.barcode || 'AUTO-GEN'}</td>
+                                      <td className="sticky right-0 z-10 bg-card p-2 shadow-[-6px_0_8px_-6px_rgba(0,0,0,0.15)]">
+                                        <Button type="button" variant="ghost" size="sm" onClick={() => removeVariantRow(index)} disabled={form.variantRows.length === 1} title="Remove variant">
+                                          <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                      </td>
                                     </tr>
                                   ))}
                                 </tbody>
@@ -1728,7 +2637,7 @@ export default function ProductsManagement() {
                           </div>
                         ) : (
                           <p className="text-sm text-muted-foreground">
-                            Enter sizes/colors and click Generate matrix, or add rows manually.
+                            Choose how variants differ, add options, then Build variants — or add a row manually.
                           </p>
                         )}
                       </div>
@@ -1762,6 +2671,22 @@ export default function ProductsManagement() {
                       >
                         Back
                       </Button>
+                      {form.id && (
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          disabled={saving}
+                          onClick={() => {
+                            const product = products.find((item) => item.id === form.id);
+                            if (product) {
+                              setProductDialogOpen(false);
+                              requestDeleteProduct(product);
+                            }
+                          }}
+                        >
+                          Delete Product
+                        </Button>
+                      )}
                       <Button type="submit" disabled={saving}>
                         {saving ? 'Saving...' : form.id ? 'Update Product' : 'Create Product'}
                       </Button>
@@ -1946,14 +2871,21 @@ export default function ProductsManagement() {
             open={deleteProductDialogOpen}
             onOpenChange={(open) => {
               setDeleteProductDialogOpen(open);
-              if (!open) setDialogError('');
+              if (!open) {
+                setDialogError('');
+                setDeleteTarget(null);
+              }
             }}
           >
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Delete Product</DialogTitle>
+                <DialogTitle>
+                  {deleteTarget?.kind === 'variant' ? 'Delete Variant' : 'Delete Product'}
+                </DialogTitle>
                 <DialogDescription>
-                  This will archive {deleteTarget?.name || 'this product'} and all of its variants. Inventory transactions stay in the ledger.
+                  {deleteTarget?.kind === 'variant'
+                    ? `This will archive only "${deleteTarget?.name || 'this variant'}". Other variants of the product stay active. Inventory transactions stay in the ledger.`
+                    : `This will archive ${deleteTarget?.name || 'this product'} and all of its variants. Inventory transactions stay in the ledger.`}
                 </DialogDescription>
               </DialogHeader>
 
@@ -1963,12 +2895,26 @@ export default function ProductsManagement() {
                 </Alert>
               )}
 
+              {!dialogError && deleteTarget?.stock === 0 && (
+                <p className="text-sm text-muted-foreground">
+                  Stock is 0 — safe to archive.
+                </p>
+              )}
+
               <DialogFooter>
                 <Button variant="outline" onClick={() => setDeleteProductDialogOpen(false)}>
                   Cancel
                 </Button>
-                <Button variant="destructive" onClick={handleDeleteProduct} disabled={saving}>
-                  {saving ? 'Deleting...' : 'Delete Product'}
+                <Button
+                  variant="destructive"
+                  onClick={handleDeleteProduct}
+                  disabled={saving || Boolean(dialogError)}
+                >
+                  {saving
+                    ? 'Deleting...'
+                    : deleteTarget?.kind === 'variant'
+                      ? 'Delete Variant'
+                      : 'Delete Product'}
                 </Button>
               </DialogFooter>
             </DialogContent>

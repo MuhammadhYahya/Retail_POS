@@ -381,6 +381,7 @@ const saleService = {
             ? toNumber(item.unitPrice, 0)
             : toNumber(variant.selling_price, 0);
         if (unitPrice < 0) throw new Error('Unit price cannot be negative.');
+        if (unitPrice <= 0) throw new Error(`Selling price must be greater than 0 for ${variant.product_name}.`);
 
         const taxRate =
           item.taxRate !== undefined && item.taxRate !== null && item.taxRate !== ''

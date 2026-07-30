@@ -78,6 +78,7 @@ export default function PurchasesPage() {
           barcode: variant.barcode,
           quantity: 1,
           unitCost: variant.costPrice ?? variant.cost_price ?? 0,
+          sellingPrice: Number(variant.sellingPrice ?? variant.selling_price ?? 0),
         },
       ];
     });
@@ -88,6 +89,23 @@ export default function PurchasesPage() {
     setBusy(true);
     setError('');
     setMessage('');
+
+    const inverted = lines.filter((line) => {
+      const cost = Number(line.unitCost);
+      const selling = Number(line.sellingPrice);
+      return Number.isFinite(cost) && Number.isFinite(selling) && selling > 0 && cost > selling;
+    });
+    if (inverted.length) {
+      const labels = inverted.map((line) => line.label).join(', ');
+      const ok = window.confirm(
+        `Cost is higher than selling price for: ${labels}.\n\nThis will make margin negative until prices are updated. Post GRN anyway?`
+      );
+      if (!ok) {
+        setBusy(false);
+        return;
+      }
+    }
+
     const createRes = await invokeWithAuth('purchase:create', {
       supplierId: supplierId || null,
       notes: notes || null,

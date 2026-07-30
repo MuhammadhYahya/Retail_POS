@@ -28,6 +28,7 @@ const validChannels = [
   'product:create',
   'product:update',
   'product:delete',
+  'product:deleteVariant',
   'product:lookupBarcode',
   'inventory:adjustStock',
   'inventory:getSummary',
