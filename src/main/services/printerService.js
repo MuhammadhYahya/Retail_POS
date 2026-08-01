@@ -82,8 +82,9 @@ function buildEscPosReceipt({ shop, sale, paperWidth = 80 }) {
     if (item.barcode) {
       chunks.push(encodeText(`  BC: ${item.barcode}\n`));
     }
+    const lineGross = Number(item.quantity || 0) * Number(item.unitPrice || 0);
     chunks.push(encodeText(
-      `  ${item.quantity} x ${money(item.unitPrice)}  ${money(item.lineTotal)}\n`
+      `  ${item.quantity} x ${money(item.unitPrice)}  ${money(lineGross)}\n`
     ));
   }
 
@@ -91,6 +92,9 @@ function buildEscPosReceipt({ shop, sale, paperWidth = 80 }) {
   chunks.push(encodeText(`Subtotal: ${money(sale.subtotal)}\n`));
   if (Number(sale.discountTotal) > 0) {
     chunks.push(encodeText(`Discount: -${money(sale.discountTotal)}\n`));
+    chunks.push(Buffer.from([ESC, 0x61, 1]));
+    chunks.push(encodeText('Discount applied to total purchase\n'));
+    chunks.push(Buffer.from([ESC, 0x61, 0]));
   }
   if (Number(sale.vatTotal) > 0) {
     chunks.push(encodeText(`VAT: ${money(sale.vatTotal)}\n`));
@@ -105,8 +109,105 @@ function buildEscPosReceipt({ shop, sale, paperWidth = 80 }) {
     chunks.push(Buffer.from([ESC, 0x61, 1]));
     pushWrapped(chunks, shop.receiptFooter, chars);
   }
+  if (Number(shop.returnWithinDays) > 0) {
+    chunks.push(Buffer.from([ESC, 0x61, 1]));
+    chunks.push(encodeText(`Returns accepted within ${Math.floor(Number(shop.returnWithinDays))} days\n`));
+  }
 
   // GS V 65 n — feed n units then partial cut (reliable on XP-80U vs cut-in-place)
+  chunks.push(Buffer.from([GS, 0x56, 65, 0x40]));
+  return Buffer.concat(chunks);
+}
+
+function formatSaleDate(value) {
+  const raw = String(value || '').replace('T', ' ').trim();
+  if (!raw) return '';
+  return raw.slice(0, 10);
+}
+
+function formatRefundMethod(method) {
+  const m = String(method || 'cash').toLowerCase();
+  if (m === 'card') return 'Card';
+  if (m === 'qr') return 'QR';
+  return 'Cash';
+}
+
+function buildEscPosReturnReceipt({ shop, returnRecord, paperWidth = 80 }) {
+  const chars = paperWidth >= 72 ? 42 : 32;
+  const rule = '-'.repeat(chars);
+  const chunks = [];
+  const ESC = 0x1b;
+  const GS = 0x1d;
+
+  chunks.push(Buffer.from([ESC, 0x40])); // init
+  chunks.push(Buffer.from([ESC, 0x74, 0])); // code page PC437
+  chunks.push(Buffer.from([ESC, 0x52, 0])); // international char set USA
+  chunks.push(Buffer.from([ESC, 0x4d, 0])); // Font A
+  chunks.push(Buffer.from([ESC, 0x61, 1])); // center
+  pushWrapped(chunks, shop.shopName || 'Shop', chars);
+  if (shop.receiptHeader) pushWrapped(chunks, shop.receiptHeader, chars);
+  if (shop.shopAddress) pushWrapped(chunks, shop.shopAddress, chars);
+  if (shop.shopPhone) chunks.push(encodeText(`Tel: ${shop.shopPhone}\n`));
+  if (shop.shopTin) chunks.push(encodeText(`TIN: ${shop.shopTin}\n`));
+  chunks.push(encodeText(`${rule}\n`));
+  chunks.push(encodeText('RETURN RECEIPT\n'));
+  chunks.push(encodeText(`${rule}\n`));
+  chunks.push(Buffer.from([ESC, 0x61, 0])); // left
+
+  chunks.push(encodeText('Return No:\n'));
+  chunks.push(encodeText(`${returnRecord.returnNumber || ''}\n`));
+  chunks.push(encodeText('\n'));
+  chunks.push(encodeText('Original Invoice:\n'));
+  chunks.push(encodeText(`${returnRecord.invoiceNumber || ''}\n`));
+  chunks.push(encodeText('\n'));
+  const saleDate = formatSaleDate(returnRecord.saleDate);
+  if (saleDate) {
+    chunks.push(encodeText('Sale Date:\n'));
+    chunks.push(encodeText(`${saleDate}\n`));
+    chunks.push(encodeText('\n'));
+  }
+  chunks.push(encodeText('Processed by:\n'));
+  chunks.push(encodeText(`${returnRecord.processedByName || 'Staff'}\n`));
+  chunks.push(encodeText(`${rule}\n`));
+
+  for (const item of returnRecord.items || []) {
+    const productName = item.productName || 'Item';
+    pushWrapped(chunks, productName, chars);
+    if (item.variantName && item.variantName !== productName) {
+      pushWrapped(chunks, item.variantName, chars);
+    }
+    chunks.push(encodeText('\n'));
+    chunks.push(encodeText(`Returned: ${item.quantity}\n`));
+    chunks.push(encodeText('\n'));
+    const left = `Rs.${money(item.unitRefund)} x ${item.quantity}`;
+    const right = `Rs.${money(item.lineRefund)}`;
+    const pad = Math.max(1, chars - left.length - right.length);
+    chunks.push(encodeText(`${left}${' '.repeat(pad)}${right}\n`));
+    chunks.push(encodeText('\n'));
+  }
+
+  chunks.push(encodeText(`${rule}\n`));
+  chunks.push(encodeText('Refund Total\n'));
+  chunks.push(encodeText(`Rs. ${money(returnRecord.refundTotal)}\n`));
+  chunks.push(encodeText('\n'));
+  chunks.push(encodeText('Refund Method\n'));
+  chunks.push(encodeText(`${formatRefundMethod(returnRecord.refundMethod)}\n`));
+  const reason = String(returnRecord.reason || '').trim();
+  if (reason) {
+    chunks.push(encodeText('\n'));
+    chunks.push(encodeText('Reason\n'));
+    pushWrapped(chunks, reason, chars);
+  }
+  chunks.push(encodeText(`${rule}\n`));
+  chunks.push(Buffer.from([ESC, 0x61, 1]));
+  chunks.push(encodeText('Refund processed successfully.\n'));
+  chunks.push(encodeText('\n'));
+  chunks.push(encodeText('Thank you.\n'));
+  if (shop.receiptFooter) {
+    pushWrapped(chunks, shop.receiptFooter, chars);
+  }
+
+  // GS V 65 n — feed n units then partial cut
   chunks.push(Buffer.from([GS, 0x56, 65, 0x40]));
   return Buffer.concat(chunks);
 }
@@ -126,6 +227,12 @@ function resolvePrinterPath(port) {
 
 function buildPayload({ shop, sale, paperWidth, openDrawer }) {
   const buffer = buildEscPosReceipt({ shop, sale, paperWidth });
+  if (!openDrawer) return buffer;
+  return Buffer.concat([buffer, buildDrawerKick()]);
+}
+
+function buildReturnPayload({ shop, returnRecord, paperWidth, openDrawer }) {
+  const buffer = buildEscPosReturnReceipt({ shop, returnRecord, paperWidth });
   if (!openDrawer) return buffer;
   return Buffer.concat([buffer, buildDrawerKick()]);
 }
@@ -150,6 +257,27 @@ function buildTestSale(shop) {
         quantity: 1,
         unitPrice: 100,
         lineTotal: 100,
+      },
+    ],
+  };
+}
+
+function buildTestReturn() {
+  return {
+    returnNumber: 'RET-TEST-0001',
+    invoiceNumber: 'INV-TEST-0001',
+    saleDate: new Date().toISOString(),
+    processedByName: 'Test',
+    refundTotal: 5500,
+    refundMethod: 'cash',
+    reason: 'Wrong size',
+    items: [
+      {
+        productName: 'Leather Shoe Black — long name wraps on paper',
+        variantName: 'Size 42',
+        quantity: 1,
+        unitRefund: 5500,
+        lineRefund: 5500,
       },
     ],
   };
@@ -220,6 +348,29 @@ const printerService = {
     return sendPayload(configured, payload);
   },
 
+  async printReturnReceipt({ returnRecord, openDrawer = false } = {}) {
+    const shop = settingsService.get();
+    const configured = String(shop.printerPort || '').trim();
+    const paperWidth = shop.paperWidth || 80;
+
+    if (!configured) {
+      return {
+        success: false,
+        fallback: 'html',
+        error: 'No receipt printer selected in Settings.',
+      };
+    }
+
+    const payload = buildReturnPayload({
+      shop,
+      returnRecord,
+      paperWidth,
+      openDrawer: Boolean(openDrawer),
+    });
+
+    return sendPayload(configured, payload);
+  },
+
   async testPrint() {
     const shop = settingsService.get();
     const configured = String(shop.printerPort || '').trim();
@@ -240,6 +391,32 @@ const printerService = {
         receiptFooter: shop.receiptFooter || 'If you can read this, cut and feed are OK.',
       },
       sale,
+      paperWidth,
+      openDrawer: false,
+    });
+
+    return sendPayload(configured, payload);
+  },
+
+  async testReturnReceipt() {
+    const shop = settingsService.get();
+    const configured = String(shop.printerPort || '').trim();
+    const paperWidth = shop.paperWidth || 80;
+
+    if (!configured) {
+      return {
+        success: false,
+        error: 'No receipt printer selected in Settings.',
+      };
+    }
+
+    const payload = buildReturnPayload({
+      shop: {
+        ...shop,
+        receiptHeader: shop.receiptHeader || 'Return printer test',
+        receiptFooter: shop.receiptFooter || 'If you can read this, cut and feed are OK.',
+      },
+      returnRecord: buildTestReturn(),
       paperWidth,
       openDrawer: false,
     });

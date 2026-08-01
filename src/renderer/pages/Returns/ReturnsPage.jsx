@@ -4,6 +4,7 @@ import { Button } from '../../components/ui/button';
 import { Alert, AlertDescription } from '../../components/ui/alert';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { invokeWithAuth } from '../../lib/ipc';
+import { buildThermalReturnReceiptHtml } from '../../lib/receiptHtml';
 
 const inputClassName =
   'w-full p-3 rounded-lg bg-input border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-ring';
@@ -19,9 +20,11 @@ export default function ReturnsPage() {
   const [reason, setReason] = useState('');
   const [refundMethod, setRefundMethod] = useState('cash');
   const [recent, setRecent] = useState([]);
+  const [settings, setSettings] = useState(null);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [printingId, setPrintingId] = useState(null);
 
   const refreshRecent = async () => {
     const response = await invokeWithAuth('return:list', { limit: 30 });
@@ -30,7 +33,56 @@ export default function ReturnsPage() {
 
   useEffect(() => {
     refreshRecent();
+    invokeWithAuth('settings:get').then((response) => {
+      if (response.success) setSettings(response.data);
+    });
   }, []);
+
+  function openHtmlReturnReceiptFallback(returnRecord, shopSettings) {
+    const html = buildThermalReturnReceiptHtml({
+      shop: shopSettings || {},
+      returnRecord,
+      paperWidth: shopSettings?.paperWidth || 80,
+      autoPrint: true,
+    });
+    const win = window.open('', '_blank', 'width=360,height=640');
+    if (!win) {
+      return { ok: false, error: 'Pop-up blocked. Allow pop-ups to print the receipt.' };
+    }
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+    return { ok: true };
+  }
+
+  async function printReturnReceipt(returnRecord, { openDrawer }) {
+    const printRes = await invokeWithAuth('printer:printReturnReceipt', {
+      returnId: returnRecord.id,
+      openDrawer,
+    });
+    if (printRes.success && printRes.data?.success) {
+      return {
+        ok: true,
+        message: openDrawer
+          ? 'Return receipt printed. Cash drawer opened.'
+          : 'Return receipt printed.',
+      };
+    }
+
+    const errMsg =
+      printRes.data?.error
+      || printRes.error
+      || 'Automatic print failed.';
+    const shop = settings || (await invokeWithAuth('settings:get')).data;
+    if (shop && !settings) setSettings(shop);
+    const fallback = openHtmlReturnReceiptFallback(returnRecord, shop || {});
+    return {
+      ok: false,
+      message: fallback.ok
+        ? `${errMsg} Opened browser print dialog.`
+        : `${errMsg} ${fallback.error || 'Use Print Again.'}`,
+    };
+  }
 
   const handleLookup = async () => {
     setError('');
@@ -67,15 +119,47 @@ export default function ReturnsPage() {
       reason,
       refundMethod,
     });
-    setBusy(false);
     if (!response.success) {
+      setBusy(false);
       setError(response.error || 'Return failed.');
       return;
     }
-    setMessage(`Return ${response.data.returnNumber} · refund ${formatMoney(response.data.refundTotal)}.`);
+
+    const returnRecord = response.data;
     setLookup(null);
     setInvoice('');
+    setReason('');
     refreshRecent();
+
+    const printResult = await printReturnReceipt(returnRecord, {
+      openDrawer: returnRecord.refundMethod === 'cash',
+    });
+    setMessage(
+      `Return ${returnRecord.returnNumber} · refund ${formatMoney(returnRecord.refundTotal)}. ${printResult.message}`
+    );
+    setBusy(false);
+  };
+
+  const handleReprint = async (returnId) => {
+    if (printingId || busy) return;
+    setError('');
+    setMessage('');
+    setPrintingId(returnId);
+
+    const getRes = await invokeWithAuth('return:get', { returnId });
+    if (!getRes.success) {
+      setError(getRes.error || 'Could not load return for reprint.');
+      setPrintingId(null);
+      return;
+    }
+
+    const printResult = await printReturnReceipt(getRes.data, { openDrawer: false });
+    setMessage(
+      printResult.ok
+        ? `Return ${getRes.data.returnNumber} reprinted.`
+        : printResult.message
+    );
+    setPrintingId(null);
   };
 
   return (
@@ -178,13 +262,24 @@ export default function ReturnsPage() {
           <CardContent className="space-y-2">
             {!recent.length && <p className="text-sm text-muted-foreground">No returns yet.</p>}
             {recent.map((row) => (
-              <div key={row.id} className="flex justify-between text-sm border-b border-border py-2">
+              <div key={row.id} className="flex items-center justify-between gap-3 text-sm border-b border-border py-2">
                 <span className="font-mono font-semibold">
                   {row.returnNumber} · {row.invoiceNumber}
                 </span>
-                <span>
-                  {formatMoney(row.refundTotal)} · {row.refundMethod}
-                </span>
+                <div className="flex items-center gap-3 shrink-0">
+                  <span>
+                    {formatMoney(row.refundTotal)} · {row.refundMethod}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={busy || printingId === row.id}
+                    onClick={() => handleReprint(row.id)}
+                  >
+                    {printingId === row.id ? 'Printing…' : 'Print Again'}
+                  </Button>
+                </div>
               </div>
             ))}
           </CardContent>

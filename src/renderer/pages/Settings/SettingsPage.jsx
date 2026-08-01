@@ -21,6 +21,7 @@ const emptyForm = {
   invoicePrefix: 'POS',
   receiptHeader: '',
   receiptFooter: '',
+  returnWithinDays: 7,
   printerPort: '',
   paperWidth: 80,
   cashierMaxDiscountPct: 10,
@@ -90,6 +91,24 @@ export default function SettingsPage() {
       return;
     }
     setError(response.data?.error || 'Test print failed.');
+  };
+
+  const handleTestReturnPrint = async () => {
+    setTestingPrint(true);
+    setError('');
+    setMessage('');
+    setSettingsSaved(false);
+    const response = await invokeWithAuth('printer:testReturnReceipt');
+    setTestingPrint(false);
+    if (!response.success) {
+      setError(response.error || 'Return test print failed.');
+      return;
+    }
+    if (response.data?.success) {
+      setMessage('Return receipt test page sent to the receipt printer.');
+      return;
+    }
+    setError(response.data?.error || 'Return test print failed.');
   };
 
   return (
@@ -205,14 +224,30 @@ export default function SettingsPage() {
                   />
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">Receipt footer</label>
-                <input
-                  className={inputClassName}
-                  value={form.receiptFooter}
-                  onChange={(e) => setForm({ ...form, receiptFooter: e.target.value })}
-                  placeholder="Thank you for shopping"
-                />
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium mb-2">Receipt footer</label>
+                  <input
+                    className={inputClassName}
+                    value={form.receiptFooter}
+                    onChange={(e) => setForm({ ...form, receiptFooter: e.target.value })}
+                    placeholder="Thank you for shopping"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-2">Return within (days)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    className={inputClassName}
+                    value={form.returnWithinDays}
+                    onChange={(e) => setForm({ ...form, returnWithinDays: e.target.value })}
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Returns accepted within {form.returnWithinDays || 7} days.
+                  </p>
+                </div>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
@@ -239,15 +274,24 @@ export default function SettingsPage() {
                     onChange={(e) => setForm({ ...form, printerPort: e.target.value })}
                     placeholder="Or type name / COM3"
                   />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="mt-2"
-                    disabled={testingPrint || !form.printerPort}
-                    onClick={handleTestPrint}
-                  >
-                    {testingPrint ? 'Printing test…' : 'Print test page'}
-                  </Button>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={testingPrint || !form.printerPort}
+                      onClick={handleTestPrint}
+                    >
+                      {testingPrint ? 'Printing test…' : 'Print test page'}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={testingPrint || !form.printerPort}
+                      onClick={handleTestReturnPrint}
+                    >
+                      Test return receipt
+                    </Button>
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-2">Paper width (mm)</label>

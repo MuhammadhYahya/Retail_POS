@@ -89,8 +89,10 @@ const validChannels = [
   'expense:create',
   'expense:delete',
   'printer:printReceipt',
+  'printer:printReturnReceipt',
   'printer:openDrawer',
   'printer:testPrint',
+  'printer:testReturnReceipt',
   'printer:list',
 ];
 

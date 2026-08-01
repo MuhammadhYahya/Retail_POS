@@ -11,6 +11,7 @@ import * as migration010 from './010_product_fields.js';
 import * as migration011 from './011_discounts.js';
 import * as migration012 from './012_backup_system.js';
 import * as migration013 from './013_v1_shop_loop.js';
+import * as migration014 from './014_return_within_days.js';
 
 const migrations = [
   migration001,
@@ -26,6 +27,7 @@ const migrations = [
   migration011,
   migration012,
   migration013,
+  migration014,
 ];
 
 export function getLatestMigrationVersion() {

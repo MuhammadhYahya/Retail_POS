@@ -28,6 +28,7 @@ function mapSettings(row) {
       invoicePrefix: 'POS',
       receiptHeader: '',
       receiptFooter: '',
+      returnWithinDays: 7,
       printerPort: '',
       paperWidth: 80,
       cashierMaxDiscountPct: 10,
@@ -47,6 +48,7 @@ function mapSettings(row) {
     invoicePrefix: row.invoice_prefix || 'POS',
     receiptHeader: row.receipt_header || '',
     receiptFooter: row.receipt_footer || '',
+    returnWithinDays: Math.max(1, Math.floor(toNumber(row.return_within_days, 7))),
     printerPort: row.printer_port || '',
     paperWidth: toNumber(row.paper_width, 80),
     cashierMaxDiscountPct: toNumber(row.cashier_max_discount_pct, 10),
@@ -81,6 +83,10 @@ const settingsService = {
         payload.receiptHeader !== undefined ? String(payload.receiptHeader ?? '') : current.receiptHeader,
       receiptFooter:
         payload.receiptFooter !== undefined ? String(payload.receiptFooter ?? '') : current.receiptFooter,
+      returnWithinDays:
+        payload.returnWithinDays !== undefined
+          ? Math.max(1, Math.floor(toNumber(payload.returnWithinDays, current.returnWithinDays)))
+          : current.returnWithinDays,
       printerPort: payload.printerPort !== undefined ? cleanText(payload.printerPort) : current.printerPort,
       paperWidth:
         payload.paperWidth !== undefined
@@ -114,6 +120,7 @@ const settingsService = {
         invoice_prefix = ?,
         receipt_header = ?,
         receipt_footer = ?,
+        return_within_days = ?,
         printer_port = ?,
         paper_width = ?,
         cashier_max_discount_pct = ?,
@@ -131,6 +138,7 @@ const settingsService = {
       next.invoicePrefix,
       next.receiptHeader || null,
       next.receiptFooter || null,
+      next.returnWithinDays,
       next.printerPort || null,
       next.paperWidth,
       next.cashierMaxDiscountPct,

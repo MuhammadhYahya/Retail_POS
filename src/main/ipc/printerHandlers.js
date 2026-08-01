@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron';
 import printerService from '../services/printerService.js';
 import saleService from '../services/saleService.js';
+import returnService from '../services/returnService.js';
 import { extractToken, requireRole, validateSession } from '../lib/sessionAuth.js';
 
 export function registerPrinterHandlers() {
@@ -33,6 +34,26 @@ export function registerPrinterHandlers() {
     }
   });
 
+  ipcMain.handle('printer:printReturnReceipt', async (event, payload = {}) => {
+    try {
+      const session = validateSession(extractToken(payload));
+      if (!session.success) return session;
+      const roleCheck = requireRole(session, ['admin', 'manager']);
+      if (!roleCheck.success) return roleCheck;
+
+      const returnRecord = returnService.getById(payload.returnId);
+      const result = await printerService.printReturnReceipt({
+        returnRecord,
+        openDrawer:
+          payload.openDrawer !== false
+          && String(returnRecord.refundMethod || '').toLowerCase() === 'cash',
+      });
+      return { success: true, data: result };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
   ipcMain.handle('printer:testPrint', async (event, payload = {}) => {
     try {
       const session = validateSession(extractToken(payload));
@@ -40,6 +61,19 @@ export function registerPrinterHandlers() {
       const roleCheck = requireRole(session, ['admin', 'manager']);
       if (!roleCheck.success) return roleCheck;
       const result = await printerService.testPrint();
+      return { success: true, data: result };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('printer:testReturnReceipt', async (event, payload = {}) => {
+    try {
+      const session = validateSession(extractToken(payload));
+      if (!session.success) return session;
+      const roleCheck = requireRole(session, ['admin', 'manager']);
+      if (!roleCheck.success) return roleCheck;
+      const result = await printerService.testReturnReceipt();
       return { success: true, data: result };
     } catch (err) {
       return { success: false, error: err.message };

@@ -151,9 +151,15 @@ const returnService = {
   getById(id) {
     const db = getDb();
     const row = db.prepare(`
-      SELECT sr.*, s.invoice_number
+      SELECT
+        sr.*,
+        s.invoice_number,
+        s.sale_date,
+        u.display_name AS processed_by_name,
+        u.username AS processed_by_username
       FROM sale_returns sr
       JOIN sales s ON s.id = sr.sale_id
+      LEFT JOIN users u ON u.id = sr.created_by
       WHERE sr.id = ?
     `).get(cleanText(id));
     if (!row) throw new Error('Return not found.');
@@ -168,12 +174,14 @@ const returnService = {
       returnNumber: row.return_number,
       saleId: row.sale_id,
       invoiceNumber: row.invoice_number,
+      saleDate: row.sale_date,
       sessionId: row.session_id,
       refundTotal: toNumber(row.refund_total),
       refundMethod: row.refund_method,
       reason: row.reason,
       status: row.status,
       createdBy: row.created_by,
+      processedByName: row.processed_by_name || row.processed_by_username || 'Staff',
       createdAt: row.created_at,
       items: items.map((item) => ({
         id: item.id,
