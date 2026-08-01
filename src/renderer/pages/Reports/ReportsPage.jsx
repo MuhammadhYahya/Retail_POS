@@ -3,6 +3,14 @@ import AppShell from '../../components/layout/AppShell';
 import { Button } from '../../components/ui/button';
 import { Alert, AlertDescription } from '../../components/ui/alert';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../../components/ui/dialog';
 import { invokeWithAuth } from '../../lib/ipc';
 
 const inputClassName =
@@ -27,6 +35,9 @@ export default function ReportsPage() {
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [voidingId, setVoidingId] = useState(null);
+  const [voidTarget, setVoidTarget] = useState(null);
+  const [voidReason, setVoidReason] = useState('');
+  const [voidError, setVoidError] = useState('');
 
   const load = async (selectedDate = date) => {
     setLoading(true);
@@ -58,20 +69,47 @@ export default function ReportsPage() {
     load();
   }, []);
 
-  const handleVoid = async (sale) => {
+  const openVoidDialog = (sale) => {
     if (sale.status === 'voided') return;
-    const reason = window.prompt(`Void invoice ${sale.invoiceNumber}. Reason:`);
-    if (!reason || !reason.trim()) return;
-    setVoidingId(sale.id);
-    setMessage('');
-    setError('');
-    const response = await invokeWithAuth('sale:void', { saleId: sale.id, reason: reason.trim() });
-    setVoidingId(null);
-    if (!response.success) {
-      setError(response.error || 'Void failed.');
+    setVoidTarget(sale);
+    setVoidReason('');
+    setVoidError('');
+  };
+
+  const closeVoidDialog = () => {
+    if (voidingId) return;
+    setVoidTarget(null);
+    setVoidReason('');
+    setVoidError('');
+  };
+
+  const confirmVoid = async () => {
+    if (!voidTarget) return;
+    const reason = voidReason.trim();
+    if (!reason) {
+      setVoidError('A void reason is required.');
       return;
     }
-    setMessage(`Voided ${sale.invoiceNumber}.`);
+
+    setVoidingId(voidTarget.id);
+    setVoidError('');
+    setMessage('');
+    setError('');
+
+    const response = await invokeWithAuth('sale:void', {
+      saleId: voidTarget.id,
+      reason,
+    });
+
+    setVoidingId(null);
+    if (!response.success) {
+      setVoidError(response.error || 'Void failed.');
+      return;
+    }
+
+    setMessage(`Voided ${voidTarget.invoiceNumber}.`);
+    setVoidTarget(null);
+    setVoidReason('');
     load(date);
   };
 
@@ -164,7 +202,9 @@ export default function ReportsPage() {
         <Card>
           <CardHeader>
             <CardTitle>Sales log — {date}</CardTitle>
-            <CardDescription>Void mistaken sales (manager/admin). Stock is restored.</CardDescription>
+            <CardDescription>
+              Void cancels a mistaken sale and puts stock back. Manager/admin only.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {!recentSales.length ? (
@@ -205,7 +245,7 @@ export default function ReportsPage() {
                               variant="outline"
                               size="sm"
                               disabled={voidingId === sale.id}
-                              onClick={() => handleVoid(sale)}
+                              onClick={() => openVoidDialog(sale)}
                             >
                               {voidingId === sale.id ? 'Voiding...' : 'Void'}
                             </Button>
@@ -283,6 +323,49 @@ export default function ReportsPage() {
           </Card>
         )}
       </div>
+
+      <Dialog open={Boolean(voidTarget)} onOpenChange={(open) => !open && closeVoidDialog()} dismissible={!voidingId}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Void sale</DialogTitle>
+            <DialogDescription>
+              Cancel invoice {voidTarget?.invoiceNumber} ({formatMoney(voidTarget?.total)}). Stock will be restored.
+              This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            {voidError && (
+              <Alert variant="destructive">
+                <AlertDescription>{voidError}</AlertDescription>
+              </Alert>
+            )}
+            <div>
+              <label className="block text-sm font-medium mb-2" htmlFor="void-reason">
+                Reason
+              </label>
+              <textarea
+                id="void-reason"
+                className={`${inputClassName} min-h-[96px] resize-y`}
+                placeholder="e.g. Wrong items scanned"
+                value={voidReason}
+                onChange={(e) => setVoidReason(e.target.value)}
+                disabled={Boolean(voidingId)}
+                autoFocus
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={closeVoidDialog} disabled={Boolean(voidingId)}>
+              Cancel
+            </Button>
+            <Button type="button" variant="destructive" onClick={confirmVoid} disabled={Boolean(voidingId)}>
+              {voidingId ? 'Voiding...' : 'Void sale'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppShell>
   );
 }
