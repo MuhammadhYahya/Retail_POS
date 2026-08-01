@@ -1,7 +1,8 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, Menu } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import { getDb, closeDb } from './main/database/db.js';
+import { ensureJwtSecret } from './main/lib/jwtSecret.js';
 import { registerAuthHandlers } from './main/ipc/authHandlers.js';
 import { registerUserHandlers } from './main/ipc/userHandlers.js';
 import { registerProductHandlers } from './main/ipc/productHandlers.js';
@@ -35,10 +36,17 @@ function clearSessionStore() {
   }
 }
 
+function applyProductionMenu() {
+  if (!app.isPackaged) return;
+  // Hide default View/DevTools menu in packaged builds
+  Menu.setApplicationMenu(null);
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    autoHideMenuBar: app.isPackaged,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -85,8 +93,10 @@ app.on('activate', () => {
 
 app.whenReady().then(async () => {
   getDb();
+  ensureJwtSecret();
   ensureReservedDataDirs();
   clearSessionStore();
+  applyProductionMenu();
   registerAuthHandlers();
   registerUserHandlers();
   registerProductHandlers();

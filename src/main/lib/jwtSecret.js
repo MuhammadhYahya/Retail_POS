@@ -1,13 +1,12 @@
 import crypto from 'crypto';
 import { getDb } from '../database/db.js';
 
-const FALLBACK_SECRET = 'posly-local-secret-2026-do-not-share';
-
 export function getJwtSecret() {
   const db = getDb();
   const row = db.prepare(`SELECT value FROM app_secrets WHERE key = 'jwt_secret'`).get();
   if (row?.value) return row.value;
-  return process.env.JWT_SECRET || FALLBACK_SECRET;
+  if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
+  throw new Error('JWT secret is not initialized. Call ensureJwtSecret() at startup.');
 }
 
 export function ensureJwtSecret() {

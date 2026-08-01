@@ -4,6 +4,7 @@ import { Button } from '../../components/ui/button';
 import { Alert, AlertDescription } from '../../components/ui/alert';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { invokeWithAuth } from '../../lib/ipc';
+import { cn } from '../../lib/utils';
 import BackupRestorePanel from './BackupRestorePanel';
 
 const inputClassName =
@@ -32,10 +33,15 @@ export default function SettingsPage() {
   const [settingsSaved, setSettingsSaved] = useState(false);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [printers, setPrinters] = useState([]);
+  const [testingPrint, setTestingPrint] = useState(false);
 
   const load = async () => {
     setError('');
-    const settingsRes = await invokeWithAuth('settings:get');
+    const [settingsRes, printersRes] = await Promise.all([
+      invokeWithAuth('settings:get'),
+      invokeWithAuth('printer:list'),
+    ]);
 
     if (!settingsRes.success) {
       setError(settingsRes.error || 'Failed to load settings.');
@@ -43,6 +49,9 @@ export default function SettingsPage() {
     }
 
     setForm({ ...emptyForm, ...settingsRes.data });
+    if (printersRes.success) {
+      setPrinters(printersRes.data || []);
+    }
   };
 
   useEffect(() => {
@@ -63,6 +72,24 @@ export default function SettingsPage() {
     }
     setForm({ ...emptyForm, ...response.data });
     setSettingsSaved(true);
+  };
+
+  const handleTestPrint = async () => {
+    setTestingPrint(true);
+    setError('');
+    setMessage('');
+    setSettingsSaved(false);
+    const response = await invokeWithAuth('printer:testPrint');
+    setTestingPrint(false);
+    if (!response.success) {
+      setError(response.error || 'Test print failed.');
+      return;
+    }
+    if (response.data?.success) {
+      setMessage('Test page sent to the receipt printer.');
+      return;
+    }
+    setError(response.data?.error || 'Test print failed.');
   };
 
   return (
@@ -189,13 +216,38 @@ export default function SettingsPage() {
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="block text-sm font-medium mb-2">Printer port</label>
-                  <input
+                  <label className="block text-sm font-medium mb-2">Receipt printer</label>
+                  <select
                     className={inputClassName}
                     value={form.printerPort || ''}
                     onChange={(e) => setForm({ ...form, printerPort: e.target.value })}
-                    placeholder="COM3 or \\\\.\\COM3"
+                  >
+                    <option value="">— Manual print dialog —</option>
+                    {printers.map((printer) => (
+                      <option key={printer.name} value={printer.name}>
+                        {printer.name}{printer.isDefault ? ' (default)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Choose <strong>Xprinter XP-80</strong> (paper width 80). Uses ESC/POS raw print.
+                    Cash drawer opens automatically on cash sales when wired to the printer (RJ11).
+                  </p>
+                  <input
+                    className={cn(inputClassName, 'mt-2')}
+                    value={form.printerPort || ''}
+                    onChange={(e) => setForm({ ...form, printerPort: e.target.value })}
+                    placeholder="Or type name / COM3"
                   />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="mt-2"
+                    disabled={testingPrint || !form.printerPort}
+                    onClick={handleTestPrint}
+                  >
+                    {testingPrint ? 'Printing test…' : 'Print test page'}
+                  </Button>
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-2">Paper width (mm)</label>
@@ -204,7 +256,7 @@ export default function SettingsPage() {
                     value={form.paperWidth}
                     onChange={(e) => setForm({ ...form, paperWidth: Number(e.target.value) })}
                   >
-                    <option value={80}>80</option>
+                    <option value={80}>80 (XP-80)</option>
                     <option value={58}>58</option>
                   </select>
                 </div>

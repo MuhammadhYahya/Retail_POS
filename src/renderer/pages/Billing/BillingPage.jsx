@@ -16,6 +16,7 @@ import { invokeWithAuth, notifyLowStockUpdated } from '../../lib/ipc';
 import { useCartStore } from '../../store/cartStore';
 import { useAuthStore } from '../../store/authStore';
 import { cn } from '../../lib/utils';
+import { buildThermalReceiptHtml } from '../../lib/receiptHtml';
 
 const inputClassName =
   'w-full p-3.5 rounded-xl bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-all duration-100 font-semibold';
@@ -50,6 +51,8 @@ export default function BillingPage() {
   const [saving, setSaving] = useState(false);
   const [settings, setSettings] = useState(null);
   const [successOpen, setSuccessOpen] = useState(false);
+  const [printStatus, setPrintStatus] = useState('');
+  const [printing, setPrinting] = useState(false);
   const [completedSale, setCompletedSale] = useState(null);
   const [receiptSeconds, setReceiptSeconds] = useState(120);
   const [saleDiscDraftType, setSaleDiscDraftType] = useState('fixed');
@@ -292,77 +295,87 @@ export default function BillingPage() {
     setPaymentMethod('cash');
     setSaleDiscDraftValue('');
     setSaleDiscDraftType('fixed');
+    setPrintStatus('Printing…');
     setSuccessOpen(true);
+    setPrinting(true);
+
+    // Auto-print + cash drawer (cash sales)
+    const printRes = await invokeWithAuth('printer:printReceipt', {
+      saleId: response.data.id,
+      openDrawer: response.data.paymentMethod === 'cash',
+    });
+    if (printRes.success && printRes.data?.success) {
+      setPrintStatus(
+        response.data.paymentMethod === 'cash'
+          ? 'Receipt printed. Cash drawer opened.'
+          : 'Receipt printed.'
+      );
+    } else {
+      const errMsg =
+        printRes.data?.error
+        || printRes.error
+        || 'Automatic print failed.';
+      const fallback = openHtmlReceiptFallback(response.data, settings);
+      setPrintStatus(
+        fallback.ok
+          ? `${errMsg} Opened browser print dialog.`
+          : `${errMsg} ${fallback.error || 'Use Reprint Receipt.'}`
+      );
+    }
+    setPrinting(false);
   };
 
-  const handlePrintReceipt = async () => {
-    if (!completedSale) return;
+  function openHtmlReceiptFallback(sale, shopSettings) {
+    const html = buildThermalReceiptHtml({
+      shop: shopSettings || {},
+      sale,
+      paperWidth: shopSettings?.paperWidth || 80,
+      autoPrint: true,
+    });
+    const win = window.open('', '_blank', 'width=360,height=640');
+    if (!win) {
+      return { ok: false, error: 'Pop-up blocked. Allow pop-ups to print the receipt.' };
+    }
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+    return { ok: true };
+  }
 
+  const handlePrintReceipt = async () => {
+    if (!completedSale || printing) return;
+
+    setPrinting(true);
+    setPrintStatus('Printing…');
+    // Reprint: do not kick the cash drawer again
     const thermal = await invokeWithAuth('printer:printReceipt', {
       saleId: completedSale.id,
-      openDrawer: completedSale.paymentMethod === 'cash',
+      openDrawer: false,
     });
     if (thermal.success && thermal.data?.success) {
+      setPrintStatus('Receipt reprinted.');
+      setPrinting(false);
       return;
     }
 
-    const shopName = settings?.shopName || 'ZEN Store';
-    const win = window.open('', '_blank', 'width=400,height=700');
-    if (!win) {
-      setError('Pop-up blocked. Allow pop-ups to print the receipt.');
-      return;
+    const fallback = openHtmlReceiptFallback(completedSale, settings);
+    if (fallback.ok) {
+      setPrintStatus('Opened browser print dialog.');
+    } else {
+      setPrintStatus(
+        thermal.data?.error
+          || thermal.error
+          || fallback.error
+          || 'Reprint failed.'
+      );
     }
-
-    const lines = (completedSale.items || [])
-      .map(
-        (item) =>
-          `<tr><td>${item.productName}</td><td>${item.quantity}</td><td>${formatMoney(item.unitPrice)}</td><td>${formatMoney(item.discountAmount)}</td><td>${formatMoney(item.lineTotal)}</td></tr>`
-      )
-      .join('');
-
-    const qrImg = completedSale.ird?.qrData
-      ? `<img src="${completedSale.ird.qrData}" alt="QR" style="width:140px;height:140px;margin:12px auto;display:block;" />`
-      : '';
-
-    const soldBy = completedSale.cashierName || completedSale.cashierUsername || '';
-
-    win.document.write(`
-      <html><head><title>${completedSale.invoiceNumber}</title>
-      <style>
-        body { font-family: monospace; padding: 16px; }
-        table { width: 100%; border-collapse: collapse; font-size: 12px; }
-        td, th { text-align: left; padding: 4px 0; }
-        h1 { font-size: 16px; margin: 0 0 8px; }
-        .muted { color: #555; font-size: 12px; }
-      </style></head><body>
-        <h1>${shopName}</h1>
-        <p class="muted">${settings?.shopAddress || ''}</p>
-        <p><strong>${completedSale.invoiceNumber}</strong></p>
-        <p class="muted">${new Date(completedSale.saleDate).toLocaleString()}</p>
-        ${soldBy ? `<p class="muted">Sold by: ${soldBy}</p>` : ''}
-        <hr />
-        <table>
-          <thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Disc</th><th>Total</th></tr></thead>
-          <tbody>${lines}</tbody>
-        </table>
-        <hr />
-        <p>Subtotal: ${formatMoney(completedSale.subtotal)}</p>
-        <p>Discount: ${formatMoney(completedSale.discountTotal)}</p>
-        <p>VAT: ${formatMoney(completedSale.vatTotal)}</p>
-        <p><strong>Total: ${formatMoney(completedSale.total)}</strong></p>
-        <p>Paid (${completedSale.paymentMethod}): ${formatMoney(completedSale.amountTendered)}</p>
-        <p>Change: ${formatMoney(completedSale.changeGiven)}</p>
-        ${qrImg}
-        <p class="muted">${settings?.receiptFooter || 'Thank you'}</p>
-        <script>window.print();</script>
-      </body></html>
-    `);
-    win.document.close();
+    setPrinting(false);
   };
 
   const startNewSale = () => {
     setSuccessOpen(false);
     setCompletedSale(null);
+    setPrintStatus('');
     setReceiptSeconds(120);
     barcodeRef.current?.focus();
   };
@@ -820,14 +833,23 @@ export default function BillingPage() {
             </div>
           )}
 
+          {printStatus ? (
+            <p className={`text-center text-xs font-semibold -mt-2 mb-2 ${
+              /fail|error|block/i.test(printStatus) ? 'text-amber-600' : 'text-emerald-600'
+            }`}>
+              {printStatus}
+            </p>
+          ) : null}
+
           <DialogFooter className="grid grid-cols-2 gap-3 sm:space-x-0">
             <button
               type="button"
               onClick={handlePrintReceipt}
-              className="h-12 rounded-xl border border-border hover:bg-muted font-bold text-sm text-foreground flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95"
+              disabled={printing}
+              className="h-12 rounded-xl border border-border hover:bg-muted font-bold text-sm text-foreground flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
             >
               <Printer className="h-4 w-4" />
-              Print Receipt
+              {printing ? 'Printing…' : 'Reprint Receipt'}
             </button>
             <button
               type="button"

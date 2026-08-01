@@ -90,6 +90,8 @@ const validChannels = [
   'expense:delete',
   'printer:printReceipt',
   'printer:openDrawer',
+  'printer:testPrint',
+  'printer:list',
 ];
 
 const validReceiveChannels = ['backup:progress', 'import:progress'];

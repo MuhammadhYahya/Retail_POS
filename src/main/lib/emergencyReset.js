@@ -55,7 +55,6 @@ export function requestEmergencyCode(userId, username) {
   });
 
   console.log(`[emergency-reset] Code for ${username} written to ${filePath}`);
-  console.log(`[emergency-reset] Code: ${code} (expires in 10 minutes)`);
 
   return {
     success: true,

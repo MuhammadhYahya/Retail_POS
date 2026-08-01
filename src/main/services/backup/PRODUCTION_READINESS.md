@@ -37,7 +37,7 @@ Scope: Complete Backup & Restore + Import/Export (no AES-256 encryption this rel
 - `src/main/database/migrations/012_backup_system.js`
 
 ### Backup core
-- `src/main/services/backupService.js` (re-export)
+- `src/main/services/backup/index.js` (canonical backup service)
 - `src/main/services/backup/index.js`
 - `src/main/services/backup/archiveBuilder.js`
 - `src/main/services/backup/archiveVerifier.js`
