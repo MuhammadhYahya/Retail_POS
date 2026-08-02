@@ -4,6 +4,34 @@ import settingsService from './settingsService.js';
 import { isRawEscPosPort } from '../lib/escposPort.js';
 import { writeRawToWindowsPrinter } from '../lib/windowsRawPrint.js';
 
+/** Match Windows RAW PowerShell timeout — avoid infinite "Printing…" on hung COM ports. */
+const ESCPOS_PORT_TIMEOUT_MS = 20_000;
+
+function withTimeout(promise, ms, message) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error(message));
+    }, ms);
+    promise.then(
+      (value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
+
 /** XP-80 (and most ESC/POS) expect single-byte text, not UTF-8. */
 function toPrinterText(text) {
   return String(text ?? '')
@@ -287,7 +315,11 @@ async function sendPayload(configured, payload) {
   if (isRawEscPosPort(configured)) {
     const port = resolvePrinterPath(configured);
     try {
-      await fs.promises.writeFile(port, payload);
+      await withTimeout(
+        fs.promises.writeFile(port, payload),
+        ESCPOS_PORT_TIMEOUT_MS,
+        `Printer timed out after ${ESCPOS_PORT_TIMEOUT_MS / 1000}s. Check the XP-80U is online and not paused.`
+      );
       return { success: true, fallback: null, method: 'escpos-port' };
     } catch (err) {
       return {

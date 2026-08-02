@@ -4,7 +4,11 @@ import { Button } from '../../components/ui/button';
 import { Alert, AlertDescription } from '../../components/ui/alert';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { invokeWithAuth } from '../../lib/ipc';
-import { buildThermalReturnReceiptHtml } from '../../lib/receiptHtml';
+import {
+  formatPrintFailureStatus,
+  openReturnHtmlFallback,
+  REPRINT_WHEN_READY_MESSAGE,
+} from '../../lib/printRecovery';
 
 const inputClassName =
   'w-full p-3 rounded-lg bg-input border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-ring';
@@ -25,6 +29,7 @@ export default function ReturnsPage() {
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [printingId, setPrintingId] = useState(null);
+  const [failedPrintReturnId, setFailedPrintReturnId] = useState(null);
 
   const refreshRecent = async () => {
     const response = await invokeWithAuth('return:list', { limit: 30 });
@@ -38,50 +43,40 @@ export default function ReturnsPage() {
     });
   }, []);
 
-  function openHtmlReturnReceiptFallback(returnRecord, shopSettings) {
-    const html = buildThermalReturnReceiptHtml({
-      shop: shopSettings || {},
-      returnRecord,
-      paperWidth: shopSettings?.paperWidth || 80,
-      autoPrint: true,
-    });
-    const win = window.open('', '_blank', 'width=360,height=640');
-    if (!win) {
-      return { ok: false, error: 'Pop-up blocked. Allow pop-ups to print the receipt.' };
-    }
-    win.document.open();
-    win.document.write(html);
-    win.document.close();
-    return { ok: true };
-  }
-
   async function printReturnReceipt(returnRecord, { openDrawer }) {
-    const printRes = await invokeWithAuth('printer:printReturnReceipt', {
-      returnId: returnRecord.id,
-      openDrawer,
-    });
-    if (printRes.success && printRes.data?.success) {
+    try {
+      const printRes = await invokeWithAuth('printer:printReturnReceipt', {
+        returnId: returnRecord.id,
+        openDrawer,
+      });
+      if (printRes.success && printRes.data?.success) {
+        setFailedPrintReturnId(null);
+        return {
+          ok: true,
+          message: openDrawer
+            ? 'Return receipt printed. Cash drawer opened.'
+            : 'Return receipt printed.',
+        };
+      }
+
+      const shop = settings || (await invokeWithAuth('settings:get')).data;
+      if (shop && !settings) setSettings(shop);
+      const fallback = openReturnHtmlFallback(returnRecord, shop || {});
+      setFailedPrintReturnId(returnRecord.id);
       return {
-        ok: true,
-        message: openDrawer
-          ? 'Return receipt printed. Cash drawer opened.'
-          : 'Return receipt printed.',
+        ok: false,
+        message: formatPrintFailureStatus(fallback),
+      };
+    } catch {
+      const shop = settings || (await invokeWithAuth('settings:get')).data;
+      if (shop && !settings) setSettings(shop);
+      const fallback = openReturnHtmlFallback(returnRecord, shop || {});
+      setFailedPrintReturnId(returnRecord.id);
+      return {
+        ok: false,
+        message: formatPrintFailureStatus(fallback),
       };
     }
-
-    const errMsg =
-      printRes.data?.error
-      || printRes.error
-      || 'Automatic print failed.';
-    const shop = settings || (await invokeWithAuth('settings:get')).data;
-    if (shop && !settings) setSettings(shop);
-    const fallback = openHtmlReturnReceiptFallback(returnRecord, shop || {});
-    return {
-      ok: false,
-      message: fallback.ok
-        ? `${errMsg} Opened browser print dialog.`
-        : `${errMsg} ${fallback.error || 'Use Print Again.'}`,
-    };
   }
 
   const handleLookup = async () => {
@@ -131,13 +126,16 @@ export default function ReturnsPage() {
     setReason('');
     refreshRecent();
 
-    const printResult = await printReturnReceipt(returnRecord, {
-      openDrawer: returnRecord.refundMethod === 'cash',
-    });
-    setMessage(
-      `Return ${returnRecord.returnNumber} · refund ${formatMoney(returnRecord.refundTotal)}. ${printResult.message}`
-    );
-    setBusy(false);
+    try {
+      const printResult = await printReturnReceipt(returnRecord, {
+        openDrawer: returnRecord.refundMethod === 'cash',
+      });
+      setMessage(
+        `Return ${returnRecord.returnNumber} · refund ${formatMoney(returnRecord.refundTotal)}. ${printResult.message}`
+      );
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleReprint = async (returnId) => {
@@ -146,20 +144,23 @@ export default function ReturnsPage() {
     setMessage('');
     setPrintingId(returnId);
 
-    const getRes = await invokeWithAuth('return:get', { returnId });
-    if (!getRes.success) {
-      setError(getRes.error || 'Could not load return for reprint.');
-      setPrintingId(null);
-      return;
-    }
+    try {
+      const getRes = await invokeWithAuth('return:get', { returnId });
+      if (!getRes.success) {
+        setError(getRes.error || 'Could not load return for reprint.');
+        return;
+      }
 
-    const printResult = await printReturnReceipt(getRes.data, { openDrawer: false });
-    setMessage(
-      printResult.ok
-        ? `Return ${getRes.data.returnNumber} reprinted.`
-        : printResult.message
-    );
-    setPrintingId(null);
+      // Reprint: never open cash drawer
+      const printResult = await printReturnReceipt(getRes.data, { openDrawer: false });
+      setMessage(
+        printResult.ok
+          ? `Return ${getRes.data.returnNumber} reprinted.`
+          : printResult.message
+      );
+    } finally {
+      setPrintingId(null);
+    }
   };
 
   return (
@@ -171,8 +172,15 @@ export default function ReturnsPage() {
           </Alert>
         )}
         {message && (
-          <Alert>
+          <Alert variant={failedPrintReturnId ? 'destructive' : 'default'}>
             <AlertDescription>{message}</AlertDescription>
+          </Alert>
+        )}
+        {failedPrintReturnId && (
+          <Alert>
+            <AlertDescription>
+              {REPRINT_WHEN_READY_MESSAGE} Use <strong>Print Again</strong> on the return below — cash drawer will not open.
+            </AlertDescription>
           </Alert>
         )}
 
@@ -272,10 +280,15 @@ export default function ReturnsPage() {
                   </span>
                   <Button
                     type="button"
-                    variant="outline"
+                    variant={failedPrintReturnId === row.id ? 'default' : 'outline'}
                     size="sm"
                     disabled={busy || printingId === row.id}
                     onClick={() => handleReprint(row.id)}
+                    className={
+                      failedPrintReturnId === row.id
+                        ? 'border border-amber-500 bg-amber-500/15 text-amber-900 hover:bg-amber-500/25'
+                        : undefined
+                    }
                   >
                     {printingId === row.id ? 'Printing…' : 'Print Again'}
                   </Button>

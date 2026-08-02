@@ -16,7 +16,11 @@ import { invokeWithAuth, notifyLowStockUpdated } from '../../lib/ipc';
 import { useCartStore } from '../../store/cartStore';
 import { useAuthStore } from '../../store/authStore';
 import { cn } from '../../lib/utils';
-import { buildThermalReceiptHtml } from '../../lib/receiptHtml';
+import {
+  formatPrintFailureStatus,
+  isPrintFailureStatus,
+  openSaleHtmlFallback,
+} from '../../lib/printRecovery';
 
 const inputClassName =
   'w-full p-3.5 rounded-xl bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-all duration-100 font-semibold';
@@ -53,6 +57,7 @@ export default function BillingPage() {
   const [successOpen, setSuccessOpen] = useState(false);
   const [printStatus, setPrintStatus] = useState('');
   const [printing, setPrinting] = useState(false);
+  const [printFailed, setPrintFailed] = useState(false);
   const [completedSale, setCompletedSale] = useState(null);
   const [receiptSeconds, setReceiptSeconds] = useState(120);
   const [saleDiscDraftType, setSaleDiscDraftType] = useState('fixed');
@@ -296,92 +301,78 @@ export default function BillingPage() {
     setSaleDiscDraftValue('');
     setSaleDiscDraftType('fixed');
     setPrintStatus('Printing…');
+    setPrintFailed(false);
     setSuccessOpen(true);
     setPrinting(true);
 
     // Auto-print + cash drawer (cash sales)
-    const printRes = await invokeWithAuth('printer:printReceipt', {
-      saleId: response.data.id,
-      openDrawer: response.data.paymentMethod === 'cash',
-    });
-    if (printRes.success && printRes.data?.success) {
-      setPrintStatus(
-        response.data.paymentMethod === 'cash'
-          ? 'Receipt printed. Cash drawer opened.'
-          : 'Receipt printed.'
-      );
-    } else {
-      const errMsg =
-        printRes.data?.error
-        || printRes.error
-        || 'Automatic print failed.';
-      const fallback = openHtmlReceiptFallback(response.data, settings);
-      setPrintStatus(
-        fallback.ok
-          ? `${errMsg} Opened browser print dialog.`
-          : `${errMsg} ${fallback.error || 'Use Reprint Receipt.'}`
-      );
+    try {
+      const printRes = await invokeWithAuth('printer:printReceipt', {
+        saleId: response.data.id,
+        openDrawer: response.data.paymentMethod === 'cash',
+      });
+      if (printRes.success && printRes.data?.success) {
+        setPrintFailed(false);
+        setPrintStatus(
+          response.data.paymentMethod === 'cash'
+            ? 'Receipt printed. Cash drawer opened.'
+            : 'Receipt printed.'
+        );
+      } else {
+        const fallback = openSaleHtmlFallback(response.data, settings);
+        setPrintFailed(true);
+        setPrintStatus(formatPrintFailureStatus(fallback));
+      }
+    } catch {
+      const fallback = openSaleHtmlFallback(response.data, settings);
+      setPrintFailed(true);
+      setPrintStatus(formatPrintFailureStatus(fallback));
+    } finally {
+      setPrinting(false);
     }
-    setPrinting(false);
   };
-
-  function openHtmlReceiptFallback(sale, shopSettings) {
-    const html = buildThermalReceiptHtml({
-      shop: shopSettings || {},
-      sale,
-      paperWidth: shopSettings?.paperWidth || 80,
-      autoPrint: true,
-    });
-    const win = window.open('', '_blank', 'width=360,height=640');
-    if (!win) {
-      return { ok: false, error: 'Pop-up blocked. Allow pop-ups to print the receipt.' };
-    }
-    win.document.open();
-    win.document.write(html);
-    win.document.close();
-    return { ok: true };
-  }
 
   const handlePrintReceipt = async () => {
     if (!completedSale || printing) return;
 
     setPrinting(true);
     setPrintStatus('Printing…');
-    // Reprint: do not kick the cash drawer again
-    const thermal = await invokeWithAuth('printer:printReceipt', {
-      saleId: completedSale.id,
-      openDrawer: false,
-    });
-    if (thermal.success && thermal.data?.success) {
-      setPrintStatus('Receipt reprinted.');
-      setPrinting(false);
-      return;
-    }
+    try {
+      // Reprint: do not kick the cash drawer again
+      const thermal = await invokeWithAuth('printer:printReceipt', {
+        saleId: completedSale.id,
+        openDrawer: false,
+      });
+      if (thermal.success && thermal.data?.success) {
+        setPrintFailed(false);
+        setPrintStatus('Receipt reprinted.');
+        setReceiptSeconds(120);
+        return;
+      }
 
-    const fallback = openHtmlReceiptFallback(completedSale, settings);
-    if (fallback.ok) {
-      setPrintStatus('Opened browser print dialog.');
-    } else {
-      setPrintStatus(
-        thermal.data?.error
-          || thermal.error
-          || fallback.error
-          || 'Reprint failed.'
-      );
+      const fallback = openSaleHtmlFallback(completedSale, settings);
+      setPrintFailed(true);
+      setPrintStatus(formatPrintFailureStatus(fallback));
+    } catch {
+      const fallback = openSaleHtmlFallback(completedSale, settings);
+      setPrintFailed(true);
+      setPrintStatus(formatPrintFailureStatus(fallback));
+    } finally {
+      setPrinting(false);
     }
-    setPrinting(false);
   };
 
   const startNewSale = () => {
     setSuccessOpen(false);
     setCompletedSale(null);
     setPrintStatus('');
+    setPrintFailed(false);
     setReceiptSeconds(120);
     barcodeRef.current?.focus();
   };
 
   useEffect(() => {
-    if (!successOpen) return undefined;
+    if (!successOpen || printFailed) return undefined;
     const timer = window.setInterval(() => {
       setReceiptSeconds((seconds) => {
         if (seconds <= 1) {
@@ -393,7 +384,7 @@ export default function BillingPage() {
       });
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [successOpen]);
+  }, [successOpen, printFailed]);
 
   const resetReceiptCountdown = () => setReceiptSeconds(120);
   const saleDiscountActive = saleDiscountType !== 'none' && Number(saleDiscountValue) > 0;
@@ -796,7 +787,15 @@ export default function BillingPage() {
 
           {completedSale && (
             <div onClick={resetReceiptCountdown} className="relative my-6 p-5 rounded-2xl bg-muted/30 border border-border/50 space-y-4 font-semibold cursor-pointer">
-              <div className="absolute right-4 top-3 text-xs font-semibold text-amber-600">Starting new sale in 0:{String(receiptSeconds).padStart(2, '0')}...</div>
+              {!printFailed ? (
+                <div className="absolute right-4 top-3 text-xs font-semibold text-amber-600">
+                  Starting new sale in 0:{String(receiptSeconds).padStart(2, '0')}...
+                </div>
+              ) : (
+                <div className="absolute right-4 top-3 text-xs font-semibold text-amber-600 max-w-[11rem] text-right">
+                  Reprint when printer is ready
+                </div>
+              )}
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Total Sale</span>
                 <span className="font-extrabold text-foreground text-lg">{formatMoney(completedSale.total)}</span>
@@ -835,7 +834,7 @@ export default function BillingPage() {
 
           {printStatus ? (
             <p className={`text-center text-xs font-semibold -mt-2 mb-2 ${
-              /fail|error|block/i.test(printStatus) ? 'text-amber-600' : 'text-emerald-600'
+              isPrintFailureStatus(printStatus) || printFailed ? 'text-amber-600' : 'text-emerald-600'
             }`}>
               {printStatus}
             </p>
@@ -846,7 +845,11 @@ export default function BillingPage() {
               type="button"
               onClick={handlePrintReceipt}
               disabled={printing}
-              className="h-12 rounded-xl border border-border hover:bg-muted font-bold text-sm text-foreground flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
+              className={`h-12 rounded-xl border font-bold text-sm flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none ${
+                printFailed
+                  ? 'border-amber-500 bg-amber-500/10 text-amber-800 hover:bg-amber-500/20'
+                  : 'border-border hover:bg-muted text-foreground'
+              }`}
             >
               <Printer className="h-4 w-4" />
               {printing ? 'Printing…' : 'Reprint Receipt'}

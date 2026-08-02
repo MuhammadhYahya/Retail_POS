@@ -109,8 +109,8 @@ Order: receipt → feed/cut → `ESC p` kick. Gated on cash payment. Reprint sho
 
 | Module | Creates data? | Prints? |
 |--------|---------------|---------|
-| Sale / Billing | Yes | Thermal + HTML fallback |
-| Returns | Yes | **No** |
+| Sale / Billing | Yes | Thermal + HTML fallback + reprint (no drawer) |
+| Returns | Yes | Thermal + HTML fallback + Print Again (no drawer) |
 | Day Close Z | Yes | Browser HTML only |
 | X-report | Yes | **No** |
 | Expenses | In Z cash math | Via Z HTML only |
@@ -230,6 +230,39 @@ Print a sale containing:
 
 ---
 
+## Printer failure recovery (manual reprint)
+
+V1 uses **manual recovery only** (no online/offline polling). Shared copy lives in `src/renderer/lib/printRecovery.js`.
+
+**Expected flow (sale + return, auto-print and reprint):**
+
+1. Transaction is saved successfully.  
+2. Thermal print fails or times out (~20s COM or Windows RAW).  
+3. UI shows: **Receipt printing failed. Please check the printer.**  
+4. HTML receipt fallback opens automatically (browser print).  
+5. Persistent guidance: **Receipt wasn't printed. Reprint when the printer is ready.**  
+6. Cashier fixes hardware, clicks **Reprint Receipt** / **Print Again**.  
+7. Same transaction reprints with **`openDrawer: false`** (drawer must not open).  
+8. If reprint fails again, the same recovery path remains available.
+
+**Never allow:** frozen UI, infinite “Printing…”, or silent failure. Print UI paths use `try/finally` so loading flags always clear.
+
+| Scenario | Expected |
+|----------|----------|
+| Printer switched off | Fail within ~20s → fixed message → HTML fallback → Reprint CTA stays available (sale dialog auto-close paused) |
+| USB cable removed | Same |
+| Wrong printer selected | Same (Settings points at non-receipt device / missing name) |
+| Paper finished | Fail when OS/driver reports it → same recovery. Note: some spoolers accept the job while paper is out; cashier still has Reprint + HTML fallback |
+
+**Paths covered**
+
+- Sale auto-print (`BillingPage` after `sale:create`)  
+- Sale reprint (`openDrawer: false`)  
+- Return auto-print (`ReturnsPage` after `return:create`)  
+- Return reprint / Print Again (`openDrawer: false`)  
+
+---
+
 ## Production Acceptance Checklist
 
 A shop owner should be able to:
@@ -240,17 +273,17 @@ A shop owner should be able to:
 - [ ] Reprint receipt  
 - [ ] Close day  
 - [ ] Print reports (Z via browser)  
-- [ ] Recover from printer failure (status + HTML fallback)  
+- [ ] Recover from printer failure (status + HTML fallback + reprint, no drawer)  
 
 ---
 
 ## POS function notes
 
 ### Sales
-Invoice `PREFIX-YYYYMMDD-######`, discounts, VAT-inclusive totals, stock deduct, cash/card/qr payments — wired to thermal print after `sale:create`.
+Invoice `PREFIX-YYYYMMDD-######`, discounts, VAT-inclusive totals, stock deduct, cash/card/qr payments — wired to thermal print after `sale:create`. On failure: HTML fallback + Reprint CTA; success dialog does not auto-close while print failed.
 
 ### Returns
-Creates `RET-…`, stock `return_in`, refunds in Z math — **no print**.
+Creates `RET-…`, stock `return_in`, refunds in Z math — thermal return receipt + HTML fallback; Print Again never opens drawer.
 
 ### Day Close / Z
 Totals include cash/card/qr, refunds, expenses, variance — browser print only; popup block = silent fail historically.

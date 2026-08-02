@@ -90,7 +90,7 @@ Deferred: thermal QR, return slips, Z ESC/POS, Sinhala/Tamil thermal fonts.
 - [ ] Fresh installation tested on clean machine  
 - [ ] Cash drawer opens on cash sale only once  
 - [ ] Reprint works without double drawer kick  
-- [ ] Printer failure recoverable (message + HTML fallback)  
+- [ ] Printer failure recoverable (fixed message + HTML fallback + reprint CTA, no drawer; see PRINTING_PRODUCTION_AUDIT.md)  
 
 ---
 
