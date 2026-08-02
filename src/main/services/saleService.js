@@ -633,6 +633,9 @@ const saleService = {
       `).get(id);
       if (!sale) throw new Error('Sale not found.');
       if (sale.status === 'voided') throw new Error('Sale is already voided.');
+      if (sale.status !== 'completed') {
+        throw new Error(`Only completed sales can be voided (current status: ${sale.status}).`);
+      }
 
       const items = getSaleItems(db, id);
       const timestamp = now();
@@ -649,18 +652,34 @@ const saleService = {
       `).run(voidReason, cleanUserId, timestamp, timestamp, id);
 
       for (const item of items) {
+        const qty = Math.abs(toNumber(item.quantity, 0));
+        if (!qty || !item.variant_id) continue;
+
         const variant = loadVariantForSale(db, item.variant_id);
-        if (variant?.track_inventory) {
-          applyStockDelta(db, {
-            variantId: item.variant_id,
-            delta: Math.abs(toNumber(item.quantity, 0)),
-            transactionType: 'void',
-            referenceId: id,
-            notes: `Void ${sale.invoice_number}: ${voidReason}`,
-            createdBy: cleanUserId,
-            unitCost: null,
-          });
-        }
+        const tracksInventory = Boolean(Number(variant?.track_inventory));
+        const hadStockDeduction = Boolean(
+          db.prepare(`
+            SELECT 1 AS found
+            FROM inventory_transactions
+            WHERE reference_type = 'sale'
+              AND reference_id = ?
+              AND variant_id = ?
+              AND transaction_type = 'sale'
+            LIMIT 1
+          `).get(id, item.variant_id)
+        );
+
+        if (!tracksInventory && !hadStockDeduction) continue;
+
+        applyStockDelta(db, {
+          variantId: item.variant_id,
+          delta: qty,
+          transactionType: 'void',
+          referenceId: id,
+          notes: `Void ${sale.invoice_number}: ${voidReason}`,
+          createdBy: cleanUserId,
+          unitCost: null,
+        });
       }
 
       return id;

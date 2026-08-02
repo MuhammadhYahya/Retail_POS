@@ -126,20 +126,20 @@ function rowsToCsv(rows) {
 }
 
 async function main() {
-  console.log('POSLY backup self-test\n');
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'posly-selftest-'));
+  console.log('ZEN backup self-test\n');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'zen-selftest-'));
 
   // 1. Archive + checksum roundtrip
   const work = path.join(tmp, 'work');
   fs.mkdirSync(work);
-  const payload = Buffer.from('POSLY-DB-SNAPSHOT-TEST');
+  const payload = Buffer.from('ZEN-DB-SNAPSHOT-TEST');
   fs.writeFileSync(path.join(work, 'database.db'), payload);
   fs.writeFileSync(path.join(work, 'manifest.json'), JSON.stringify({ backupId: 'test', encryption: { enabled: false } }));
   const hash = sha256File(path.join(work, 'database.db'));
   fs.writeFileSync(path.join(work, 'checksums.sha256'), `${hash}  database.db\n`);
-  const archivePath = path.join(tmp, 'test.poslybackup');
+  const archivePath = path.join(tmp, 'test.zenbackup');
   await zipDir(work, archivePath);
-  assert(fs.existsSync(archivePath), 'Archive (.poslybackup zip) created');
+  assert(fs.existsSync(archivePath), 'Archive (.zenbackup zip) created');
 
   const extractDir = path.join(tmp, 'extract');
   fs.mkdirSync(extractDir);

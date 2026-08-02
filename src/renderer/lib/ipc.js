@@ -1,6 +1,6 @@
 import { useAuthStore } from '../store/authStore';
 
-export const LOW_STOCK_UPDATED_EVENT = 'posly:low-stock-updated';
+export const LOW_STOCK_UPDATED_EVENT = 'zen:low-stock-updated';
 
 export function notifyLowStockUpdated() {
   window.dispatchEvent(new Event(LOW_STOCK_UPDATED_EVENT));

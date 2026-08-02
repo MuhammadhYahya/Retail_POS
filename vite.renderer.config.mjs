@@ -10,9 +10,9 @@ export default defineConfig({
     react(), // Required for your React components [2]
     tailwindcss(), // The new Tailwind v4 plugin
   ],
-  // This part is critical for Electron to find your React entry point [2]
+  // Must match forge renderer name (`main_window`) used by MAIN_WINDOW_VITE_NAME in main.js
   build: {
-    outDir: '../../.vite/renderer',
+    outDir: '../../.vite/renderer/main_window',
     rollupOptions: {
       input: './src/renderer/index.html',
     },

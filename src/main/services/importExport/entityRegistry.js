@@ -2,6 +2,8 @@ import crypto from 'crypto';
 import { getDb } from '../../database/db.js';
 import { tableExists } from './formatUtils.js';
 import reportService from '../reportService.js';
+import { importProductRows } from './productImporter.js';
+import { colomboDateString, colomboDayBounds } from '../../lib/colomboTime.js';
 
 function now() {
   return new Date().toISOString();
@@ -138,43 +140,83 @@ registerEntity({
   label: 'Products',
   formats: ['csv', 'xlsx', 'json'],
   isAvailable: () => tableExists('products'),
-  export() {
+  export({ filters = {} } = {}) {
     requireTable('products');
     const db = getDb();
+    const clauses = ['p.deleted_at IS NULL', 'v.deleted_at IS NULL'];
+    const params = [];
+
+    if (filters.activeOnly) {
+      clauses.push('p.is_active = 1');
+      clauses.push('v.is_active = 1');
+    } else if (filters.inactiveOnly) {
+      clauses.push('(p.is_active = 0 OR v.is_active = 0)');
+    }
+    if (filters.categoryName) {
+      clauses.push('lower(c.name) = lower(?)');
+      params.push(String(filters.categoryName).trim());
+    }
+    if (filters.supplierName) {
+      clauses.push('lower(s.name) = lower(?)');
+      params.push(String(filters.supplierName).trim());
+    }
+    if (filters.lowStockOnly) {
+      clauses.push('COALESCE(b.on_hand, 0) <= COALESCE(v.low_stock_alert, 0)');
+      clauses.push('v.low_stock_alert > 0');
+    }
+    if (filters.outOfStockOnly) {
+      clauses.push('COALESCE(b.on_hand, 0) <= 0');
+    }
+    if (filters.vatOnly) {
+      clauses.push('COALESCE(p.tax_rate, 0) > 0');
+    }
+
+    const hasSupplierCol = db
+      .prepare(`PRAGMA table_info(products)`)
+      .all()
+      .some((c) => c.name === 'supplier_id');
+
+    const supplierJoin = hasSupplierCol
+      ? 'LEFT JOIN suppliers s ON s.id = p.supplier_id'
+      : 'LEFT JOIN suppliers s ON 0';
+    const supplierSelect = hasSupplierCol ? 's.name AS supplierName,' : 'NULL AS supplierName,';
+
     return db
       .prepare(`
         SELECT
-          p.id AS productId,
           p.name AS productName,
           p.brand,
+          p.description,
           p.tax_rate AS taxRate,
           p.unit,
           c.name AS categoryName,
-          v.id AS variantId,
+          ${supplierSelect}
           v.name AS variantName,
+          json_extract(v.attributes_json, '$.size') AS size,
+          COALESCE(json_extract(v.attributes_json, '$.color'), json_extract(v.attributes_json, '$.colour')) AS color,
           v.sku,
           v.barcode,
           v.selling_price AS sellingPrice,
           v.cost_price AS costPrice,
           v.low_stock_alert AS lowStockAlert,
-          v.track_inventory AS trackInventory,
-          COALESCE(b.on_hand, 0) AS stockOnHand
+          COALESCE(b.on_hand, 0) AS stockOnHand,
+          CASE WHEN p.is_active = 1 AND v.is_active = 1 THEN 1 ELSE 0 END AS isActive
         FROM products p
         LEFT JOIN categories c ON c.id = p.category_id
-        LEFT JOIN product_variants v ON v.product_id = p.id AND v.deleted_at IS NULL
+        ${supplierJoin}
+        JOIN product_variants v ON v.product_id = p.id
         LEFT JOIN inventory_balances b ON b.variant_id = v.id
-        WHERE p.deleted_at IS NULL
+        WHERE ${clauses.join(' AND ')}
         ORDER BY p.name, v.sort_order
       `)
-      .all();
+      .all(...params);
   },
+  // Prefer wizard import via importExportService; legacy path kept for BackupRestorePanel
   validate(rows) {
     const errors = [];
     rows.forEach((row, i) => {
       const name = String(row.productName || row.name || row.Name || '').trim();
-      const sku = String(row.sku || row.SKU || '').trim();
       if (!name) errors.push({ row: i + 1, message: 'Product name is required.' });
-      if (!sku) errors.push({ row: i + 1, message: 'SKU is required.' });
     });
     return errors;
   },
@@ -186,108 +228,42 @@ registerEntity({
     };
   },
   import({ rows, mode = 'insert' }) {
-    requireTable('products');
-    const db = getDb();
-    const report = { inserted: 0, updated: 0, skipped: 0, errors: [] };
-
-    const findVariant = db.prepare(
-      `SELECT id, product_id FROM product_variants WHERE sku = ? AND deleted_at IS NULL`
-    );
-    const findCategory = db.prepare(
-      `SELECT id FROM categories WHERE lower(name) = lower(?) AND deleted_at IS NULL`
-    );
-    const insertProduct = db.prepare(`
-      INSERT INTO products (id, name, brand, tax_rate, category_id, unit, image_urls_json, is_active, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, '[]', 1, ?, ?)
-    `);
-    const insertVariant = db.prepare(`
-      INSERT INTO product_variants (
-        id, product_id, name, sku, barcode, attributes_json, selling_price, cost_price,
-        low_stock_alert, track_inventory, is_default, sort_order, is_active, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, '{}', ?, ?, ?, 1, 1, 0, 1, ?, ?)
-    `);
-    const insertBalance = db.prepare(`
-      INSERT INTO inventory_balances (variant_id, on_hand, reserved, available, updated_at)
-      VALUES (?, ?, 0, ?, ?)
-    `);
-    const updateVariant = db.prepare(`
-      UPDATE product_variants SET
-        selling_price = ?, cost_price = ?, barcode = ?, low_stock_alert = ?, updated_at = ?
-      WHERE id = ?
-    `);
-    const updateProduct = db.prepare(`
-      UPDATE products SET name = ?, brand = ?, tax_rate = ?, unit = ?, updated_at = ? WHERE id = ?
-    `);
-    const upsertBalance = db.prepare(`
-      INSERT INTO inventory_balances (variant_id, on_hand, reserved, available, updated_at)
-      VALUES (?, ?, 0, ?, ?)
-      ON CONFLICT(variant_id) DO UPDATE SET
-        on_hand = excluded.on_hand,
-        available = excluded.available,
-        updated_at = excluded.updated_at
-    `);
-
-    const tx = db.transaction(() => {
-      for (let i = 0; i < rows.length; i += 1) {
-        const row = rows[i];
-        const productName = String(row.productName || row.name || '').trim();
-        const sku = String(row.sku || '').trim();
-        if (!productName || !sku) {
-          report.errors.push({ row: i + 1, message: 'Name and SKU required' });
-          continue;
-        }
-        const sellingPrice = Number(row.sellingPrice ?? row.selling_price ?? 0) || 0;
-        const costPrice = Number(row.costPrice ?? row.cost_price ?? 0) || 0;
-        const taxRate = Number(row.taxRate ?? row.tax_rate ?? 0) || 0;
-        const lowStockAlert = Math.max(0, Number(row.lowStockAlert ?? row.low_stock_alert ?? 0) || 0);
-        const brand = String(row.brand || '').trim() || null;
-        const unit = String(row.unit || '').trim() || null;
-        const barcode = String(row.barcode || '').trim() || null;
-        const stock = Number(row.stockOnHand ?? row.stock ?? row.on_hand ?? 0) || 0;
-        let categoryId = null;
-        const categoryName = String(row.categoryName || row.category || '').trim();
-        if (categoryName) {
-          const cat = findCategory.get(categoryName);
-          categoryId = cat?.id || null;
-        }
-
-        const existing = findVariant.get(sku);
-        if (existing) {
-          if (mode === 'skip') {
-            report.skipped += 1;
-          } else if (mode === 'update') {
-            updateVariant.run(sellingPrice, costPrice, barcode, lowStockAlert, now(), existing.id);
-            updateProduct.run(productName, brand, taxRate, unit, now(), existing.product_id);
-            upsertBalance.run(existing.id, stock, stock, now());
-            report.updated += 1;
-          } else {
-            report.skipped += 1;
-          }
-        } else if (mode === 'update') {
-          report.skipped += 1;
-        } else {
-          const productId = crypto.randomUUID();
-          const variantId = crypto.randomUUID();
-          insertProduct.run(productId, productName, brand, taxRate, categoryId, unit, now(), now());
-          insertVariant.run(
-            variantId,
-            productId,
-            row.variantName || 'Default',
-            sku,
-            barcode,
-            sellingPrice,
-            costPrice,
-            lowStockAlert,
-            now(),
-            now()
-          );
-          insertBalance.run(variantId, stock, stock, now());
-          report.inserted += 1;
-        }
-      }
+    // Thin adapter → enhanced importer with identity mapping
+    const mappedRows = rows.map((row, i) => ({
+      __rowNumber: i + 2,
+      productName: row.productName || row.name || row.Name || '',
+      sku: row.sku || row.SKU || '',
+      barcode: row.barcode || '',
+      costPrice: row.costPrice ?? row.cost_price ?? row.cost,
+      sellingPrice: row.sellingPrice ?? row.selling_price ?? row.price,
+      stockOnHand: row.stockOnHand ?? row.stock ?? row.on_hand,
+      supplierName: row.supplierName || row.supplier || '',
+      categoryName: row.categoryName || row.category || '',
+      brand: row.brand || '',
+      description: row.description || '',
+      taxRate: row.taxRate ?? row.tax_rate ?? row.vat,
+      lowStockAlert: row.lowStockAlert ?? row.low_stock_alert,
+      unit: row.unit || '',
+      variantName: row.variantName || row.variant || '',
+      size: row.size || '',
+      color: row.color || row.colour || '',
+      isActive: row.isActive ?? row.is_active ?? 1,
+    }));
+    const dupMode = mode === 'update' ? 'update' : mode === 'skip' ? 'skip' : 'create';
+    const result = importProductRows({
+      mappedRows,
+      duplicateMode: dupMode,
+      categoryMode: 'auto',
+      supplierMode: 'auto',
+      autoGenerateBarcode: true,
+      autoGenerateSku: true,
     });
-    tx();
-    return report;
+    return {
+      inserted: result.report.inserted,
+      updated: result.report.updated,
+      skipped: result.report.skipped,
+      errors: result.report.errors,
+    };
   },
 });
 
@@ -476,48 +452,374 @@ registerEntity({
 registerEntity({
   id: 'reports',
   label: 'Reports',
-  formats: ['pdf', 'json', 'csv'],
+  formats: ['pdf', 'json', 'csv', 'xlsx'],
   isAvailable: () => true,
-  export({ reportType = 'dailySummary', date } = {}) {
+  export({ reportType = 'dailySummary', date, dateFrom, dateTo } = {}) {
     if (reportType === 'topProducts') {
       return reportService.topProducts(30, 50);
     }
-    if (reportType === 'salesByDay') {
-      const to = date || new Date().toISOString().slice(0, 10);
-      const fromDate = new Date(to);
-      fromDate.setDate(fromDate.getDate() - 14);
-      return reportService.salesByDay(fromDate.toISOString().slice(0, 10), to);
+    if (reportType === 'salesByDay' || reportType === 'monthlySales') {
+      const to = dateTo || date || colomboDateString();
+      const from = dateFrom || (() => {
+        const d = new Date(to);
+        d.setDate(d.getDate() - (reportType === 'monthlySales' ? 30 : 14));
+        return d.toISOString().slice(0, 10);
+      })();
+      return reportService.salesByDay(from, to);
+    }
+    if (reportType === 'vatReport') {
+      const day = date || colomboDateString();
+      const summary = reportService.dailySummary(day);
+      return [{
+        date: summary.date,
+        revenue: summary.revenue,
+        vatTotal: summary.vatTotal,
+        saleCount: summary.saleCount,
+      }];
+    }
+    if (reportType === 'profitReport') {
+      const day = date || colomboDateString();
+      const summary = reportService.dailySummary(day);
+      return [{
+        date: summary.date,
+        revenue: summary.revenue,
+        costTotal: summary.costTotal,
+        profit: summary.discountedProfit,
+        marginPct: summary.marginPct,
+      }];
+    }
+    if (reportType === 'lowStock') {
+      requireTable('product_variants');
+      return getDb()
+        .prepare(`
+          SELECT
+            p.name AS productName,
+            v.name AS variantName,
+            v.sku,
+            COALESCE(b.on_hand, 0) AS stockOnHand,
+            v.low_stock_alert AS lowStockAlert
+          FROM product_variants v
+          JOIN products p ON p.id = v.product_id
+          LEFT JOIN inventory_balances b ON b.variant_id = v.id
+          WHERE v.deleted_at IS NULL AND p.deleted_at IS NULL
+            AND v.low_stock_alert > 0
+            AND COALESCE(b.on_hand, 0) <= v.low_stock_alert
+          ORDER BY COALESCE(b.on_hand, 0) ASC
+        `)
+        .all();
     }
     return [reportService.dailySummary(date)];
   },
   import: null,
 });
 
-// Placeholders for future modules — register so UI can show "coming soon"
-for (const future of [
-  { id: 'customers', label: 'Customers', table: 'customers' },
-  { id: 'suppliers', label: 'Suppliers', table: 'suppliers' },
-  { id: 'expenses', label: 'Expenses', table: 'expenses' },
-  { id: 'purchase_orders', label: 'Purchase Orders', table: 'purchase_orders' },
-]) {
-  registerEntity({
-    id: future.id,
-    label: future.label,
-    formats: ['csv', 'xlsx', 'json'],
-    isAvailable: () => tableExists(future.table),
-    export() {
-      requireTable(future.table);
-      return getDb().prepare(`SELECT * FROM ${future.table} LIMIT 100000`).all();
-    },
-    validate: () => [],
-    preview(rows) {
-      return { total: rows.length, sample: rows.slice(0, 10), errors: [] };
-    },
-    import({ rows }) {
-      requireTable(future.table);
-      return { inserted: 0, updated: 0, skipped: rows.length, errors: [{ row: 0, message: 'Generic import not configured for this module yet.' }] };
-    },
-  });
-}
+registerEntity({
+  id: 'suppliers',
+  label: 'Suppliers',
+  formats: ['csv', 'xlsx', 'json'],
+  isAvailable: () => tableExists('suppliers'),
+  export({ filters = {} } = {}) {
+    requireTable('suppliers');
+    const db = getDb();
+    const activeClause = filters.activeOnly ? 'AND is_active = 1' : filters.inactiveOnly ? 'AND is_active = 0' : '';
+    return db
+      .prepare(`
+        SELECT id, name, phone, address, notes, is_active AS isActive, created_at AS createdAt
+        FROM suppliers
+        WHERE deleted_at IS NULL ${activeClause}
+        ORDER BY name
+      `)
+      .all();
+  },
+  validate(rows) {
+    const errors = [];
+    rows.forEach((row, i) => {
+      if (!String(row.name || row.Name || '').trim()) {
+        errors.push({ row: i + 1, message: 'Supplier name is required.' });
+      }
+    });
+    return errors;
+  },
+  preview(rows) {
+    return { total: rows.length, sample: rows.slice(0, 10), errors: this.validate(rows).slice(0, 20) };
+  },
+  import({ rows, mode = 'insert' }) {
+    requireTable('suppliers');
+    const db = getDb();
+    const report = { inserted: 0, updated: 0, skipped: 0, errors: [] };
+    const find = db.prepare(`SELECT id FROM suppliers WHERE lower(name) = lower(?) AND deleted_at IS NULL`);
+    const insert = db.prepare(`
+      INSERT INTO suppliers (id, name, phone, address, notes, is_active, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+    `);
+    const update = db.prepare(`
+      UPDATE suppliers SET phone = ?, address = ?, notes = ?, updated_at = ? WHERE id = ?
+    `);
+    const tx = db.transaction(() => {
+      for (let i = 0; i < rows.length; i += 1) {
+        const row = rows[i];
+        const name = String(row.name || row.Name || '').trim();
+        if (!name) {
+          report.errors.push({ row: i + 1, message: 'Missing name' });
+          continue;
+        }
+        const existing = find.get(name);
+        if (existing) {
+          if (mode === 'skip' || mode === 'insert') report.skipped += 1;
+          else {
+            update.run(
+              String(row.phone || '').trim() || null,
+              String(row.address || '').trim() || null,
+              String(row.notes || '').trim() || null,
+              now(),
+              existing.id
+            );
+            report.updated += 1;
+          }
+        } else if (mode === 'update') {
+          report.skipped += 1;
+        } else {
+          insert.run(
+            crypto.randomUUID(),
+            name,
+            String(row.phone || '').trim() || null,
+            String(row.address || '').trim() || null,
+            String(row.notes || '').trim() || null,
+            now(),
+            now()
+          );
+          report.inserted += 1;
+        }
+      }
+    });
+    tx();
+    return report;
+  },
+});
+
+registerEntity({
+  id: 'expenses',
+  label: 'Expenses',
+  formats: ['csv', 'xlsx', 'json'],
+  isAvailable: () => tableExists('expenses'),
+  export({ dateFrom, dateTo, filters = {} } = {}) {
+    requireTable('expenses');
+    const db = getDb();
+    const from = dateFrom ? colomboDayBounds(dateFrom).start : null;
+    const to = dateTo ? colomboDayBounds(dateTo).end : null;
+    const clauses = ['deleted_at IS NULL'];
+    const params = [];
+    if (from) {
+      clauses.push('expense_date >= ?');
+      params.push(from);
+    }
+    if (to) {
+      clauses.push('expense_date <= ?');
+      params.push(to);
+    }
+    if (filters.category) {
+      clauses.push('lower(category) = lower(?)');
+      params.push(filters.category);
+    }
+    return db
+      .prepare(`
+        SELECT
+          id, expense_date AS expenseDate, category, amount,
+          payment_method AS paymentMethod, note, created_at AS createdAt
+        FROM expenses
+        WHERE ${clauses.join(' AND ')}
+        ORDER BY expense_date DESC
+        LIMIT 100000
+      `)
+      .all(...params);
+  },
+  import: null,
+});
+
+registerEntity({
+  id: 'purchases',
+  label: 'Purchases (GRN)',
+  formats: ['csv', 'xlsx', 'json'],
+  isAvailable: () => tableExists('purchase_receipts'),
+  export({ dateFrom, dateTo } = {}) {
+    requireTable('purchase_receipts');
+    const db = getDb();
+    const from = dateFrom ? colomboDayBounds(dateFrom).start : null;
+    const to = dateTo ? colomboDayBounds(dateTo).end : null;
+    const clauses = ['pr.deleted_at IS NULL'];
+    const params = [];
+    if (from) {
+      clauses.push('COALESCE(pr.posted_at, pr.created_at) >= ?');
+      params.push(from);
+    }
+    if (to) {
+      clauses.push('COALESCE(pr.posted_at, pr.created_at) <= ?');
+      params.push(to);
+    }
+    return db
+      .prepare(`
+        SELECT
+          pr.grn_number AS grnNumber,
+          s.name AS supplierName,
+          pr.status,
+          pr.total_cost AS totalCost,
+          pr.received_at AS receivedAt,
+          pr.posted_at AS postedAt,
+          pr.notes,
+          v.sku,
+          p.name AS productName,
+          pri.quantity,
+          pri.unit_cost AS unitCost,
+          pri.line_total AS lineTotal
+        FROM purchase_receipts pr
+        LEFT JOIN suppliers s ON s.id = pr.supplier_id
+        LEFT JOIN purchase_receipt_items pri ON pri.receipt_id = pr.id
+        LEFT JOIN product_variants v ON v.id = pri.variant_id
+        LEFT JOIN products p ON p.id = v.product_id
+        WHERE ${clauses.join(' AND ')}
+        ORDER BY pr.created_at DESC
+        LIMIT 100000
+      `)
+      .all(...params);
+  },
+  import: null,
+});
+
+registerEntity({
+  id: 'returns',
+  label: 'Returns',
+  formats: ['csv', 'xlsx', 'json'],
+  isAvailable: () => tableExists('sale_returns'),
+  export({ dateFrom, dateTo } = {}) {
+    requireTable('sale_returns');
+    const db = getDb();
+    const from = dateFrom ? colomboDayBounds(dateFrom).start : null;
+    const to = dateTo ? colomboDayBounds(dateTo).end : null;
+    const clauses = ['1=1'];
+    const params = [];
+    if (from) {
+      clauses.push('r.created_at >= ?');
+      params.push(from);
+    }
+    if (to) {
+      clauses.push('r.created_at <= ?');
+      params.push(to);
+    }
+    return db
+      .prepare(`
+        SELECT
+          r.return_number AS returnNumber,
+          s.invoice_number AS invoiceNumber,
+          r.refund_total AS refundTotal,
+          r.refund_method AS refundMethod,
+          r.reason,
+          r.status,
+          r.created_at AS createdAt,
+          v.sku,
+          ri.quantity,
+          ri.unit_refund AS unitRefund,
+          ri.line_refund AS lineRefund
+        FROM sale_returns r
+        JOIN sales s ON s.id = r.sale_id
+        LEFT JOIN sale_return_items ri ON ri.return_id = r.id
+        LEFT JOIN product_variants v ON v.id = ri.variant_id
+        WHERE ${clauses.join(' AND ')}
+        ORDER BY r.created_at DESC
+        LIMIT 100000
+      `)
+      .all(...params);
+  },
+  import: null,
+});
+
+registerEntity({
+  id: 'stock_adjustments',
+  label: 'Stock Adjustments',
+  formats: ['csv', 'xlsx', 'json'],
+  isAvailable: () => tableExists('inventory_transactions'),
+  export({ dateFrom, dateTo } = {}) {
+    requireTable('inventory_transactions');
+    const db = getDb();
+    const from = dateFrom || null;
+    const to = dateTo || null;
+    const clauses = [`t.transaction_type IN ('adjustment', 'initial', 'damage', 'count')`];
+    const params = [];
+    if (from) {
+      clauses.push('t.created_at >= ?');
+      params.push(colomboDayBounds(from).start);
+    }
+    if (to) {
+      clauses.push('t.created_at <= ?');
+      params.push(colomboDayBounds(to).end);
+    }
+    return db
+      .prepare(`
+        SELECT
+          t.created_at AS createdAt,
+          t.transaction_type AS type,
+          t.quantity,
+          t.notes,
+          v.sku,
+          p.name AS productName,
+          v.name AS variantName,
+          u.username AS createdBy
+        FROM inventory_transactions t
+        JOIN product_variants v ON v.id = t.variant_id
+        JOIN products p ON p.id = v.product_id
+        LEFT JOIN users u ON u.id = t.created_by
+        WHERE ${clauses.join(' AND ')}
+        ORDER BY t.created_at DESC
+        LIMIT 100000
+      `)
+      .all(...params);
+  },
+  import: null,
+});
+
+registerEntity({
+  id: 'low_stock',
+  label: 'Low Stock Report',
+  formats: ['csv', 'xlsx', 'json'],
+  isAvailable: () => tableExists('product_variants'),
+  export() {
+    requireTable('product_variants');
+    return getDb()
+      .prepare(`
+        SELECT
+          p.name AS productName,
+          v.name AS variantName,
+          v.sku,
+          v.barcode,
+          COALESCE(b.on_hand, 0) AS stockOnHand,
+          v.low_stock_alert AS lowStockAlert,
+          CASE
+            WHEN COALESCE(b.on_hand, 0) <= 0 THEN 'Out of stock'
+            ELSE 'Low stock'
+          END AS status
+        FROM product_variants v
+        JOIN products p ON p.id = v.product_id
+        LEFT JOIN inventory_balances b ON b.variant_id = v.id
+        WHERE v.deleted_at IS NULL AND p.deleted_at IS NULL
+          AND v.low_stock_alert > 0
+          AND COALESCE(b.on_hand, 0) <= v.low_stock_alert
+        ORDER BY COALESCE(b.on_hand, 0) ASC
+      `)
+      .all();
+  },
+  import: null,
+});
+
+// Customers module is not in schema yet — stub for UI discoverability
+registerEntity({
+  id: 'customers',
+  label: 'Customers',
+  formats: ['csv', 'xlsx', 'json'],
+  isAvailable: () => tableExists('customers'),
+  export() {
+    requireTable('customers');
+    return getDb().prepare(`SELECT * FROM customers WHERE deleted_at IS NULL LIMIT 100000`).all();
+  },
+  import: null,
+});
 
 export default { registerEntity, listEntities, getEntity };

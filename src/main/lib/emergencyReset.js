@@ -3,7 +3,8 @@ import path from 'path';
 import crypto from 'crypto';
 import { app } from 'electron';
 
-const FILE_NAME = 'posly-emergency-reset.txt';
+const FILE_NAME = 'zen-emergency-reset.txt';
+const LEGACY_FILE_NAME = 'posly-emergency-reset.txt';
 const CODE_TTL_MS = 10 * 60 * 1000;
 const MIN_REQUEST_INTERVAL_MS = 30 * 1000;
 
@@ -12,6 +13,10 @@ const pendingByUserId = new Map();
 
 export function getEmergencyResetFilePath() {
   return path.join(app.getPath('userData'), FILE_NAME);
+}
+
+function getLegacyEmergencyResetFilePath() {
+  return path.join(app.getPath('userData'), LEGACY_FILE_NAME);
 }
 
 function hashCode(code) {
@@ -90,12 +95,13 @@ export function clearEmergencyReset(userId) {
 }
 
 function clearEmergencyResetFile() {
-  const filePath = getEmergencyResetFilePath();
-  try {
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
+  for (const filePath of [getEmergencyResetFilePath(), getLegacyEmergencyResetFilePath()]) {
+    try {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    } catch (err) {
+      console.error('[emergency-reset] Failed to delete code file:', err.message);
     }
-  } catch (err) {
-    console.error('[emergency-reset] Failed to delete code file:', err.message);
   }
 }

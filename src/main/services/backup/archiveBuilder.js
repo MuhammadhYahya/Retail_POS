@@ -124,7 +124,7 @@ function zipDirectory(sourceDir, outPath) {
 }
 
 /**
- * Build a verified .poslybackup archive.
+ * Build a verified .zenbackup archive.
  */
 export async function buildBackupArchive({
   destinationDir,
@@ -141,7 +141,7 @@ export async function buildBackupArchive({
   const uuid = crypto.randomUUID();
   const fileName = formatBackupFileName();
   const archivePath = path.join(destinationDir, fileName);
-  const workDir = path.join(app.getPath('temp'), `posly-backup-${uuid}`);
+  const workDir = path.join(app.getPath('temp'), `zen-backup-${uuid}`);
   ensureDir(workDir);
 
   try {
@@ -168,14 +168,14 @@ export async function buildBackupArchive({
         }
       } else {
         ensureDir(target);
-        fs.writeFileSync(path.join(target, '.poslykeep'), `Reserved: ${root.id}\n`, 'utf8');
+        fs.writeFileSync(path.join(target, '.zenkeep'), `Reserved: ${root.id}\n`, 'utf8');
       }
     }
 
     // Ensure standard empty dirs exist in archive
     for (const dir of ['assets', 'images', 'receipts', 'logs']) {
       ensureDir(path.join(workDir, dir));
-      const keep = path.join(workDir, dir, '.poslykeep');
+      const keep = path.join(workDir, dir, '.zenkeep');
       if (!fs.existsSync(keep)) {
         fs.writeFileSync(keep, `Reserved: ${dir}\n`, 'utf8');
       }

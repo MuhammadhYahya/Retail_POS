@@ -1,8 +1,8 @@
 {
-  "name": "posly",
-  "productName": "posly",
+  "name": "zen",
+  "productName": "Zen",
   "version": "1.0.0",
-  "description": "My Electron application description",
+  "description": "ZEN - Modern POS",
   "main": ".vite/build/main.js",
   "private": true,
   "scripts": {
@@ -12,6 +12,7 @@
     "publish": "electron-forge publish",
     "lint": "echo \"No linting configured\"",
     "test:backup": "node src/main/services/backup/selftest.mjs",
+    "test:import-export": "node src/main/services/importExport/selftest.mjs",
     "test:v1-sim": "electron scripts/v1-shop-simulation.mjs"
   },
   "keywords": [],

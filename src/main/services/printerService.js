@@ -251,7 +251,7 @@ function buildTestSale(shop) {
     total: 100,
     items: [
       {
-        productName: 'Posly printer test — long name wraps on 80mm paper',
+        productName: 'Zen printer test — long name wraps on 80mm paper',
         variantName: 'Variant A',
         barcode: '1234567890123',
         quantity: 1,

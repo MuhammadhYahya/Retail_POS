@@ -21,7 +21,7 @@ export async function writeRawToWindowsPrinter(printerName, data) {
     throw new Error('Windows raw printing is only available on Windows.');
   }
 
-  const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'posly-raw-'));
+  const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'zen-raw-'));
   const binPath = path.join(tmpDir, 'receipt.bin');
   const psPath = path.join(tmpDir, 'rawprint.ps1');
 
@@ -34,7 +34,7 @@ Add-Type -TypeDefinition @"
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
-public class PoslyRawPrinter {
+public class ZenRawPrinter {
   [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
   public class DOCINFOA {
     [MarshalAs(UnmanagedType.LPStr)] public string pDocName;
@@ -63,7 +63,7 @@ public class PoslyRawPrinter {
     }
     try {
       DOCINFOA di = new DOCINFOA();
-      di.pDocName = "POSLY Receipt";
+      di.pDocName = "ZEN Receipt";
       di.pDataType = "RAW";
       if (StartDocPrinter(hPrinter, 1, di) == 0) {
         throw new Exception("StartDocPrinter failed (Win32 " + Marshal.GetLastWin32Error() + ").");
@@ -103,7 +103,7 @@ $printer = ${JSON.stringify(name)}
 $path = ${JSON.stringify(binPath)}
 $bytes = [System.IO.File]::ReadAllBytes($path)
 Write-Output ("BYTES_LEN=" + $bytes.Length)
-[PoslyRawPrinter]::SendBytes($printer, $bytes)
+[ZenRawPrinter]::SendBytes($printer, $bytes)
 Write-Output "OK"
 `;
 

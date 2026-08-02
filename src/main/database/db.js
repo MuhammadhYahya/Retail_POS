@@ -22,7 +22,7 @@ export function getDbPath() {
   if (!app) {
     throw new Error('Electron app is not available. Use openDbAtPath() for headless runs.');
   }
-  return path.join(app.getPath('userData'), 'posly.db');
+  return path.join(app.getPath('userData'), 'zen.db');
 }
 
 export function getDataDir() {

@@ -134,7 +134,7 @@ const backupService = {
 
       // Probe write access
       try {
-        const probe = path.join(dest, `.posly-write-probe-${Date.now()}`);
+        const probe = path.join(dest, `.zen-write-probe-${Date.now()}`);
         fs.writeFileSync(probe, 'ok');
         fs.unlinkSync(probe);
       } catch {
@@ -248,12 +248,13 @@ const backupService = {
   },
 
   listLocalBackups() {
-    // Prefer history; also scan default dir for .poslybackup files not yet recorded
+    // Prefer history; also scan default dir for zen/posly backup files not yet recorded
     const history = backupHistoryService.list();
     const dir = getDefaultBackupDir();
+    const isArchive = (name) => name.endsWith('.zenbackup') || name.endsWith('.poslybackup');
     const fromDisk = fs
       .readdirSync(dir)
-      .filter((name) => name.endsWith('.poslybackup') || name.endsWith('.db'))
+      .filter((name) => isArchive(name) || name.endsWith('.db'))
       .map((name) => {
         const fullPath = path.join(dir, name);
         const stat = fs.statSync(fullPath);
@@ -263,7 +264,7 @@ const backupService = {
           size: stat.size,
           modifiedAt: stat.mtime.toISOString(),
           type: name.endsWith('.db') ? 'legacy' : 'manual',
-          status: name.endsWith('.poslybackup') ? 'on_disk' : 'legacy',
+          status: isArchive(name) ? 'on_disk' : 'legacy',
         };
       });
 
@@ -343,7 +344,7 @@ const backupService = {
       closeDb();
 
       const liveDbPath = getDbPath();
-      extractDir = path.join(app.getPath('temp'), `posly-restore-${Date.now()}`);
+      extractDir = path.join(app.getPath('temp'), `zen-restore-${Date.now()}`);
       ensureDir(extractDir);
 
       if (verification.legacy) {

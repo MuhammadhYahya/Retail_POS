@@ -48,7 +48,6 @@ export default function BackupRestorePanel({ onMessage, onError }) {
     keep: 7,
     location: '',
   });
-  const [entities, setEntities] = useState([]);
   const [busy, setBusy] = useState(false);
   const [jobId, setJobId] = useState(null);
   const [progress, setProgress] = useState(null);
@@ -58,15 +57,6 @@ export default function BackupRestorePanel({ onMessage, onError }) {
   const [restorePath, setRestorePath] = useState('');
   const [restorePreview, setRestorePreview] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
-
-  const [exportEntity, setExportEntity] = useState('products');
-  const [exportFormat, setExportFormat] = useState('csv');
-  const [importEntity, setImportEntity] = useState('products');
-  const [importFormat, setImportFormat] = useState('csv');
-  const [importMode, setImportMode] = useState('insert');
-  const [importPreview, setImportPreview] = useState(null);
-  const [importFile, setImportFile] = useState('');
-  const [importOpen, setImportOpen] = useState(false);
 
   const notify = useCallback(
     (msg) => {
@@ -82,10 +72,9 @@ export default function BackupRestorePanel({ onMessage, onError }) {
   );
 
   const load = useCallback(async () => {
-    const [listRes, settingsRes, entitiesRes] = await Promise.all([
+    const [listRes, settingsRes] = await Promise.all([
       invokeWithAuth('backup:list'),
       invokeWithAuth('backup:getSettings'),
-      invokeWithAuth('export:entities'),
     ]);
 
     if (listRes.success) {
@@ -94,13 +83,6 @@ export default function BackupRestorePanel({ onMessage, onError }) {
     }
     if (settingsRes.success) {
       setAutoSettings(settingsRes.data);
-    }
-    if (entitiesRes.success) {
-      setEntities(entitiesRes.data || []);
-      const firstImportable = (entitiesRes.data || []).find((e) => e.importable && e.available);
-      const firstExportable = (entitiesRes.data || []).find((e) => e.exportable && e.available);
-      if (firstImportable) setImportEntity(firstImportable.id);
-      if (firstExportable) setExportEntity(firstExportable.id);
     }
   }, []);
 
@@ -112,19 +94,11 @@ export default function BackupRestorePanel({ onMessage, onError }) {
     const unsubBackup = subscribeProgress('backup:progress', (payload) => {
       if (jobId && payload.jobId && payload.jobId !== jobId) return;
       setProgress(payload);
-      if (payload.theme && setTheme) {
-        // restore may return theme via separate path
-      }
-    });
-    const unsubImport = subscribeProgress('import:progress', (payload) => {
-      if (jobId && payload.jobId && payload.jobId !== jobId) return;
-      setProgress(payload);
     });
     return () => {
       unsubBackup?.();
-      unsubImport?.();
     };
-  }, [jobId, setTheme]);
+  }, [jobId]);
 
   const pickFolder = async () => {
     const res = await invokeWithAuth('dialog:showOpen', {
@@ -140,7 +114,7 @@ export default function BackupRestorePanel({ onMessage, onError }) {
       title: 'Select ZEN backup',
       properties: ['openFile'],
       filters: [
-        { name: 'ZEN Backup', extensions: ['poslybackup'] },
+        { name: 'ZEN Backup', extensions: ['zenbackup', 'poslybackup'] },
         { name: 'Legacy DB', extensions: ['db'] },
         { name: 'All Files', extensions: ['*'] },
       ],
@@ -294,110 +268,6 @@ export default function BackupRestorePanel({ onMessage, onError }) {
     setAutoSettings((s) => ({ ...s, location: folder }));
   };
 
-  const handleExport = async () => {
-    fail('');
-    notify('');
-    const entity = entities.find((e) => e.id === exportEntity);
-    const ext = exportFormat === 'excel' || exportFormat === 'xlsx' ? 'xlsx' : exportFormat;
-    const saveRes = await invokeWithAuth('dialog:showSave', {
-      title: 'Export data',
-      defaultPath: `zen-${exportEntity}.${ext}`,
-      filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
-    });
-    if (!saveRes.success || saveRes.data.canceled || !saveRes.data.filePath) return;
-
-    const id = crypto.randomUUID();
-    setJobId(id);
-    setBusy(true);
-    setAllowCancel(true);
-    setProgress({ stage: 'Exporting...', percent: 0 });
-
-    const response = await invokeWithAuth('export:run', {
-      entityId: exportEntity,
-      format: exportFormat,
-      filePath: saveRes.data.filePath,
-      jobId: id,
-    });
-
-    setBusy(false);
-    setAllowCancel(false);
-    setJobId(null);
-
-    if (!response.success) {
-      fail(response.error || 'Export failed.');
-      return;
-    }
-    notify(`Exported ${response.data.rowCount} ${entity?.label || 'rows'}.`);
-    setProgress({ stage: 'Completed', percent: 100 });
-  };
-
-  const beginImport = async () => {
-    fail('');
-    notify('');
-    setImportPreview(null);
-    const openRes = await invokeWithAuth('dialog:showOpen', {
-      title: 'Import data file',
-      properties: ['openFile'],
-      filters: [
-        { name: 'Data files', extensions: ['csv', 'xlsx', 'json'] },
-        { name: 'All Files', extensions: ['*'] },
-      ],
-    });
-    if (!openRes.success || openRes.data.canceled) return;
-    const filePath = openRes.data.filePaths?.[0];
-    if (!filePath) return;
-
-    const ext = filePath.split('.').pop()?.toLowerCase();
-    const format = ext === 'xlsx' ? 'xlsx' : ext === 'json' ? 'json' : 'csv';
-    setImportFormat(format);
-    setImportFile(filePath);
-    setImportOpen(true);
-
-    const previewRes = await invokeWithAuth('import:preview', {
-      entityId: importEntity,
-      filePath,
-      format,
-    });
-    if (!previewRes.success) {
-      fail(previewRes.error || 'Preview failed.');
-      setImportOpen(false);
-      return;
-    }
-    setImportPreview(previewRes.data);
-  };
-
-  const confirmImport = async () => {
-    setBusy(true);
-    setAllowCancel(true);
-    const id = crypto.randomUUID();
-    setJobId(id);
-    setProgress({ stage: 'Importing...', percent: 0 });
-
-    const response = await invokeWithAuth('import:run', {
-      entityId: importEntity,
-      filePath: importFile,
-      format: importFormat,
-      mode: importMode,
-      themePreference: theme,
-      jobId: id,
-    });
-
-    setBusy(false);
-    setAllowCancel(false);
-    setJobId(null);
-    setImportOpen(false);
-
-    if (!response.success) {
-      fail(response.error || 'Import failed.');
-      return;
-    }
-    const r = response.data.report || {};
-    notify(
-      `Import complete — inserted: ${r.inserted || 0}, updated: ${r.updated || 0}, skipped: ${r.skipped || 0}.`
-    );
-    setProgress({ stage: 'Completed', percent: 100 });
-  };
-
   const rows = [
     ...history.map((h) => ({
       key: h.uuid,
@@ -420,9 +290,6 @@ export default function BackupRestorePanel({ onMessage, onError }) {
       path: d.path,
     })),
   ];
-
-  const exportable = entities.filter((e) => e.exportable);
-  const importable = entities.filter((e) => e.importable);
 
   return (
     <div className="space-y-6">
@@ -452,7 +319,7 @@ export default function BackupRestorePanel({ onMessage, onError }) {
         <CardHeader>
           <CardTitle>Backup & Restore</CardTitle>
           <CardDescription>
-            Create a full shop backup (`.poslybackup`) or restore from a previous backup. Always verified before success.
+            Create a full shop backup (`.zenbackup`) or restore from a previous backup. Always verified before success.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-3">
@@ -591,71 +458,6 @@ export default function BackupRestorePanel({ onMessage, onError }) {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Export Data</CardTitle>
-          <CardDescription>Selective export — not a full backup. Use Backup to protect the entire shop.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="block text-sm font-medium mb-2">Data type</label>
-              <select className={inputClassName} value={exportEntity} onChange={(e) => setExportEntity(e.target.value)}>
-                {exportable.map((e) => (
-                  <option key={e.id} value={e.id} disabled={!e.available}>
-                    {e.label}{!e.available ? ' (not available)' : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-2">Format</label>
-              <select className={inputClassName} value={exportFormat} onChange={(e) => setExportFormat(e.target.value)}>
-                <option value="csv">CSV</option>
-                <option value="xlsx">Excel</option>
-                <option value="json">JSON</option>
-                <option value="pdf">PDF (reports only)</option>
-              </select>
-            </div>
-          </div>
-          <Button type="button" onClick={handleExport} disabled={busy}>
-            Export Data
-          </Button>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Import Data</CardTitle>
-          <CardDescription>Preview and validate before importing. Failed imports roll back completely.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="block text-sm font-medium mb-2">Data type</label>
-              <select className={inputClassName} value={importEntity} onChange={(e) => setImportEntity(e.target.value)}>
-                {importable.map((e) => (
-                  <option key={e.id} value={e.id} disabled={!e.available}>
-                    {e.label}{!e.available ? ' (not available)' : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-2">On duplicates</label>
-              <select className={inputClassName} value={importMode} onChange={(e) => setImportMode(e.target.value)}>
-                <option value="insert">Insert new only</option>
-                <option value="update">Update existing</option>
-                <option value="skip">Skip duplicates</option>
-              </select>
-            </div>
-          </div>
-          <Button type="button" onClick={beginImport} disabled={busy}>
-            Import Data
-          </Button>
-        </CardContent>
-      </Card>
-
       <Dialog open={restoreOpen} onOpenChange={(open) => !busy && setRestoreOpen(open)} dismissible={!busy}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -682,7 +484,7 @@ export default function BackupRestorePanel({ onMessage, onError }) {
               )}
               {restorePreview.legacy && (
                 <Alert>
-                  <AlertDescription>Legacy `.db` backup detected. Prefer `.poslybackup` archives going forward.</AlertDescription>
+                  <AlertDescription>Legacy `.db` backup detected. Prefer `.zenbackup` archives going forward.</AlertDescription>
                 </Alert>
               )}
             </div>
@@ -712,37 +514,6 @@ export default function BackupRestorePanel({ onMessage, onError }) {
             </Button>
             <Button type="button" variant="destructive" onClick={handleDelete}>
               Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={importOpen} onOpenChange={(open) => !busy && setImportOpen(open)} dismissible={!busy}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Import preview</DialogTitle>
-            <DialogDescription>
-              {importPreview ? `${importPreview.total} rows found.` : 'Reading file…'}
-            </DialogDescription>
-          </DialogHeader>
-          {importPreview?.errors?.length > 0 && (
-            <Alert variant="destructive">
-              <AlertDescription>
-                {importPreview.errors.length} validation issue(s). First: {importPreview.errors[0].message}
-              </AlertDescription>
-            </Alert>
-          )}
-          {importPreview?.sample?.length > 0 && (
-            <pre className="text-xs max-h-40 overflow-auto rounded-lg border border-border p-3 bg-muted/40">
-              {JSON.stringify(importPreview.sample, null, 2)}
-            </pre>
-          )}
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setImportOpen(false)} disabled={busy}>
-              Cancel
-            </Button>
-            <Button type="button" onClick={confirmImport} disabled={busy || !importPreview}>
-              {busy ? 'Importing…' : 'Confirm import'}
             </Button>
           </DialogFooter>
         </DialogContent>

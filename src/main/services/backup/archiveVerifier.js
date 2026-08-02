@@ -73,7 +73,12 @@ export async function verifyBackupArchive(archivePath, { extractDir = null } = {
   }
 
   const lower = archivePath.toLowerCase();
-  if (!lower.endsWith('.poslybackup') && !lower.endsWith('.zip') && !lower.endsWith('.db')) {
+  if (
+    !lower.endsWith('.zenbackup') &&
+    !lower.endsWith('.poslybackup') &&
+    !lower.endsWith('.zip') &&
+    !lower.endsWith('.db')
+  ) {
     throw new Error('Unsupported backup file type.');
   }
 
@@ -116,7 +121,7 @@ export async function verifyBackupArchive(archivePath, { extractDir = null } = {
     throw new Error('Backup is corrupted. Restore cannot continue.');
   }
 
-  const workDir = extractDir || path.join(app.getPath('temp'), `posly-verify-${Date.now()}`);
+  const workDir = extractDir || path.join(app.getPath('temp'), `zen-verify-${Date.now()}`);
   const ownsDir = !extractDir;
   if (ownsDir) ensureDir(workDir);
 

@@ -3,7 +3,8 @@ import path from 'path';
 import crypto from 'crypto';
 import { app } from 'electron';
 
-const FILE_NAME = 'posly-admin-recovery.txt';
+const FILE_NAME = 'zen-admin-recovery.txt';
+const LEGACY_FILE_NAME = 'posly-admin-recovery.txt';
 const CODE_TTL_MS = 15 * 60 * 1000;
 
 function formatExpiry(expiresAt) {
@@ -12,6 +13,18 @@ function formatExpiry(expiresAt) {
 
 export function getAdminRecoveryFilePath() {
   return path.join(app.getPath('userData'), FILE_NAME);
+}
+
+function getLegacyAdminRecoveryFilePath() {
+  return path.join(app.getPath('userData'), LEGACY_FILE_NAME);
+}
+
+function resolveRecoveryFilePath() {
+  const primary = getAdminRecoveryFilePath();
+  if (fs.existsSync(primary)) return primary;
+  const legacy = getLegacyAdminRecoveryFilePath();
+  if (fs.existsSync(legacy)) return legacy;
+  return primary;
 }
 
 export function requestAdminRecoveryCode() {
@@ -43,7 +56,7 @@ export function requestAdminRecoveryCode() {
 }
 
 export function verifyAdminRecoveryCode(inputCode) {
-  const filePath = getAdminRecoveryFilePath();
+  const filePath = resolveRecoveryFilePath();
 
   if (!fs.existsSync(filePath)) {
     return { success: false, error: 'No recovery code exists. Generate a new one first.' };
@@ -73,12 +86,13 @@ export function verifyAdminRecoveryCode(inputCode) {
 }
 
 export function clearAdminRecoveryCode() {
-  const filePath = getAdminRecoveryFilePath();
-  try {
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
+  for (const filePath of [getAdminRecoveryFilePath(), getLegacyAdminRecoveryFilePath()]) {
+    try {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    } catch (err) {
+      console.error('[admin-recovery] Failed to delete recovery code file:', err.message);
     }
-  } catch (err) {
-    console.error('[admin-recovery] Failed to delete recovery code file:', err.message);
   }
 }

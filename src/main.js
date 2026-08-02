@@ -2,6 +2,7 @@ import { app, BrowserWindow, Menu } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import { getDb, closeDb } from './main/database/db.js';
+import { migrateFromPosly } from './main/lib/migrateFromPosly.js';
 import { ensureJwtSecret } from './main/lib/jwtSecret.js';
 import { registerAuthHandlers } from './main/ipc/authHandlers.js';
 import { registerUserHandlers } from './main/ipc/userHandlers.js';
@@ -27,6 +28,13 @@ if (started) {
 
 let mainWindow;
 
+function getAppIconPath() {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'app.asar', '.vite', 'renderer', 'main_window', 'logo.ico');
+  }
+  return path.join(app.getAppPath(), 'src', 'renderer', 'public', 'logo.ico');
+}
+
 function clearSessionStore() {
   try {
     const db = getDb();
@@ -43,10 +51,12 @@ function applyProductionMenu() {
 }
 
 function createWindow() {
+  const iconPath = getAppIconPath();
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     autoHideMenuBar: app.isPackaged,
+    icon: iconPath,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -92,6 +102,7 @@ app.on('activate', () => {
 });
 
 app.whenReady().then(async () => {
+  migrateFromPosly();
   getDb();
   ensureJwtSecret();
   ensureReservedDataDirs();

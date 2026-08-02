@@ -109,7 +109,7 @@ export default function AppShell({ children, title, description }) {
       {/* Sidebar navigation */}
       <aside className="w-64 h-screen border-r border-border bg-card flex flex-col shrink-0 select-none">
         <button type="button" onClick={() => navigate(getDashboardPath(user?.role))} className="p-6 border-b border-border/40 flex items-center gap-3 text-left cursor-pointer hover:bg-muted/30">
-          <img src="/logo.png" alt="ZEN" className="h-11 w-11 rounded-xl object-contain shadow-md shadow-orange-500/10" />
+          <img src="./logo.png" alt="ZEN" className="h-11 w-11 rounded-xl object-contain shadow-md shadow-orange-500/10" />
           <div>
             <h1 className="text-xl font-black tracking-tight bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">
               ZEN
@@ -118,7 +118,7 @@ export default function AppShell({ children, title, description }) {
           </div>
         </button>
 
-        <nav className="flex-1 p-4 space-y-2">
+        <nav className="flex-1 min-h-0 overflow-y-auto p-4 space-y-2">
           {navItems.map(({ path, label, icon: Icon, color }) => {
             const isActive = location.pathname === path;
             return (

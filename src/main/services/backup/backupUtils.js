@@ -67,7 +67,7 @@ export function sha256Buffer(buffer) {
 export function formatBackupFileName(date = new Date()) {
   const pad = (n) => String(n).padStart(2, '0');
   const stamp = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}_${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`;
-  return `POSLY_Backup_${stamp}.poslybackup`;
+  return `ZEN_Backup_${stamp}.zenbackup`;
 }
 
 export function walkFiles(dirPath, base = dirPath) {

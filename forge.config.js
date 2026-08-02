@@ -4,12 +4,27 @@ const { FuseV1Options, FuseVersion } = require('@electron/fuses');
 module.exports = {
   packagerConfig: {
     asar: true,
+    prune: true,
+    icon: 'src/renderer/public/logo',
+    executableName: 'Zen',
+    // Forge's Vite plugin omits node_modules by default. Keep the real install
+    // tree (including nested/hoisted deps) so externalized native & CJS modules resolve.
+    ignore: (file) => {
+      if (!file) return false;
+      if (file === '/package.json') return false;
+      if (file === '/.vite' || file.startsWith('/.vite/')) return false;
+      if (file === '/node_modules' || file.startsWith('/node_modules/')) return false;
+      return true;
+    },
   },
   rebuildConfig: {},
   makers: [
     {
       name: '@electron-forge/maker-squirrel',
-      config: {},
+      config: {
+        name: 'Zen',
+        setupIcon: 'src/renderer/public/logo.ico',
+      },
     },
     {
       name: '@electron-forge/maker-zip',
@@ -25,6 +40,10 @@ module.exports = {
     },
   ],
   plugins: [
+    {
+      name: '@electron-forge/plugin-auto-unpack-natives',
+      config: {},
+    },
     {
       name: '@electron-forge/plugin-vite',
       config: {

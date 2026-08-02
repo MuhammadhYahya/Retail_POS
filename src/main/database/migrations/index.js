@@ -12,6 +12,7 @@ import * as migration011 from './011_discounts.js';
 import * as migration012 from './012_backup_system.js';
 import * as migration013 from './013_v1_shop_loop.js';
 import * as migration014 from './014_return_within_days.js';
+import * as migration015 from './015_import_export.js';
 
 const migrations = [
   migration001,
@@ -28,6 +29,7 @@ const migrations = [
   migration012,
   migration013,
   migration014,
+  migration015,
 ];
 
 export function getLatestMigrationVersion() {

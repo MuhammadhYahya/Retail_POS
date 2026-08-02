@@ -15,7 +15,7 @@ const { app } = require('electron');
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
-const dbPath = path.join(os.tmpdir(), `posly-nimal-${Date.now()}.db`);
+const dbPath = path.join(os.tmpdir(), `zen-nimal-${Date.now()}.db`);
 
 let passed = 0;
 let failed = 0;

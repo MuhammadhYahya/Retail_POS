@@ -93,18 +93,46 @@ export async function rowsToXlsxBuffer(rows, sheetName = 'Data') {
 export async function parseXlsxFile(filePath) {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.readFile(filePath);
-  const sheet = workbook.worksheets[0];
+
+  // Prefer a sheet named Products / Data (template has Instructions first)
+  let sheet =
+    workbook.getWorksheet('Products') ||
+    workbook.getWorksheet('products') ||
+    workbook.getWorksheet('Data') ||
+    workbook.getWorksheet('Sheet1');
+  if (!sheet) {
+    sheet = workbook.worksheets.find((ws) => {
+      const name = String(ws.name || '').toLowerCase();
+      return !name.includes('instruction') && !name.includes('guide') && !name.includes('field');
+    }) || workbook.worksheets[0];
+  }
   if (!sheet) return [];
   const rows = [];
   let headers = [];
+
+  const cellToValue = (cell) => {
+    if (cell == null) return '';
+    // Formula cell
+    if (typeof cell === 'object' && cell.formula != null) {
+      return cell.result != null ? String(cell.result) : `=${cell.formula}`;
+    }
+    if (typeof cell === 'object' && cell.text != null) return String(cell.text);
+    if (typeof cell === 'object' && cell.result != null) return String(cell.result);
+    if (cell instanceof Date) return cell.toISOString();
+    return String(cell);
+  };
+
   sheet.eachRow((row, rowNumber) => {
-    const values = row.values.slice(1).map((v) => (v == null ? '' : String(v)));
+    const values = row.values.slice(1).map((v) => cellToValue(v));
     if (rowNumber === 1) {
-      headers = values;
+      headers = values.map((h) => String(h || '').trim());
       return;
     }
+    // Skip fully empty rows
+    if (values.every((v) => !String(v).trim())) return;
     const obj = {};
     headers.forEach((h, i) => {
+      if (!h) return;
       obj[h] = values[i] ?? '';
     });
     rows.push(obj);

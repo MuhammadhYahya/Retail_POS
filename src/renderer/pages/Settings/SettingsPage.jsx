@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../..
 import { invokeWithAuth } from '../../lib/ipc';
 import { cn } from '../../lib/utils';
 import BackupRestorePanel from './BackupRestorePanel';
+import ImportExportPanel from './ImportExportPanel';
 
 const inputClassName =
   'w-full p-3 rounded-lg bg-input border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-ring';
@@ -359,6 +360,17 @@ export default function SettingsPage() {
         </Card>
 
         <BackupRestorePanel
+          onMessage={(msg) => {
+            setError('');
+            setMessage(msg);
+          }}
+          onError={(msg) => {
+            setMessage('');
+            setError(msg);
+          }}
+        />
+
+        <ImportExportPanel
           onMessage={(msg) => {
             setError('');
             setMessage(msg);

@@ -219,7 +219,7 @@ export default function LoginPage() {
           <div>
             {/* Logo and Brand */}
             <div className="flex items-center gap-3 mb-6">
-              <img src="/logo.png" alt="ZEN" className="h-16 w-16 rounded-2xl object-contain shadow-lg shadow-orange-500/20" />
+              <img src="./logo.png" alt="ZEN" className="h-16 w-16 rounded-2xl object-contain shadow-lg shadow-orange-500/20" />
               <div>
                 <h1 className="text-3xl font-black tracking-tight bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">
                   ZEN

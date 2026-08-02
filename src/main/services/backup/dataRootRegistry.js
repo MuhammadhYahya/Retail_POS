@@ -73,9 +73,9 @@ export function ensureReservedDataDirs() {
     const absolutePath = root.resolveAbsolute();
     if (!fs.existsSync(absolutePath)) {
       fs.mkdirSync(absolutePath, { recursive: true });
-      const marker = path.join(absolutePath, '.poslykeep');
+      const marker = path.join(absolutePath, '.zenkeep');
       if (!fs.existsSync(marker)) {
-        fs.writeFileSync(marker, `POSLY reserved directory: ${root.id}\n`, 'utf8');
+        fs.writeFileSync(marker, `ZEN reserved directory: ${root.id}\n`, 'utf8');
       }
     }
   }
