@@ -253,16 +253,74 @@ function resolvePrinterPath(port) {
   return raw;
 }
 
-function buildPayload({ shop, sale, paperWidth, openDrawer }) {
-  const buffer = buildEscPosReceipt({ shop, sale, paperWidth });
-  if (!openDrawer) return buffer;
-  return Buffer.concat([buffer, buildDrawerKick()]);
+function buildPayload({ shop, sale, paperWidth }) {
+  // Never append drawer kick here — drawer is sent only after a confirmed receipt write.
+  return buildEscPosReceipt({ shop, sale, paperWidth });
 }
 
-function buildReturnPayload({ shop, returnRecord, paperWidth, openDrawer }) {
-  const buffer = buildEscPosReturnReceipt({ shop, returnRecord, paperWidth });
-  if (!openDrawer) return buffer;
-  return Buffer.concat([buffer, buildDrawerKick()]);
+function buildReturnPayload({ shop, returnRecord, paperWidth }) {
+  return buildEscPosReturnReceipt({ shop, returnRecord, paperWidth });
+}
+
+/**
+ * Electron printer list status is a useful early signal on Windows, but USB-offline
+ * false "ready" still happens — windowsRawPrint.js is the hard gate.
+ */
+async function electronPrinterNotReadyError(configured) {
+  if (isRawEscPosPort(configured)) return null;
+  try {
+    const printers = await printerService.listPrintersAsync();
+    const match = (printers || []).find(
+      (p) => p.name === configured || p.displayName === configured
+    );
+    if (!match) return null;
+    const status = Number(match.status || 0);
+    const badMask =
+      0x00000001 // paused
+      | 0x00000002 // error
+      | 0x00000008 // paper jam
+      | 0x00000040 // paper out
+      | 0x00000080 // offline
+      | 0x00000800 // output bin full
+      | 0x00001000 // not available
+      | 0x00040000 // no toner
+      | 0x00100000 // user intervention
+      | 0x00400000; // door open
+    if (status & badMask) {
+      return `Printer not ready (status 0x${status.toString(16)}). Check power, USB, paper, and Settings.`;
+    }
+  } catch {
+    // ignore — Win32 path still validates
+  }
+  return null;
+}
+
+async function sendReceiptThenMaybeDrawer(configured, receiptPayload, openDrawer) {
+  const early = await electronPrinterNotReadyError(configured);
+  if (early) {
+    return { success: false, fallback: 'html', error: early, drawerOpened: false };
+  }
+
+  const receiptResult = await sendPayload(configured, receiptPayload);
+  if (!receiptResult.success) {
+    return { ...receiptResult, drawerOpened: false };
+  }
+
+  if (!openDrawer) {
+    return { ...receiptResult, drawerOpened: false };
+  }
+
+  // Separate job: never bundle ESC p with the receipt. If receipt was falsely
+  // queued historically, reconnect would also kick the drawer.
+  const drawerResult = await sendPayload(configured, buildDrawerKick());
+  if (!drawerResult.success) {
+    return {
+      ...receiptResult,
+      drawerOpened: false,
+      drawerError: drawerResult.error || 'Cash drawer kick failed.',
+    };
+  }
+  return { ...receiptResult, drawerOpened: true };
 }
 
 function buildTestSale(shop) {
@@ -367,17 +425,12 @@ const printerService = {
         success: false,
         fallback: 'html',
         error: 'No receipt printer selected in Settings.',
+        drawerOpened: false,
       };
     }
 
-    const payload = buildPayload({
-      shop,
-      sale,
-      paperWidth,
-      openDrawer: Boolean(openDrawer),
-    });
-
-    return sendPayload(configured, payload);
+    const payload = buildPayload({ shop, sale, paperWidth });
+    return sendReceiptThenMaybeDrawer(configured, payload, Boolean(openDrawer));
   },
 
   async printReturnReceipt({ returnRecord, openDrawer = false } = {}) {
@@ -390,17 +443,12 @@ const printerService = {
         success: false,
         fallback: 'html',
         error: 'No receipt printer selected in Settings.',
+        drawerOpened: false,
       };
     }
 
-    const payload = buildReturnPayload({
-      shop,
-      returnRecord,
-      paperWidth,
-      openDrawer: Boolean(openDrawer),
-    });
-
-    return sendPayload(configured, payload);
+    const payload = buildReturnPayload({ shop, returnRecord, paperWidth });
+    return sendReceiptThenMaybeDrawer(configured, payload, Boolean(openDrawer));
   },
 
   async testPrint() {
@@ -424,7 +472,6 @@ const printerService = {
       },
       sale,
       paperWidth,
-      openDrawer: false,
     });
 
     return sendPayload(configured, payload);
@@ -450,7 +497,6 @@ const printerService = {
       },
       returnRecord: buildTestReturn(),
       paperWidth,
-      openDrawer: false,
     });
 
     return sendPayload(configured, payload);

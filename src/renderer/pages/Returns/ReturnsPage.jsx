@@ -5,8 +5,7 @@ import { Alert, AlertDescription } from '../../components/ui/alert';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { invokeWithAuth } from '../../lib/ipc';
 import {
-  formatPrintFailureStatus,
-  openReturnHtmlFallback,
+  printReturnReceiptWithRecovery,
   REPRINT_WHEN_READY_MESSAGE,
 } from '../../lib/printRecovery';
 
@@ -43,40 +42,14 @@ export default function ReturnsPage() {
     });
   }, []);
 
-  async function printReturnReceipt(returnRecord, { openDrawer }) {
-    try {
-      const printRes = await invokeWithAuth('printer:printReturnReceipt', {
-        returnId: returnRecord.id,
-        openDrawer,
-      });
-      if (printRes.success && printRes.data?.success) {
-        setFailedPrintReturnId(null);
-        return {
-          ok: true,
-          message: openDrawer
-            ? 'Return receipt printed. Cash drawer opened.'
-            : 'Return receipt printed.',
-        };
-      }
-
-      const shop = settings || (await invokeWithAuth('settings:get')).data;
-      if (shop && !settings) setSettings(shop);
-      const fallback = openReturnHtmlFallback(returnRecord, shop || {});
-      setFailedPrintReturnId(returnRecord.id);
-      return {
-        ok: false,
-        message: formatPrintFailureStatus(fallback),
-      };
-    } catch {
-      const shop = settings || (await invokeWithAuth('settings:get')).data;
-      if (shop && !settings) setSettings(shop);
-      const fallback = openReturnHtmlFallback(returnRecord, shop || {});
-      setFailedPrintReturnId(returnRecord.id);
-      return {
-        ok: false,
-        message: formatPrintFailureStatus(fallback),
-      };
+  async function resolveShopSettings() {
+    if (settings) return settings;
+    const settingsRes = await invokeWithAuth('settings:get');
+    if (settingsRes.success && settingsRes.data) {
+      setSettings(settingsRes.data);
+      return settingsRes.data;
     }
+    return {};
   }
 
   const handleLookup = async () => {
@@ -127,9 +100,16 @@ export default function ReturnsPage() {
     refreshRecent();
 
     try {
-      const printResult = await printReturnReceipt(returnRecord, {
+      const shop = await resolveShopSettings();
+      // Must go through printReturnReceiptWithRecovery — never call printer IPC directly.
+      const printResult = await printReturnReceiptWithRecovery({
+        returnId: returnRecord.id,
+        returnRecord,
+        shopSettings: shop,
         openDrawer: returnRecord.refundMethod === 'cash',
+        reprinted: false,
       });
+      setFailedPrintReturnId(printResult.printFailed ? returnRecord.id : null);
       setMessage(
         `Return ${returnRecord.returnNumber} · refund ${formatMoney(returnRecord.refundTotal)}. ${printResult.message}`
       );
@@ -151,8 +131,16 @@ export default function ReturnsPage() {
         return;
       }
 
+      const shop = await resolveShopSettings();
       // Reprint: never open cash drawer
-      const printResult = await printReturnReceipt(getRes.data, { openDrawer: false });
+      const printResult = await printReturnReceiptWithRecovery({
+        returnId,
+        returnRecord: getRes.data,
+        shopSettings: shop,
+        openDrawer: false,
+        reprinted: true,
+      });
+      setFailedPrintReturnId(printResult.printFailed ? returnId : null);
       setMessage(
         printResult.ok
           ? `Return ${getRes.data.returnNumber} reprinted.`

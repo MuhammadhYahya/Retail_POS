@@ -17,9 +17,8 @@ import { useCartStore } from '../../store/cartStore';
 import { useAuthStore } from '../../store/authStore';
 import { cn } from '../../lib/utils';
 import {
-  formatPrintFailureStatus,
   isPrintFailureStatus,
-  openSaleHtmlFallback,
+  printSaleReceiptWithRecovery,
 } from '../../lib/printRecovery';
 
 const inputClassName =
@@ -305,28 +304,17 @@ export default function BillingPage() {
     setSuccessOpen(true);
     setPrinting(true);
 
-    // Auto-print + cash drawer (cash sales)
+    // Must go through printSaleReceiptWithRecovery — never call printer IPC directly.
     try {
-      const printRes = await invokeWithAuth('printer:printReceipt', {
+      const result = await printSaleReceiptWithRecovery({
         saleId: response.data.id,
+        sale: response.data,
+        shopSettings: settings,
         openDrawer: response.data.paymentMethod === 'cash',
+        reprinted: false,
       });
-      if (printRes.success && printRes.data?.success) {
-        setPrintFailed(false);
-        setPrintStatus(
-          response.data.paymentMethod === 'cash'
-            ? 'Receipt printed. Cash drawer opened.'
-            : 'Receipt printed.'
-        );
-      } else {
-        const fallback = openSaleHtmlFallback(response.data, settings);
-        setPrintFailed(true);
-        setPrintStatus(formatPrintFailureStatus(fallback));
-      }
-    } catch {
-      const fallback = openSaleHtmlFallback(response.data, settings);
-      setPrintFailed(true);
-      setPrintStatus(formatPrintFailureStatus(fallback));
+      setPrintFailed(result.printFailed);
+      setPrintStatus(result.message);
     } finally {
       setPrinting(false);
     }
@@ -338,25 +326,17 @@ export default function BillingPage() {
     setPrinting(true);
     setPrintStatus('Printing…');
     try {
-      // Reprint: do not kick the cash drawer again
-      const thermal = await invokeWithAuth('printer:printReceipt', {
+      // Reprint: openDrawer forced false inside recovery helper caller
+      const result = await printSaleReceiptWithRecovery({
         saleId: completedSale.id,
+        sale: completedSale,
+        shopSettings: settings,
         openDrawer: false,
+        reprinted: true,
       });
-      if (thermal.success && thermal.data?.success) {
-        setPrintFailed(false);
-        setPrintStatus('Receipt reprinted.');
-        setReceiptSeconds(120);
-        return;
-      }
-
-      const fallback = openSaleHtmlFallback(completedSale, settings);
-      setPrintFailed(true);
-      setPrintStatus(formatPrintFailureStatus(fallback));
-    } catch {
-      const fallback = openSaleHtmlFallback(completedSale, settings);
-      setPrintFailed(true);
-      setPrintStatus(formatPrintFailureStatus(fallback));
+      setPrintFailed(result.printFailed);
+      setPrintStatus(result.message);
+      if (result.ok) setReceiptSeconds(120);
     } finally {
       setPrinting(false);
     }

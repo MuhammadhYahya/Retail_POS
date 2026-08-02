@@ -232,18 +232,36 @@ Print a sale containing:
 
 ## Printer failure recovery (manual reprint)
 
-V1 uses **manual recovery only** (no online/offline polling). Shared copy lives in `src/renderer/lib/printRecovery.js`.
+V1 uses **manual recovery only** (no online/offline polling).
+
+**Runtime path (must stay true):**
+
+```
+Complete Sale / Process return / Reprint
+  → printSaleReceiptWithRecovery / printReturnReceiptWithRecovery  (renderer/lib/printRecovery.js)
+  → IPC printer:printReceipt | printer:printReturnReceipt
+  → printerService.printReceipt / printReturnReceipt
+       · receipt ESC/POS only (no drawer bytes in this buffer)
+       · windowsRawPrint: refuse offline / abort job if offline after write
+       · only if receipt confirmed AND openDrawer===true → separate drawer kick job
+```
+
+Billing and Returns must **not** call `printer:*` IPC directly for bills.
+
+**Root cause of “success while unplugged + auto-print on reconnect”:**  
+Windows spooler often accepts `WritePrinter` while USB is disconnected and queues the job. Reconnect then prints (and previously kicked the drawer because `ESC p` was appended to the same buffer). Fix: status checks + `AbortPrinter` / `SetJob(CANCEL)` on failure, and drawer kick only after confirmed receipt success.
 
 **Expected flow (sale + return, auto-print and reprint):**
 
 1. Transaction is saved successfully.  
-2. Thermal print fails or times out (~20s COM or Windows RAW).  
+2. Thermal print fails or times out (~20s COM or Windows RAW), or offline status / aborted queue job.  
 3. UI shows: **Receipt printing failed. Please check the printer.**  
 4. HTML receipt fallback opens automatically (browser print).  
 5. Persistent guidance: **Receipt wasn't printed. Reprint when the printer is ready.**  
 6. Cashier fixes hardware, clicks **Reprint Receipt** / **Print Again**.  
 7. Same transaction reprints with **`openDrawer: false`** (drawer must not open).  
-8. If reprint fails again, the same recovery path remains available.
+8. If reprint fails again, the same recovery path remains available.  
+9. Reconnecting the printer must **not** auto-print a previously failed job (job aborted/cancelled).
 
 **Never allow:** frozen UI, infinite “Printing…”, or silent failure. Print UI paths use `try/finally` so loading flags always clear.
 

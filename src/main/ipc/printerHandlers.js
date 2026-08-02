@@ -24,11 +24,20 @@ export function registerPrinterHandlers() {
       if (!roleCheck.success) return roleCheck;
 
       const sale = saleService.getById(payload.saleId);
+      // Explicit false wins — reprints must never open the drawer.
+      const openDrawer =
+        payload.openDrawer === true
+        && sale.paymentMethod === 'cash';
       const result = await printerService.printReceipt({
         sale,
-        openDrawer: payload.openDrawer !== false && sale.paymentMethod === 'cash',
+        openDrawer,
       });
-      return { success: true, data: result };
+      // Bubble thermal success to top-level so callers cannot treat queue-accept as OK by mistake.
+      return {
+        success: Boolean(result?.success),
+        data: result,
+        error: result?.success ? undefined : (result?.error || 'Print failed.'),
+      };
     } catch (err) {
       return { success: false, error: err.message };
     }
@@ -42,13 +51,18 @@ export function registerPrinterHandlers() {
       if (!roleCheck.success) return roleCheck;
 
       const returnRecord = returnService.getById(payload.returnId);
+      const openDrawer =
+        payload.openDrawer === true
+        && String(returnRecord.refundMethod || '').toLowerCase() === 'cash';
       const result = await printerService.printReturnReceipt({
         returnRecord,
-        openDrawer:
-          payload.openDrawer !== false
-          && String(returnRecord.refundMethod || '').toLowerCase() === 'cash',
+        openDrawer,
       });
-      return { success: true, data: result };
+      return {
+        success: Boolean(result?.success),
+        data: result,
+        error: result?.success ? undefined : (result?.error || 'Print failed.'),
+      };
     } catch (err) {
       return { success: false, error: err.message };
     }

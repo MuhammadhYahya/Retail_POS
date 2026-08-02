@@ -1,8 +1,12 @@
 /**
- * Shared cashier-facing copy and HTML fallback helpers for bill-print recovery.
- * Manual reprint path only — no printer online/offline polling.
+ * Shared bill-print recovery for sales and returns.
+ *
+ * EVERY Billing / Returns thermal print must go through
+ * printSaleReceiptWithRecovery / printReturnReceiptWithRecovery.
+ * Manual reprint only — no reconnect auto-print, no printer polling.
  */
 
+import { invokeWithAuth } from './ipc.js';
 import {
   buildThermalReceiptHtml,
   buildThermalReturnReceiptHtml,
@@ -36,7 +40,6 @@ export function openHtmlReceiptWindow(html) {
 
 /**
  * Build the status string shown after a thermal print failure.
- * Uses fixed cashier copy; technical errMsg is not shown to keep messaging clear.
  */
 export function formatPrintFailureStatus({ fallbackOk, fallbackError } = {}) {
   if (fallbackOk) {
@@ -68,4 +71,118 @@ export function openReturnHtmlFallback(returnRecord, shopSettings) {
 /** True when status text should be styled as a print failure. */
 export function isPrintFailureStatus(status) {
   return /fail|error|block|wasn't printed|check the printer/i.test(String(status || ''));
+}
+
+function thermalSucceeded(printRes) {
+  // IPC now bubbles thermal success to top-level; still accept nested data.success.
+  if (!printRes) return false;
+  if (printRes.success === false) return false;
+  if (printRes.data && printRes.data.success === false) return false;
+  return printRes.success === true && printRes.data?.success === true;
+}
+
+/**
+ * Sale auto-print or reprint. On failure: HTML fallback + recovery message.
+ * Reprint must pass openDrawer: false.
+ *
+ * @returns {{ ok: boolean, printFailed: boolean, drawerOpened: boolean, message: string }}
+ */
+export async function printSaleReceiptWithRecovery({
+  saleId,
+  sale,
+  shopSettings,
+  openDrawer = false,
+  reprinted = false,
+} = {}) {
+  try {
+    const printRes = await invokeWithAuth('printer:printReceipt', {
+      saleId,
+      openDrawer: Boolean(openDrawer),
+    });
+
+    if (thermalSucceeded(printRes)) {
+      const drawerOpened = Boolean(printRes.data?.drawerOpened);
+      let message = reprinted ? 'Receipt reprinted.' : 'Receipt printed.';
+      if (!reprinted && openDrawer && drawerOpened) {
+        message = 'Receipt printed. Cash drawer opened.';
+      } else if (!reprinted && openDrawer && !drawerOpened) {
+        message = 'Receipt printed. Cash drawer did not open.';
+      }
+      return {
+        ok: true,
+        printFailed: false,
+        drawerOpened,
+        message,
+      };
+    }
+
+    const fallback = openSaleHtmlFallback(sale, shopSettings);
+    return {
+      ok: false,
+      printFailed: true,
+      drawerOpened: false,
+      message: formatPrintFailureStatus(fallback),
+      technicalError: printRes?.data?.error || printRes?.error,
+    };
+  } catch {
+    const fallback = openSaleHtmlFallback(sale, shopSettings);
+    return {
+      ok: false,
+      printFailed: true,
+      drawerOpened: false,
+      message: formatPrintFailureStatus(fallback),
+    };
+  }
+}
+
+/**
+ * Return auto-print or Print Again. On failure: HTML fallback + recovery message.
+ * Reprint must pass openDrawer: false.
+ */
+export async function printReturnReceiptWithRecovery({
+  returnId,
+  returnRecord,
+  shopSettings,
+  openDrawer = false,
+  reprinted = false,
+} = {}) {
+  try {
+    const printRes = await invokeWithAuth('printer:printReturnReceipt', {
+      returnId,
+      openDrawer: Boolean(openDrawer),
+    });
+
+    if (thermalSucceeded(printRes)) {
+      const drawerOpened = Boolean(printRes.data?.drawerOpened);
+      let message = reprinted ? 'Return receipt reprinted.' : 'Return receipt printed.';
+      if (!reprinted && openDrawer && drawerOpened) {
+        message = 'Return receipt printed. Cash drawer opened.';
+      } else if (!reprinted && openDrawer && !drawerOpened) {
+        message = 'Return receipt printed. Cash drawer did not open.';
+      }
+      return {
+        ok: true,
+        printFailed: false,
+        drawerOpened,
+        message,
+      };
+    }
+
+    const fallback = openReturnHtmlFallback(returnRecord, shopSettings);
+    return {
+      ok: false,
+      printFailed: true,
+      drawerOpened: false,
+      message: formatPrintFailureStatus(fallback),
+      technicalError: printRes?.data?.error || printRes?.error,
+    };
+  } catch {
+    const fallback = openReturnHtmlFallback(returnRecord, shopSettings);
+    return {
+      ok: false,
+      printFailed: true,
+      drawerOpened: false,
+      message: formatPrintFailureStatus(fallback),
+    };
+  }
 }
