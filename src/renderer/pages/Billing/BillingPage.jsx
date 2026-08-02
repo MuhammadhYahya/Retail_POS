@@ -306,6 +306,19 @@ export default function BillingPage() {
 
     // Must go through printSaleReceiptWithRecovery — never call printer IPC directly.
     try {
+      try {
+        await invokeWithAuth('printer:pipelineLog', {
+          step: 'BillingPage.handleCompleteSale.print.begin',
+          fields: {
+            saleId: response.data.id,
+            invoiceNumber: response.data.invoiceNumber,
+            paymentMethod: response.data.paymentMethod,
+            openDrawer: response.data.paymentMethod === 'cash',
+          },
+        });
+      } catch {
+        // ignore
+      }
       const result = await printSaleReceiptWithRecovery({
         saleId: response.data.id,
         sale: response.data,
@@ -315,6 +328,21 @@ export default function BillingPage() {
       });
       setPrintFailed(result.printFailed);
       setPrintStatus(result.message);
+      try {
+        await invokeWithAuth('printer:pipelineLog', {
+          step: 'BillingPage.handleCompleteSale.print.end',
+          fields: {
+            saleId: response.data.id,
+            printFailed: result.printFailed,
+            ok: result.ok,
+            drawerOpened: result.drawerOpened,
+            uiMessage: result.message,
+            uiShowsSuccess: !result.printFailed,
+          },
+        });
+      } catch {
+        // ignore
+      }
     } finally {
       setPrinting(false);
     }

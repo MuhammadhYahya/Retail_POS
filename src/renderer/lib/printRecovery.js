@@ -81,6 +81,14 @@ function thermalSucceeded(printRes) {
   return printRes.success === true && printRes.data?.success === true;
 }
 
+async function rendererPipelineLog(step, fields = {}) {
+  try {
+    await invokeWithAuth('printer:pipelineLog', { step, fields });
+  } catch {
+    // Investigation aid only — never block print flow.
+  }
+}
+
 /**
  * Sale auto-print or reprint. On failure: HTML fallback + recovery message.
  * Reprint must pass openDrawer: false.
@@ -94,13 +102,30 @@ export async function printSaleReceiptWithRecovery({
   openDrawer = false,
   reprinted = false,
 } = {}) {
+  await rendererPipelineLog('printSaleReceiptWithRecovery.enter', {
+    saleId,
+    invoiceNumber: sale?.invoiceNumber,
+    openDrawer: Boolean(openDrawer),
+    reprinted: Boolean(reprinted),
+  });
   try {
     const printRes = await invokeWithAuth('printer:printReceipt', {
       saleId,
       openDrawer: Boolean(openDrawer),
     });
 
-    if (thermalSucceeded(printRes)) {
+    const ok = thermalSucceeded(printRes);
+    await rendererPipelineLog('printSaleReceiptWithRecovery.ipcResult', {
+      saleId,
+      ipcSuccess: printRes?.success,
+      dataSuccess: printRes?.data?.success,
+      thermalSucceeded: ok,
+      drawerOpened: Boolean(printRes?.data?.drawerOpened),
+      error: printRes?.data?.error || printRes?.error || null,
+      messageChosenWillBeSuccessPath: ok,
+    });
+
+    if (ok) {
       const drawerOpened = Boolean(printRes.data?.drawerOpened);
       let message = reprinted ? 'Receipt reprinted.' : 'Receipt printed.';
       if (!reprinted && openDrawer && drawerOpened) {
@@ -108,6 +133,13 @@ export async function printSaleReceiptWithRecovery({
       } else if (!reprinted && openDrawer && !drawerOpened) {
         message = 'Receipt printed. Cash drawer did not open.';
       }
+      await rendererPipelineLog('printSaleReceiptWithRecovery.exit', {
+        ok: true,
+        printFailed: false,
+        drawerOpened,
+        successReturnedToBilling: true,
+        message,
+      });
       return {
         ok: true,
         printFailed: false,
@@ -117,21 +149,33 @@ export async function printSaleReceiptWithRecovery({
     }
 
     const fallback = openSaleHtmlFallback(sale, shopSettings);
-    return {
+    const failure = {
       ok: false,
       printFailed: true,
       drawerOpened: false,
       message: formatPrintFailureStatus(fallback),
       technicalError: printRes?.data?.error || printRes?.error,
     };
-  } catch {
+    await rendererPipelineLog('printSaleReceiptWithRecovery.exit', {
+      ...failure,
+      successReturnedToBilling: false,
+      htmlFallbackOk: Boolean(fallback.ok),
+    });
+    return failure;
+  } catch (err) {
     const fallback = openSaleHtmlFallback(sale, shopSettings);
-    return {
+    const failure = {
       ok: false,
       printFailed: true,
       drawerOpened: false,
       message: formatPrintFailureStatus(fallback),
     };
+    await rendererPipelineLog('printSaleReceiptWithRecovery.exit', {
+      ...failure,
+      successReturnedToBilling: false,
+      thrown: err?.message || String(err),
+    });
+    return failure;
   }
 }
 

@@ -94,6 +94,8 @@ const validChannels = [
   'printer:testPrint',
   'printer:testReturnReceipt',
   'printer:list',
+  'printer:pipelineLog',
+  'printer:pipelineLogPaths',
 ];
 
 const validReceiveChannels = ['backup:progress', 'import:progress'];

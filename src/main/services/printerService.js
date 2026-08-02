@@ -3,6 +3,7 @@ import { BrowserWindow } from 'electron';
 import settingsService from './settingsService.js';
 import { isRawEscPosPort } from '../lib/escposPort.js';
 import { writeRawToWindowsPrinter } from '../lib/windowsRawPrint.js';
+import { pipelineLog } from '../lib/printPipelineLog.js';
 
 /** Match Windows RAW PowerShell timeout — avoid infinite "Printing…" on hung COM ports. */
 const ESCPOS_PORT_TIMEOUT_MS = 20_000;
@@ -296,30 +297,81 @@ async function electronPrinterNotReadyError(configured) {
 }
 
 async function sendReceiptThenMaybeDrawer(configured, receiptPayload, openDrawer) {
+  pipelineLog('printerService.sendReceiptThenMaybeDrawer.enter', {
+    configured,
+    openDrawer: Boolean(openDrawer),
+    receiptBytes: receiptPayload?.length || 0,
+    isRawPort: isRawEscPosPort(configured),
+  });
+
   const early = await electronPrinterNotReadyError(configured);
   if (early) {
+    pipelineLog('printerService.sendReceiptThenMaybeDrawer.exit', {
+      success: false,
+      drawerOpened: false,
+      drawerPulseSent: false,
+      reason: 'electronPrinterNotReady',
+      error: early,
+    });
     return { success: false, fallback: 'html', error: early, drawerOpened: false };
   }
 
   const receiptResult = await sendPayload(configured, receiptPayload);
+  pipelineLog('printerService.receiptResult', {
+    success: Boolean(receiptResult.success),
+    method: receiptResult.method || null,
+    error: receiptResult.error || null,
+    fallback: receiptResult.fallback || null,
+  });
   if (!receiptResult.success) {
+    pipelineLog('printerService.sendReceiptThenMaybeDrawer.exit', {
+      success: false,
+      drawerOpened: false,
+      drawerPulseSent: false,
+      reason: 'receiptFailed',
+      error: receiptResult.error,
+    });
     return { ...receiptResult, drawerOpened: false };
   }
 
   if (!openDrawer) {
+    pipelineLog('printerService.sendReceiptThenMaybeDrawer.exit', {
+      success: true,
+      drawerOpened: false,
+      drawerPulseSent: false,
+      reason: 'openDrawerFalse',
+    });
     return { ...receiptResult, drawerOpened: false };
   }
 
-  // Separate job: never bundle ESC p with the receipt. If receipt was falsely
-  // queued historically, reconnect would also kick the drawer.
+  // Separate job: never bundle ESC p with the receipt.
+  pipelineLog('printerService.drawerKick.begin', { configured, bytes: buildDrawerKick().length });
   const drawerResult = await sendPayload(configured, buildDrawerKick());
+  pipelineLog('printerService.drawerKick.result', {
+    success: Boolean(drawerResult.success),
+    error: drawerResult.error || null,
+    drawerPulseSent: Boolean(drawerResult.success),
+  });
   if (!drawerResult.success) {
+    pipelineLog('printerService.sendReceiptThenMaybeDrawer.exit', {
+      success: true,
+      drawerOpened: false,
+      drawerPulseSent: false,
+      reason: 'drawerFailedAfterReceiptOk',
+      drawerError: drawerResult.error,
+    });
     return {
       ...receiptResult,
       drawerOpened: false,
       drawerError: drawerResult.error || 'Cash drawer kick failed.',
     };
   }
+  pipelineLog('printerService.sendReceiptThenMaybeDrawer.exit', {
+    success: true,
+    drawerOpened: true,
+    drawerPulseSent: true,
+    reason: 'receiptAndDrawerOk',
+  });
   return { ...receiptResult, drawerOpened: true };
 }
 
@@ -370,6 +422,11 @@ function buildTestReturn() {
 }
 
 async function sendPayload(configured, payload) {
+  pipelineLog('printerService.sendPayload.enter', {
+    configured,
+    bytes: payload?.length || 0,
+    path: isRawEscPosPort(configured) ? 'escpos-port' : 'escpos-windows',
+  });
   if (isRawEscPosPort(configured)) {
     const port = resolvePrinterPath(configured);
     try {
@@ -378,8 +435,20 @@ async function sendPayload(configured, payload) {
         ESCPOS_PORT_TIMEOUT_MS,
         `Printer timed out after ${ESCPOS_PORT_TIMEOUT_MS / 1000}s. Check the XP-80U is online and not paused.`
       );
+      pipelineLog('printerService.sendPayload.exit', {
+        success: true,
+        method: 'escpos-port',
+        port,
+        bytes: payload?.length || 0,
+      });
       return { success: true, fallback: null, method: 'escpos-port' };
     } catch (err) {
+      pipelineLog('printerService.sendPayload.exit', {
+        success: false,
+        method: 'escpos-port',
+        port,
+        error: err.message,
+      });
       return {
         success: false,
         fallback: 'html',
@@ -389,9 +458,22 @@ async function sendPayload(configured, payload) {
   }
 
   try {
-    await writeRawToWindowsPrinter(configured, payload);
-    return { success: true, fallback: null, method: 'escpos-windows' };
+    const raw = await writeRawToWindowsPrinter(configured, payload);
+    pipelineLog('printerService.sendPayload.exit', {
+      success: true,
+      method: 'escpos-windows',
+      configured,
+      written: raw?.written,
+      bytesLen: raw?.bytesLen,
+    });
+    return { success: true, fallback: null, method: 'escpos-windows', ...raw };
   } catch (err) {
+    pipelineLog('printerService.sendPayload.exit', {
+      success: false,
+      method: 'escpos-windows',
+      configured,
+      error: err.message,
+    });
     return {
       success: false,
       fallback: 'html',
@@ -419,18 +501,37 @@ const printerService = {
     const shop = settingsService.get();
     const configured = String(shop.printerPort || '').trim();
     const paperWidth = shop.paperWidth || 80;
+    pipelineLog('printerService.printReceipt.enter', {
+      saleId: sale?.id,
+      invoiceNumber: sale?.invoiceNumber,
+      paymentMethod: sale?.paymentMethod,
+      openDrawer: Boolean(openDrawer),
+      configured,
+      paperWidth,
+    });
 
     if (!configured) {
-      return {
+      const result = {
         success: false,
         fallback: 'html',
         error: 'No receipt printer selected in Settings.',
         drawerOpened: false,
       };
+      pipelineLog('printerService.printReceipt.exit', result);
+      return result;
     }
 
     const payload = buildPayload({ shop, sale, paperWidth });
-    return sendReceiptThenMaybeDrawer(configured, payload, Boolean(openDrawer));
+    const result = await sendReceiptThenMaybeDrawer(configured, payload, Boolean(openDrawer));
+    pipelineLog('printerService.printReceipt.exit', {
+      success: Boolean(result.success),
+      drawerOpened: Boolean(result.drawerOpened),
+      drawerPulseSent: Boolean(result.drawerOpened),
+      error: result.error || null,
+      method: result.method || null,
+      returningSuccessToIpc: Boolean(result.success),
+    });
+    return result;
   },
 
   async printReturnReceipt({ returnRecord, openDrawer = false } = {}) {
