@@ -44,7 +44,7 @@ const returnService = {
     userId,
   } = {}) {
     const db = getDb();
-    const session = cashSessionService.requireOpenSession();
+    const session = cashSessionService.assertSessionAllowsPosting();
     const id = cleanText(saleId);
     if (!id) throw new Error('Sale ID is required.');
     if (!Array.isArray(items) || !items.length) {

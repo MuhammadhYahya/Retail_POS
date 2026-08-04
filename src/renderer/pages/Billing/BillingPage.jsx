@@ -17,6 +17,7 @@ import { useCartStore } from '../../store/cartStore';
 import { useAuthStore } from '../../store/authStore';
 import { cn } from '../../lib/utils';
 import { buildThermalReceiptHtml } from '../../lib/receiptHtml';
+import { isStaleOpenSession } from '../../lib/colomboTime.js';
 
 const inputClassName =
   'w-full p-3.5 rounded-xl bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-all duration-100 font-semibold';
@@ -74,6 +75,8 @@ export default function BillingPage() {
 
   const totals = useMemo(() => getTotals(), [items, saleDiscountType, saleDiscountValue, getTotals]);
   const maxPct = maxDiscountPctForRole(user?.role, settings);
+  const staleDay = isStaleOpenSession(dayOpen);
+  const staleDayBlocks = staleDay && (settings?.staleDayPolicy || 'block') !== 'warn';
   const change = useMemo(() => {
     if (paymentMethod !== 'cash') return 0;
     return Math.max(0, Number(tendered || 0) - totals.total);
@@ -254,6 +257,10 @@ export default function BillingPage() {
       setError('Cart is empty.');
       return;
     }
+    if (staleDayBlocks) {
+      setError("Yesterday's cash day is still open. Close & print Z, then open today before continuing.");
+      return;
+    }
     if (!validateDiscounts()) return;
     if (paymentMethod === 'cash' && Number(tendered || 0) + 0.001 < totals.total) {
       setError('Tendered amount is less than the total.');
@@ -408,6 +415,26 @@ export default function BillingPage() {
                 Cash day is not open. Open the day with float cash before selling.{' '}
                 <button type="button" className="underline" onClick={() => navigate('/day-close')}>
                   Open day
+                </button>
+              </AlertDescription>
+            </Alert>
+          )}
+          {dayOpen && staleDay && (
+            <Alert
+              className={cn(
+                'rounded-xl',
+                staleDayBlocks
+                  ? 'border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-100'
+                  : 'border-amber-500/30 bg-amber-500/5 text-amber-800 dark:text-amber-200'
+              )}
+            >
+              <AlertDescription className="font-semibold">
+                Yesterday&apos;s cash day is still open.
+                {staleDayBlocks
+                  ? ' Close & print Z, then open today before selling.'
+                  : ' You can still sell, but close the day when you can.'}{' '}
+                <button type="button" className="underline" onClick={() => navigate('/day-close')}>
+                  Go to Day Close
                 </button>
               </AlertDescription>
             </Alert>
@@ -712,7 +739,7 @@ export default function BillingPage() {
           <div className="space-y-3 pt-2">
             <button
               type="button"
-              disabled={saving || !items.length}
+              disabled={saving || !items.length || staleDayBlocks || !dayOpen}
               onClick={handleCompleteSale}
               className="w-full h-14 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 font-bold text-white shadow-lg shadow-orange-500/20 active:scale-[0.98] transition-all disabled:opacity-50 disabled:pointer-events-none select-none cursor-pointer flex items-center justify-center gap-2"
             >

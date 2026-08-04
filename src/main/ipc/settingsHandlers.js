@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron';
 import settingsService from '../services/settingsService.js';
 import reportService from '../services/reportService.js';
-import { extractToken, requireRole, validateSession } from '../lib/sessionAuth.js';
+import { extractToken, requirePermission, requireRole, validateSession } from '../lib/sessionAuth.js';
 import { writeAuditLog } from '../lib/auditLog.js';
 
 export function registerSettingsHandlers() {
@@ -41,8 +41,8 @@ export function registerReportHandlers() {
       const session = validateSession(token);
       if (!session.success) return session;
 
-      const roleCheck = requireRole(session, ['admin', 'manager']);
-      if (!roleCheck.success) return roleCheck;
+      const permCheck = requirePermission(session, 'reports');
+      if (!permCheck.success) return permCheck;
 
       return {
         success: true,
@@ -59,8 +59,8 @@ export function registerReportHandlers() {
       const session = validateSession(token);
       if (!session.success) return session;
 
-      const roleCheck = requireRole(session, ['admin', 'manager']);
-      if (!roleCheck.success) return roleCheck;
+      const permCheck = requirePermission(session, 'reports');
+      if (!permCheck.success) return permCheck;
 
       return {
         success: true,
@@ -77,8 +77,8 @@ export function registerReportHandlers() {
       const session = validateSession(token);
       if (!session.success) return session;
 
-      const roleCheck = requireRole(session, ['admin', 'manager']);
-      if (!roleCheck.success) return roleCheck;
+      const permCheck = requirePermission(session, 'reports');
+      if (!permCheck.success) return permCheck;
 
       return {
         success: true,
@@ -95,8 +95,8 @@ export function registerReportHandlers() {
       const session = validateSession(token);
       if (!session.success) return session;
 
-      const roleCheck = requireRole(session, ['admin', 'manager']);
-      if (!roleCheck.success) return roleCheck;
+      const permCheck = requirePermission(session, 'reports');
+      if (!permCheck.success) return permCheck;
 
       return {
         success: true,

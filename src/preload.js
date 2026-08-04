@@ -16,6 +16,7 @@ const validChannels = [
   'auth:getRecoveryStatus',
   'user:getAll',
   'user:create',
+  'user:updatePermissions',
   'user:delete',
   'user:unlock',
   'user:resetPin',

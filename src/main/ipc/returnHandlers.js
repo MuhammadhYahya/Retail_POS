@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron';
 import returnService from '../services/returnService.js';
-import { extractToken, requireRole, validateSession } from '../lib/sessionAuth.js';
+import { extractToken, requirePermission, validateSession } from '../lib/sessionAuth.js';
 import { writeAuditLog } from '../lib/auditLog.js';
 
 export function registerReturnHandlers() {
@@ -8,8 +8,8 @@ export function registerReturnHandlers() {
     try {
       const session = validateSession(extractToken(payload));
       if (!session.success) return session;
-      const roleCheck = requireRole(session, ['admin', 'manager', 'cashier']);
-      if (!roleCheck.success) return roleCheck;
+      const permCheck = requirePermission(session, 'returns');
+      if (!permCheck.success) return permCheck;
 
       let saleId = payload.saleId;
       if (!saleId && payload.invoiceNumber) {
@@ -27,11 +27,8 @@ export function registerReturnHandlers() {
     try {
       const session = validateSession(extractToken(payload));
       if (!session.success) return session;
-      // Cashiers need manager/admin for returns per plan — allow admin/manager always;
-      // cashiers allowed only with approve role check: plan says "Manager PIN or no"
-      // V1: admin + manager; cashier blocked for simplicity of money control
-      const roleCheck = requireRole(session, ['admin', 'manager']);
-      if (!roleCheck.success) return roleCheck;
+      const permCheck = requirePermission(session, 'returns');
+      if (!permCheck.success) return permCheck;
 
       const data = returnService.createReturn({
         saleId: payload.saleId,
@@ -51,8 +48,8 @@ export function registerReturnHandlers() {
     try {
       const session = validateSession(extractToken(payload));
       if (!session.success) return session;
-      const roleCheck = requireRole(session, ['admin', 'manager']);
-      if (!roleCheck.success) return roleCheck;
+      const permCheck = requirePermission(session, 'returns');
+      if (!permCheck.success) return permCheck;
       return { success: true, data: returnService.listRecent({ limit: payload.limit }) };
     } catch (err) {
       return { success: false, error: err.message };
@@ -63,8 +60,8 @@ export function registerReturnHandlers() {
     try {
       const session = validateSession(extractToken(payload));
       if (!session.success) return session;
-      const roleCheck = requireRole(session, ['admin', 'manager']);
-      if (!roleCheck.success) return roleCheck;
+      const permCheck = requirePermission(session, 'returns');
+      if (!permCheck.success) return permCheck;
       return { success: true, data: returnService.getById(payload.returnId) };
     } catch (err) {
       return { success: false, error: err.message };

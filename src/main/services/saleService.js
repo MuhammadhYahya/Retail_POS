@@ -310,7 +310,7 @@ const saleService = {
     assertTruthy(cleanCashierId, 'Cashier is required.');
     assertTruthy(Array.isArray(cartItems) && cartItems.length, 'Cart is empty.');
 
-    const openSession = cashSessionService.requireOpenSession();
+    const openSession = cashSessionService.assertSessionAllowsPosting();
 
     const paymentMethod = cleanText(payment.method || payment.paymentMethod || 'cash').toLowerCase() || 'cash';
     const allowedMethods = new Set(['cash', 'card', 'qr']);

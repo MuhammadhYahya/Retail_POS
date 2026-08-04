@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron';
 import cashSessionService from '../services/cashSessionService.js';
-import { extractToken, requireRole, validateSession } from '../lib/sessionAuth.js';
+import { extractToken, requirePermission, validateSession } from '../lib/sessionAuth.js';
 import { writeAuditLog } from '../lib/auditLog.js';
 
 export function registerCashSessionHandlers() {
@@ -18,8 +18,8 @@ export function registerCashSessionHandlers() {
     try {
       const session = validateSession(extractToken(payload));
       if (!session.success) return session;
-      const roleCheck = requireRole(session, ['admin', 'manager', 'cashier']);
-      if (!roleCheck.success) return roleCheck;
+      const permCheck = requirePermission(session, 'dayClose');
+      if (!permCheck.success) return permCheck;
 
       const data = cashSessionService.openDay({
         userId: session.user.id,
@@ -37,8 +37,8 @@ export function registerCashSessionHandlers() {
     try {
       const session = validateSession(extractToken(payload));
       if (!session.success) return session;
-      const roleCheck = requireRole(session, ['admin', 'manager', 'cashier']);
-      if (!roleCheck.success) return roleCheck;
+      const permCheck = requirePermission(session, 'dayClose');
+      if (!permCheck.success) return permCheck;
       return { success: true, data: cashSessionService.getXReport(payload.sessionId) };
     } catch (err) {
       return { success: false, error: err.message };
@@ -49,8 +49,8 @@ export function registerCashSessionHandlers() {
     try {
       const session = validateSession(extractToken(payload));
       if (!session.success) return session;
-      const roleCheck = requireRole(session, ['admin', 'manager', 'cashier']);
-      if (!roleCheck.success) return roleCheck;
+      const permCheck = requirePermission(session, 'dayClose');
+      if (!permCheck.success) return permCheck;
 
       const data = cashSessionService.closeDay({
         userId: session.user.id,
@@ -68,8 +68,8 @@ export function registerCashSessionHandlers() {
     try {
       const session = validateSession(extractToken(payload));
       if (!session.success) return session;
-      const roleCheck = requireRole(session, ['admin', 'manager']);
-      if (!roleCheck.success) return roleCheck;
+      const permCheck = requirePermission(session, 'dayClose');
+      if (!permCheck.success) return permCheck;
       return { success: true, data: cashSessionService.listRecent({ limit: payload.limit }) };
     } catch (err) {
       return { success: false, error: err.message };
@@ -80,8 +80,8 @@ export function registerCashSessionHandlers() {
     try {
       const session = validateSession(extractToken(payload));
       if (!session.success) return session;
-      const roleCheck = requireRole(session, ['admin', 'manager', 'cashier']);
-      if (!roleCheck.success) return roleCheck;
+      const permCheck = requirePermission(session, 'dayClose');
+      if (!permCheck.success) return permCheck;
       const z = cashSessionService.getZReport(payload.sessionId);
       if (!z) return { success: false, error: 'Z-report not found.' };
       return { success: true, data: z };

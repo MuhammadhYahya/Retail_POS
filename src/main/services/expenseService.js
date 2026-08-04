@@ -55,7 +55,7 @@ const expenseService = {
     userId,
     expenseDate = null,
   } = {}) {
-    const session = cashSessionService.requireOpenSession();
+    const session = cashSessionService.assertSessionAllowsPosting();
     const cleanCategory = cleanText(category) || 'Other';
     const value = roundMoney(toNumber(amount, 0));
     if (value <= 0) throw new Error('Expense amount must be greater than zero.');

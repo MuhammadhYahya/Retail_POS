@@ -31,6 +31,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { invokeWithAuth, notifyLowStockUpdated } from '../../lib/ipc';
 import { useAuthStore } from '../../store/authStore';
+import { hasPermission } from '../../lib/permissions.js';
 import { cn } from '../../lib/utils';
 import { CUSTOM_UNIT_VALUE, PRODUCT_UNITS, resolveUnitSelectValue } from '../../lib/productUnits';
 import {
@@ -564,7 +565,7 @@ export default function ProductsManagement() {
   const [searchParams, setSearchParams] = useSearchParams();
   const user = useAuthStore((state) => state.user);
   const isAdmin = user?.role === 'admin';
-  const canManageStock = isAdmin || user?.role === 'manager';
+  const canManageStock = hasPermission(user, 'stockAdjust');
 
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);

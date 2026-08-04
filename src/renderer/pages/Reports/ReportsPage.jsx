@@ -12,6 +12,8 @@ import {
   DialogTitle,
 } from '../../components/ui/dialog';
 import { invokeWithAuth, notifyLowStockUpdated } from '../../lib/ipc';
+import { useAuthStore } from '../../store/authStore';
+import { hasPermission } from '../../lib/permissions.js';
 
 const inputClassName =
   'w-full p-3 rounded-lg bg-input border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-ring';
@@ -26,6 +28,8 @@ function todayColombo() {
 }
 
 export default function ReportsPage() {
+  const user = useAuthStore((state) => state.user);
+  const canVoidSale = hasPermission(user, 'voidSale');
   const [date, setDate] = useState(() => todayColombo());
   const [summary, setSummary] = useState(null);
   const [topProducts, setTopProducts] = useState([]);
@@ -235,7 +239,7 @@ export default function ReportsPage() {
                         <td className="px-3 py-3">{formatMoney(sale.discountedProfit)}</td>
                         <td className="px-3 py-3 capitalize">{sale.status}</td>
                         <td className="px-3 py-3">
-                          {sale.status === 'completed' ? (
+                          {sale.status === 'completed' && canVoidSale ? (
                             <Button
                               type="button"
                               variant="outline"

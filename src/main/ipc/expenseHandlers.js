@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron';
 import expenseService from '../services/expenseService.js';
-import { extractToken, requireRole, validateSession } from '../lib/sessionAuth.js';
+import { extractToken, requirePermission, validateSession } from '../lib/sessionAuth.js';
 import { writeAuditLog } from '../lib/auditLog.js';
 
 export function registerExpenseHandlers() {
@@ -18,8 +18,8 @@ export function registerExpenseHandlers() {
     try {
       const session = validateSession(extractToken(payload));
       if (!session.success) return session;
-      const roleCheck = requireRole(session, ['admin', 'manager', 'cashier']);
-      if (!roleCheck.success) return roleCheck;
+      const permCheck = requirePermission(session, 'expenses');
+      if (!permCheck.success) return permCheck;
       return {
         success: true,
         data: expenseService.list({ limit: payload.limit, sessionId: payload.sessionId }),
@@ -33,8 +33,8 @@ export function registerExpenseHandlers() {
     try {
       const session = validateSession(extractToken(payload));
       if (!session.success) return session;
-      const roleCheck = requireRole(session, ['admin', 'manager', 'cashier']);
-      if (!roleCheck.success) return roleCheck;
+      const permCheck = requirePermission(session, 'expenses');
+      if (!permCheck.success) return permCheck;
 
       const data = expenseService.create({
         category: payload.category,
@@ -55,8 +55,8 @@ export function registerExpenseHandlers() {
     try {
       const session = validateSession(extractToken(payload));
       if (!session.success) return session;
-      const roleCheck = requireRole(session, ['admin', 'manager']);
-      if (!roleCheck.success) return roleCheck;
+      const permCheck = requirePermission(session, 'expenses');
+      if (!permCheck.success) return permCheck;
       const data = expenseService.softDelete({
         expenseId: payload.expenseId,
         userId: session.user.id,

@@ -6,43 +6,51 @@ import { Button } from '../ui/button';
 import { LogOut, LayoutDashboard, Users, ShoppingCart, Package, BarChart3, Settings, Sun, Moon, AlertTriangle, Wallet, Truck, Undo2, Receipt, Tag } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { getDashboardPath, invokeWithAuth, LOW_STOCK_UPDATED_EVENT } from '../../lib/ipc';
+import { useCloseDayReminder } from '../../lib/useCloseDayReminder.js';
+import { hasPermission } from '../../lib/permissions.js';
 
-const NAV_ITEMS = {
-  admin: [
-    { path: '/admin', label: 'Dashboard', icon: LayoutDashboard, color: 'text-amber-500' },
-    { path: '/day-close', label: 'Day Open/Close', icon: Wallet, color: 'text-teal-500' },
-    { path: '/billing', label: 'New Sale', icon: ShoppingCart, color: 'text-emerald-500' },
-    { path: '/purchases', label: 'Purchases', icon: Truck, color: 'text-cyan-500' },
-    { path: '/products', label: 'Products', icon: Package, color: 'text-violet-500' },
-    { path: '/labels', label: 'Labels', icon: Tag, color: 'text-fuchsia-500' },
-    { path: '/returns', label: 'Returns', icon: Undo2, color: 'text-orange-500' },
-    { path: '/expenses', label: 'Expenses', icon: Receipt, color: 'text-lime-600' },
-    { path: '/low-stock', label: 'Low Stock', icon: AlertTriangle, color: 'text-red-500' },
-    { path: '/reports', label: 'Reports', icon: BarChart3, color: 'text-sky-500' },
-    { path: '/staff', label: 'Staff Management', icon: Users, color: 'text-rose-500' },
-    { path: '/settings', label: 'Settings', icon: Settings, color: 'text-slate-500' },
-  ],
-  manager: [
-    { path: '/manager', label: 'Dashboard', icon: LayoutDashboard, color: 'text-amber-500' },
-    { path: '/day-close', label: 'Day Open/Close', icon: Wallet, color: 'text-teal-500' },
-    { path: '/billing', label: 'New Sale', icon: ShoppingCart, color: 'text-emerald-500' },
-    { path: '/purchases', label: 'Purchases', icon: Truck, color: 'text-cyan-500' },
-    { path: '/products', label: 'Products', icon: Package, color: 'text-violet-500' },
-    { path: '/labels', label: 'Labels', icon: Tag, color: 'text-fuchsia-500' },
-    { path: '/returns', label: 'Returns', icon: Undo2, color: 'text-orange-500' },
-    { path: '/expenses', label: 'Expenses', icon: Receipt, color: 'text-lime-600' },
-    { path: '/low-stock', label: 'Low Stock', icon: AlertTriangle, color: 'text-red-500' },
-    { path: '/reports', label: 'Reports', icon: BarChart3, color: 'text-sky-500' },
-  ],
-  cashier: [
-    { path: '/cashier', label: 'POS Terminal', icon: LayoutDashboard, color: 'text-amber-500' },
-    { path: '/day-close', label: 'Day Open/Close', icon: Wallet, color: 'text-teal-500' },
-    { path: '/billing', label: 'New Sale', icon: ShoppingCart, color: 'text-emerald-500' },
-    { path: '/expenses', label: 'Expenses', icon: Receipt, color: 'text-lime-600' },
-    { path: '/products', label: 'Products', icon: Package, color: 'text-violet-500' },
-    { path: '/low-stock', label: 'Low Stock', icon: AlertTriangle, color: 'text-red-500' },
-  ],
-};
+const FEATURE_NAV = [
+  { path: '/day-close', label: 'Day Open/Close', icon: Wallet, color: 'text-teal-500', permission: 'dayClose' },
+  { path: '/billing', label: 'New Sale', icon: ShoppingCart, color: 'text-emerald-500', permission: null },
+  { path: '/purchases', label: 'Purchases', icon: Truck, color: 'text-cyan-500', permission: 'purchases' },
+  { path: '/products', label: 'Products', icon: Package, color: 'text-violet-500', permission: 'products' },
+  { path: '/labels', label: 'Labels', icon: Tag, color: 'text-fuchsia-500', permission: 'labels' },
+  { path: '/returns', label: 'Returns', icon: Undo2, color: 'text-orange-500', permission: 'returns' },
+  { path: '/expenses', label: 'Expenses', icon: Receipt, color: 'text-lime-600', permission: 'expenses' },
+  { path: '/low-stock', label: 'Low Stock', icon: AlertTriangle, color: 'text-red-500', permission: 'lowStock' },
+  { path: '/reports', label: 'Reports', icon: BarChart3, color: 'text-sky-500', permission: 'reports' },
+];
+
+const ADMIN_ONLY_NAV = [
+  { path: '/staff', label: 'Staff Management', icon: Users, color: 'text-rose-500' },
+  { path: '/settings', label: 'Settings', icon: Settings, color: 'text-slate-500' },
+];
+
+function navItemsForUser(user) {
+  if (!user?.role) return [];
+
+  const dashboardLabel = user.role === 'cashier' ? 'POS Terminal' : 'Dashboard';
+  const items = [
+    {
+      path: getDashboardPath(user.role),
+      label: dashboardLabel,
+      icon: LayoutDashboard,
+      color: 'text-amber-500',
+    },
+  ];
+
+  for (const item of FEATURE_NAV) {
+    if (!item.permission || hasPermission(user, item.permission)) {
+      items.push(item);
+    }
+  }
+
+  if (user.role === 'admin') {
+    items.push(...ADMIN_ONLY_NAV);
+  }
+
+  return items;
+}
 
 const nameToAvatar = (name) => {
   if (!name) return '?';
@@ -63,6 +71,8 @@ export default function AppShell({ children, title, description }) {
   const [timeString, setTimeString] = React.useState('');
   const [profileOpen, setProfileOpen] = React.useState(false);
   const [lowStockCount, setLowStockCount] = React.useState(0);
+  const showCloseReminder = useCloseDayReminder();
+  const canViewLowStock = hasPermission(user, 'lowStock');
 
   React.useEffect(() => {
     const updateClock = () => {
@@ -79,6 +89,11 @@ export default function AppShell({ children, title, description }) {
   }, []);
 
   React.useEffect(() => {
+    if (!canViewLowStock) {
+      setLowStockCount(0);
+      return undefined;
+    }
+
     let active = true;
     const refreshLowStockCount = async () => {
       try {
@@ -95,9 +110,9 @@ export default function AppShell({ children, title, description }) {
       active = false;
       window.removeEventListener(LOW_STOCK_UPDATED_EVENT, refreshLowStockCount);
     };
-  }, [location.pathname]);
+  }, [location.pathname, canViewLowStock]);
 
-  const navItems = NAV_ITEMS[user?.role] || [];
+  const navItems = navItemsForUser(user);
 
   const handleLogout = async () => {
     await setLogout();
@@ -150,6 +165,16 @@ export default function AppShell({ children, title, description }) {
 
       {/* Main content pane */}
       <main className="flex-1 flex flex-col min-w-0 min-h-0">
+        {showCloseReminder && hasPermission(user, 'dayClose') && (
+          <div
+            role="status"
+            className="shrink-0 border-b border-emerald-500/25 bg-emerald-500/10 px-8 py-2 text-center animate-[closeDayPulse_2.8s_ease-in-out_infinite]"
+          >
+            <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+              Please close the cash day before midnight
+            </p>
+          </div>
+        )}
         <header className="border-b border-border bg-card/45 backdrop-blur-md px-8 py-4 flex items-center justify-between">
           <div className="flex flex-col">
             <h2 className="text-xl font-bold tracking-tight">{title}</h2>
@@ -206,4 +231,3 @@ export default function AppShell({ children, title, description }) {
     </div>
   );
 }
-

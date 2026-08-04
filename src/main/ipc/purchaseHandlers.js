@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron';
 import purchaseService from '../services/purchaseService.js';
-import { extractToken, requireRole, validateSession } from '../lib/sessionAuth.js';
+import { extractToken, requirePermission, validateSession } from '../lib/sessionAuth.js';
 import { writeAuditLog } from '../lib/auditLog.js';
 
 export function registerPurchaseHandlers() {
@@ -8,8 +8,8 @@ export function registerPurchaseHandlers() {
     try {
       const session = validateSession(extractToken(payload));
       if (!session.success) return session;
-      const roleCheck = requireRole(session, ['admin', 'manager']);
-      if (!roleCheck.success) return roleCheck;
+      const permCheck = requirePermission(session, 'purchases');
+      if (!permCheck.success) return permCheck;
       return { success: true, data: purchaseService.listSuppliers() };
     } catch (err) {
       return { success: false, error: err.message };
@@ -20,8 +20,8 @@ export function registerPurchaseHandlers() {
     try {
       const session = validateSession(extractToken(payload));
       if (!session.success) return session;
-      const roleCheck = requireRole(session, ['admin', 'manager']);
-      if (!roleCheck.success) return roleCheck;
+      const permCheck = requirePermission(session, 'purchases');
+      if (!permCheck.success) return permCheck;
       const data = purchaseService.createSupplier(payload);
       writeAuditLog(`supplier_create:${data.name}`, session.user.id);
       return { success: true, data };
@@ -34,8 +34,8 @@ export function registerPurchaseHandlers() {
     try {
       const session = validateSession(extractToken(payload));
       if (!session.success) return session;
-      const roleCheck = requireRole(session, ['admin', 'manager']);
-      if (!roleCheck.success) return roleCheck;
+      const permCheck = requirePermission(session, 'purchases');
+      if (!permCheck.success) return permCheck;
       return {
         success: true,
         data: purchaseService.listReceipts({ limit: payload.limit, status: payload.status }),
@@ -49,8 +49,8 @@ export function registerPurchaseHandlers() {
     try {
       const session = validateSession(extractToken(payload));
       if (!session.success) return session;
-      const roleCheck = requireRole(session, ['admin', 'manager']);
-      if (!roleCheck.success) return roleCheck;
+      const permCheck = requirePermission(session, 'purchases');
+      if (!permCheck.success) return permCheck;
       return { success: true, data: purchaseService.getReceipt(payload.receiptId) };
     } catch (err) {
       return { success: false, error: err.message };
@@ -61,8 +61,8 @@ export function registerPurchaseHandlers() {
     try {
       const session = validateSession(extractToken(payload));
       if (!session.success) return session;
-      const roleCheck = requireRole(session, ['admin', 'manager']);
-      if (!roleCheck.success) return roleCheck;
+      const permCheck = requirePermission(session, 'purchases');
+      if (!permCheck.success) return permCheck;
       const data = purchaseService.createReceipt({
         supplierId: payload.supplierId,
         notes: payload.notes,
@@ -80,8 +80,8 @@ export function registerPurchaseHandlers() {
     try {
       const session = validateSession(extractToken(payload));
       if (!session.success) return session;
-      const roleCheck = requireRole(session, ['admin', 'manager']);
-      if (!roleCheck.success) return roleCheck;
+      const permCheck = requirePermission(session, 'purchases');
+      if (!permCheck.success) return permCheck;
       const data = purchaseService.postReceipt({
         receiptId: payload.receiptId,
         userId: session.user.id,

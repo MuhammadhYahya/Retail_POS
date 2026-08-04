@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron';
 import saleService from '../services/saleService.js';
 import irdService from '../services/irdService.js';
-import { extractToken, requireRole, validateSession } from '../lib/sessionAuth.js';
+import { extractToken, requirePermission, requireRole, validateSession } from '../lib/sessionAuth.js';
 import { writeAuditLog } from '../lib/auditLog.js';
 
 export function registerSaleHandlers() {
@@ -108,8 +108,8 @@ export function registerSaleHandlers() {
       const session = validateSession(token);
       if (!session.success) return session;
 
-      const roleCheck = requireRole(session, ['admin', 'manager']);
-      if (!roleCheck.success) return roleCheck;
+      const permCheck = requirePermission(session, 'voidSale');
+      if (!permCheck.success) return permCheck;
 
       const sale = saleService.voidSale({
         saleId: payload.saleId,

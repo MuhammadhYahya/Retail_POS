@@ -25,6 +25,7 @@ import {
 } from '../lib/emergencyReset.js';
 import { validateSession, extractToken } from '../lib/sessionAuth.js';
 import userService from '../services/userService.js';
+import { parsePermissions } from '../lib/permissions.js';
 
 const PIN_REGEX = /^[0-9]{4}$/;
 
@@ -45,6 +46,7 @@ function publicUser(user) {
     username: user.username,
     display_name: user.display_name,
     role: user.role,
+    permissions: parsePermissions(user.permissions, user.role),
     needsRecoverySetup: userService.needsRecoverySetup(user),
   };
 }

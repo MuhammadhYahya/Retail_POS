@@ -6,14 +6,33 @@ function pad(n) {
   return String(n).padStart(2, '0');
 }
 
-/** Calendar date YYYY-MM-DD in Asia/Colombo for an instant (default now). */
-export function colomboDateString(dateInput = new Date()) {
+/** Calendar date/time parts in Asia/Colombo for an instant (default now). */
+export function colomboParts(dateInput = new Date()) {
   const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
   if (Number.isNaN(d.getTime())) {
-    return colomboDateString(new Date());
+    return colomboParts(new Date());
   }
   const shifted = new Date(d.getTime() + COLOMBO_OFFSET_MS);
-  return `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())}`;
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth() + 1,
+    day: shifted.getUTCDate(),
+    hour: shifted.getUTCHours(),
+    minute: shifted.getUTCMinutes(),
+    second: shifted.getUTCSeconds(),
+  };
+}
+
+/** Calendar date YYYY-MM-DD in Asia/Colombo for an instant (default now). */
+export function colomboDateString(dateInput = new Date()) {
+  const parts = colomboParts(dateInput);
+  return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`;
+}
+
+/** Minutes since midnight in Asia/Colombo (0–1439). */
+export function colomboMinutesSinceMidnight(dateInput = new Date()) {
+  const parts = colomboParts(dateInput);
+  return parts.hour * 60 + parts.minute;
 }
 
 /** Compact YYYYMMDD for invoice numbers. */

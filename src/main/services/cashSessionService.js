@@ -1,6 +1,10 @@
 import crypto from 'crypto';
 import { getDb } from '../database/db.js';
 import { colomboDateString, nowIso } from '../lib/colomboTime.js';
+import settingsService from './settingsService.js';
+
+export const STALE_DAY_BLOCK_MESSAGE =
+  "Yesterday's cash day is still open. Close & print Z, then open today before continuing.";
 
 function toNumber(value, fallback = 0) {
   const parsed = Number(value);
@@ -13,6 +17,13 @@ function roundMoney(value) {
 
 function cleanText(value) {
   return String(value ?? '').trim();
+}
+
+export function isStaleOpenSession(session) {
+  if (!session) return false;
+  const openedAt = session.openedAt || session.opened_at;
+  if (!openedAt) return false;
+  return colomboDateString(openedAt) !== colomboDateString();
 }
 
 function mapSession(row) {
@@ -127,6 +138,21 @@ const cashSessionService = {
     const session = this.getOpenSession();
     if (!session) {
       throw new Error('No open cash day. Open the day with float cash before continuing.');
+    }
+    return session;
+  },
+
+  /**
+   * Require an open cash day. When staleDayPolicy is 'block' and the open
+   * session started on a prior Colombo calendar day, refuse posting.
+   */
+  assertSessionAllowsPosting() {
+    const session = this.requireOpenSession();
+    if (!isStaleOpenSession(session)) return session;
+
+    const policy = settingsService.get().staleDayPolicy;
+    if (policy === 'block') {
+      throw new Error(STALE_DAY_BLOCK_MESSAGE);
     }
     return session;
   },

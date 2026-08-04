@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { getDb } from '../database/db.js';
 import { getJwtSecret } from './jwtSecret.js';
+import { hasPermission, parsePermissions } from './permissions.js';
 
 export function validateSession(token) {
   if (!token) {
@@ -14,7 +15,7 @@ export function validateSession(token) {
     const now = new Date().toISOString();
 
     const session = db.prepare(`
-      SELECT s.token, u.id, u.username, u.display_name, u.role, u.is_active, u.deleted_at
+      SELECT s.token, u.id, u.username, u.display_name, u.role, u.is_active, u.deleted_at, u.permissions
       FROM sessions s
       JOIN users u ON u.id = s.user_id
       WHERE s.token = ?
@@ -38,6 +39,7 @@ export function validateSession(token) {
         username: session.username,
         display_name: session.display_name,
         role: session.role,
+        permissions: parsePermissions(session.permissions, session.role),
       },
     };
   } catch (err) {
@@ -47,6 +49,13 @@ export function validateSession(token) {
 
 export function requireRole(session, allowedRoles) {
   if (!allowedRoles.includes(session.user.role)) {
+    return { success: false, error: 'Forbidden', code: 'FORBIDDEN' };
+  }
+  return { success: true };
+}
+
+export function requirePermission(session, key) {
+  if (!hasPermission(session.user, key)) {
     return { success: false, error: 'Forbidden', code: 'FORBIDDEN' };
   }
   return { success: true };

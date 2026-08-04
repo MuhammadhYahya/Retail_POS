@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Trash2, UserPlus, Shield, LockOpen, KeyRound } from 'lucide-react';
+import { Trash2, UserPlus, Shield, LockOpen, KeyRound, SlidersHorizontal } from 'lucide-react';
 import AppShell from '../../components/layout/AppShell';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
 import { Button } from '../../components/ui/button';
@@ -20,6 +20,12 @@ import {
   EMPTY_SECURITY_FORM,
   CUSTOM_QUESTION_VALUE,
 } from '../../components/auth/SecurityQuestionsFields';
+import {
+  PERMISSION_KEYS,
+  PERMISSION_LABELS,
+  defaultsForRole,
+  normalizePermissions,
+} from '../../lib/permissions.js';
 
 const PIN_REGEX = /^[0-9]{4}$/;
 
@@ -33,6 +39,7 @@ const EMPTY_FORM = {
   pin: '',
   confirmPin: '',
   role: 'cashier',
+  permissions: defaultsForRole('cashier'),
   ...EMPTY_SECURITY_FORM,
 };
 
@@ -41,17 +48,45 @@ const EMPTY_RESET = {
   confirmPin: '',
 };
 
+function PermissionsChecklist({ value, onChange, idPrefix }) {
+  return (
+    <div className="border border-border rounded-lg p-3 space-y-2">
+      <p className="text-sm font-medium">Access</p>
+      <p className="text-xs text-muted-foreground mb-2">
+        Choose which parts of the app this person can use. Role only sets the starting defaults.
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {PERMISSION_KEYS.map((key) => (
+          <label key={key} htmlFor={`${idPrefix}-${key}`} className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              id={`${idPrefix}-${key}`}
+              type="checkbox"
+              className="rounded border-border"
+              checked={Boolean(value?.[key])}
+              onChange={(e) => onChange({ ...value, [key]: e.target.checked })}
+            />
+            {PERMISSION_LABELS[key]}
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function StaffManagement() {
   const currentUser = useAuthStore((state) => state.user);
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
+  const [accessTarget, setAccessTarget] = useState(null);
+  const [accessForm, setAccessForm] = useState(defaultsForRole('cashier'));
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [resetTarget, setResetTarget] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [resetForm, setResetForm] = useState(EMPTY_RESET);
   const [formError, setFormError] = useState('');
+  const [accessError, setAccessError] = useState('');
   const [resetError, setResetError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [securityQuestions, setSecurityQuestions] = useState([]);
@@ -81,6 +116,14 @@ export default function StaffManagement() {
     };
     loadQuestions();
   }, []);
+
+  const handleRoleChange = (role) => {
+    setForm((prev) => ({
+      ...prev,
+      role,
+      permissions: role === 'admin' ? prev.permissions : defaultsForRole(role),
+    }));
+  };
 
   const handleCreate = async (e) => {
     e.preventDefault();
@@ -123,6 +166,10 @@ export default function StaffManagement() {
       role: form.role,
     };
 
+    if (form.role !== 'admin') {
+      payload.permissions = normalizePermissions(form.permissions, form.role);
+    }
+
     if (form.role === 'admin') {
       const resolvedQ1 = resolveQuestion(form.securityQ1Choice, form.securityQ1Custom);
       const resolvedQ2 = resolveQuestion(form.securityQ2Choice, form.securityQ2Custom);
@@ -146,6 +193,36 @@ export default function StaffManagement() {
       fetchStaff();
     } else {
       setFormError(response.error || 'Failed to create user');
+    }
+  };
+
+  const openAccessEditor = (user) => {
+    setAccessTarget(user);
+    setAccessForm(normalizePermissions(user.permissions, user.role));
+    setAccessError('');
+  };
+
+  const handleSaveAccess = async (e) => {
+    e.preventDefault();
+    if (!accessTarget) return;
+    setAccessError('');
+    setSubmitting(true);
+    try {
+      const response = await invokeWithAuth('user:updatePermissions', {
+        userId: accessTarget.id,
+        permissions: normalizePermissions(accessForm, accessTarget.role),
+      });
+
+      if (response.success) {
+        setAccessTarget(null);
+        fetchStaff();
+      } else {
+        setAccessError(response.error || 'Failed to update access');
+      }
+    } catch (err) {
+      setAccessError(err?.message || 'Failed to update access');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -215,7 +292,7 @@ export default function StaffManagement() {
   };
 
   return (
-    <AppShell title="Staff Management" description="Create and manage staff accounts.">
+    <AppShell title="Staff Management" description="Create and manage staff accounts and access.">
       <div className="space-y-6">
         <div className="flex justify-between items-center">
           <p className="text-sm text-muted-foreground">
@@ -288,18 +365,28 @@ export default function StaffManagement() {
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
                           {(user.role === 'cashier' || user.role === 'manager') && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                setResetTarget(user);
-                                setResetForm(EMPTY_RESET);
-                                setResetError('');
-                              }}
-                              title="Reset PIN"
-                            >
-                              <KeyRound className="h-4 w-4" />
-                            </Button>
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => openAccessEditor(user)}
+                                title="Edit access"
+                              >
+                                <SlidersHorizontal className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  setResetTarget(user);
+                                  setResetForm(EMPTY_RESET);
+                                  setResetError('');
+                                }}
+                                title="Reset PIN"
+                              >
+                                <KeyRound className="h-4 w-4" />
+                              </Button>
+                            </>
                           )}
                           {isLocked && (
                             <Button
@@ -337,7 +424,7 @@ export default function StaffManagement() {
           <DialogHeader>
             <DialogTitle>Add Staff Member</DialogTitle>
             <DialogDescription>
-              Create a new cashier or admin account.
+              Create a staff account and choose what they can access.
             </DialogDescription>
           </DialogHeader>
 
@@ -410,13 +497,21 @@ export default function StaffManagement() {
                 id="create-role"
                 className="w-full p-3 rounded-lg bg-input border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 value={form.role}
-                onChange={(e) => setForm({ ...form, role: e.target.value })}
+                onChange={(e) => handleRoleChange(e.target.value)}
               >
                 <option value="cashier">Cashier</option>
                 <option value="manager">Manager</option>
                 <option value="admin">Admin</option>
               </select>
             </div>
+
+            {form.role !== 'admin' && (
+              <PermissionsChecklist
+                idPrefix="create-perm"
+                value={form.permissions}
+                onChange={(permissions) => setForm((prev) => ({ ...prev, permissions }))}
+              />
+            )}
 
             {form.role === 'admin' && (
               <>
@@ -449,10 +544,48 @@ export default function StaffManagement() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={!!accessTarget} onOpenChange={(open) => !open && setAccessTarget(null)}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Access</DialogTitle>
+            <DialogDescription>
+              Update feature access for{' '}
+              <span className="font-medium text-foreground">
+                {accessTarget?.display_name || accessTarget?.username}
+              </span>
+              .
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleSaveAccess} className="space-y-4">
+            {accessError && (
+              <Alert variant="destructive">
+                <AlertDescription>{accessError}</AlertDescription>
+              </Alert>
+            )}
+
+            <PermissionsChecklist
+              idPrefix="edit-perm"
+              value={accessForm}
+              onChange={setAccessForm}
+            />
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setAccessTarget(null)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={submitting}>
+                {submitting ? 'Saving...' : 'Save Access'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={!!resetTarget} onOpenChange={(open) => !open && setResetTarget(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Reset Cashier PIN</DialogTitle>
+            <DialogTitle>Reset PIN</DialogTitle>
             <DialogDescription>
               Set a new PIN for{' '}
               <span className="font-medium text-foreground">

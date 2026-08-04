@@ -6,6 +6,11 @@ import {
   validateQuestionPair,
   hasSecurityQuestions,
 } from '../lib/securityQuestions.js';
+import {
+  defaultsForRole,
+  parsePermissions,
+  serializePermissions,
+} from '../lib/permissions.js';
 
 const PIN_REGEX = /^[0-9]{4}$/;
 
@@ -13,25 +18,34 @@ async function hashPin(pin) {
   return bcrypt.hash(String(pin).trim(), 12);
 }
 
+function mapUserRow(row) {
+  if (!row) return null;
+  return {
+    ...row,
+    permissions: parsePermissions(row.permissions, row.role),
+  };
+}
+
 const userService = {
   getAll() {
     const db = getDb();
     return db.prepare(`
-      SELECT id, username, display_name, role, is_active, failed_attempts, created_at, email, phone
+      SELECT id, username, display_name, role, is_active, failed_attempts, created_at, email, phone, permissions
       FROM users
       WHERE deleted_at IS NULL
       ORDER BY created_at DESC
-    `).all();
+    `).all().map(mapUserRow);
   },
 
   getById(id) {
     const db = getDb();
-    return db.prepare(`
+    const row = db.prepare(`
       SELECT id, username, display_name, role, is_active, failed_attempts, deleted_at,
-             security_q1, security_a1_hash, security_q2, security_a2_hash, email, phone
+             security_q1, security_a1_hash, security_q2, security_a2_hash, email, phone, permissions
       FROM users
       WHERE id = ?
     `).get(id);
+    return mapUserRow(row);
   },
 
   getByUsername(username) {
@@ -110,6 +124,7 @@ const userService = {
     securityA2,
     email,
     phone,
+    permissions,
   }) {
     const db = getDb();
     const usernameClean = String(username || '').trim();
@@ -160,15 +175,22 @@ const userService = {
     const id = crypto.randomUUID();
     const emailClean = email ? String(email).trim() : null;
     const phoneClean = phone ? String(phone).trim() : null;
+    const resolvedPermissions =
+      normalizedRole === 'admin'
+        ? null
+        : serializePermissions(
+            permissions || defaultsForRole(normalizedRole),
+            normalizedRole
+          );
 
     db.prepare(`
       INSERT INTO users (
         id, username, display_name, pin_hash, role,
         is_active, failed_attempts, created_at, updated_at,
         security_q1, security_a1_hash, security_q2, security_a2_hash,
-        email, phone
+        email, phone, permissions
       )
-      VALUES (?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       usernameClean,
@@ -182,7 +204,8 @@ const userService = {
       q2,
       a2Hash,
       emailClean,
-      phoneClean
+      phoneClean,
+      resolvedPermissions
     );
 
     return {
@@ -190,7 +213,29 @@ const userService = {
       username: usernameClean,
       display_name: displayName?.trim() || usernameClean,
       role: normalizedRole,
+      permissions: parsePermissions(resolvedPermissions, normalizedRole),
     };
+  },
+
+  updatePermissions(id, permissions) {
+    const db = getDb();
+    const user = userService.getById(id);
+    if (!user || user.deleted_at) {
+      throw new Error('User not found.');
+    }
+    if (user.role === 'admin') {
+      throw new Error('Admin accounts do not use a permission matrix.');
+    }
+
+    const normalized = serializePermissions(permissions, user.role);
+    const now = new Date().toISOString();
+    db.prepare(`
+      UPDATE users
+      SET permissions = ?, updated_at = ?
+      WHERE id = ?
+    `).run(normalized, now, id);
+
+    return userService.getById(id);
   },
 
   softDelete(id) {

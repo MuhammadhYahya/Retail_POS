@@ -4,6 +4,7 @@ import { Button } from '../../components/ui/button';
 import { Alert, AlertDescription } from '../../components/ui/alert';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { invokeWithAuth } from '../../lib/ipc';
+import { isStaleOpenSession } from '../../lib/colomboTime.js';
 
 const inputClassName =
   'w-full p-3 rounded-lg bg-input border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-ring';
@@ -51,6 +52,7 @@ export default function DayClosePage() {
   const [message, setMessage] = useState('');
   const [lastZ, setLastZ] = useState(null);
   const [busy, setBusy] = useState(false);
+  const staleDay = isStaleOpenSession(openSession);
 
   const refresh = async () => {
     setError('');
@@ -126,6 +128,16 @@ export default function DayClosePage() {
           </Alert>
         )}
 
+        {openSession && staleDay && (
+          <Alert className="border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-100">
+            <AlertDescription className="font-semibold">
+              Yesterday&apos;s cash day is still open (opened{' '}
+              {new Date(openSession.openedAt).toLocaleString()}). Close &amp; print Z for that day,
+              then open today&apos;s day with float before selling.
+            </AlertDescription>
+          </Alert>
+        )}
+
         {!openSession ? (
           <Card>
             <CardHeader>
@@ -179,7 +191,11 @@ export default function DayClosePage() {
             <Card>
               <CardHeader>
                 <CardTitle>Close day (Z-report)</CardTitle>
-                <CardDescription>Count the drawer. Variance is counted − expected.</CardDescription>
+                <CardDescription>
+                  {staleDay
+                    ? "Count the drawer for the open day, print Z, then open today's day with float."
+                    : 'Count the drawer. Variance is counted − expected.'}
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>

@@ -66,3 +66,14 @@ body {
 #root {
   min-height: 100vh;
 }
+
+@keyframes closeDayPulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+

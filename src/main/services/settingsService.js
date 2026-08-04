@@ -14,6 +14,10 @@ function cleanText(value) {
   return text.length ? text : '';
 }
 
+function normalizeStaleDayPolicy(value) {
+  return String(value ?? '').trim().toLowerCase() === 'warn' ? 'warn' : 'block';
+}
+
 function mapSettings(row) {
   if (!row) {
     return {
@@ -33,6 +37,7 @@ function mapSettings(row) {
       paperWidth: 80,
       cashierMaxDiscountPct: 10,
       managerMaxDiscountPct: 25,
+      staleDayPolicy: 'block',
     };
   }
 
@@ -53,6 +58,7 @@ function mapSettings(row) {
     paperWidth: toNumber(row.paper_width, 80),
     cashierMaxDiscountPct: toNumber(row.cashier_max_discount_pct, 10),
     managerMaxDiscountPct: toNumber(row.manager_max_discount_pct, 25),
+    staleDayPolicy: normalizeStaleDayPolicy(row.stale_day_policy),
   };
 }
 
@@ -102,6 +108,10 @@ const settingsService = {
         payload.managerMaxDiscountPct !== undefined
           ? Math.min(100, Math.max(0, toNumber(payload.managerMaxDiscountPct, current.managerMaxDiscountPct)))
           : current.managerMaxDiscountPct,
+      staleDayPolicy:
+        payload.staleDayPolicy !== undefined
+          ? normalizeStaleDayPolicy(payload.staleDayPolicy)
+          : current.staleDayPolicy,
     };
 
     if (next.managerMaxDiscountPct < next.cashierMaxDiscountPct) {
@@ -125,6 +135,7 @@ const settingsService = {
         paper_width = ?,
         cashier_max_discount_pct = ?,
         manager_max_discount_pct = ?,
+        stale_day_policy = ?,
         updated_at = ?
       WHERE id = 1
     `).run(
@@ -143,6 +154,7 @@ const settingsService = {
       next.paperWidth,
       next.cashierMaxDiscountPct,
       next.managerMaxDiscountPct,
+      next.staleDayPolicy,
       now()
     );
 

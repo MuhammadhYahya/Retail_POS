@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron';
 import productService from '../services/productService.js';
-import { extractToken, requireRole, validateSession } from '../lib/sessionAuth.js';
+import { extractToken, requirePermission, requireRole, validateSession } from '../lib/sessionAuth.js';
 import { writeAuditLog } from '../lib/auditLog.js';
 
 function requireAdmin(session) {
@@ -206,8 +206,8 @@ export function registerProductHandlers() {
       const session = validateSession(token);
       if (!session.success) return session;
 
-      const roleCheck = requireRole(session, ['admin', 'manager']);
-      if (!roleCheck.success) return roleCheck;
+      const permCheck = requirePermission(session, 'stockAdjust');
+      if (!permCheck.success) return permCheck;
 
       const summary = productService.adjustStock({
         variantId: payload.variantId,
@@ -264,6 +264,8 @@ export function registerProductHandlers() {
       const token = extractToken(payload);
       const session = validateSession(token);
       if (!session.success) return session;
+      const permCheck = requirePermission(session, 'lowStock');
+      if (!permCheck.success) return permCheck;
       return { success: true, data: productService.listLowStock() };
     } catch (err) {
       return { success: false, error: err.message };

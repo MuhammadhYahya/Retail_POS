@@ -179,7 +179,7 @@ export default function ReturnsPage() {
         <Card>
           <CardHeader>
             <CardTitle>Find invoice</CardTitle>
-            <CardDescription>Manager/admin only. Requires an open cash day.</CardDescription>
+            <CardDescription>Requires an open cash day. Access is controlled per staff member.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex gap-2">

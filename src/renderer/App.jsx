@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useAuthStore } from './store/authStore';
 import { getDashboardPath } from './lib/ipc';
+import { hasPermission, PATH_PERMISSION } from './lib/permissions.js';
 
 import LoginPage from './pages/Login/LoginPage';
 import RegisterPage from './pages/Register/RegisterPage';
@@ -43,6 +44,24 @@ function RoleGuard({ children, allowedRoles }) {
     return <Navigate to={getDashboardPath(user?.role) || '/login'} replace />;
   }
   return children;
+}
+
+function PermissionGuard({ children, permission }) {
+  const user = useAuthStore((state) => state.user);
+  if (!hasPermission(user, permission)) {
+    return <Navigate to={getDashboardPath(user?.role) || '/login'} replace />;
+  }
+  return children;
+}
+
+function FeatureRoute({ permission, children }) {
+  return (
+    <ProtectedRoute>
+      <PermissionGuard permission={permission}>
+        {children}
+      </PermissionGuard>
+    </ProtectedRoute>
+  );
 }
 
 function AuthBootstrap() {
@@ -131,22 +150,8 @@ function AppRoutes() {
           }
         />
 
-        <Route
-          path="/products"
-          element={
-            <ProtectedRoute>
-              <RoleGuard allowedRoles={['admin', 'manager', 'cashier']}>
-                <ProductsManagement />
-              </RoleGuard>
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/low-stock"
-          element={<ProtectedRoute><RoleGuard allowedRoles={['admin', 'manager', 'cashier']}><LowStockPage /></RoleGuard></ProtectedRoute>}
-        />
-
+        <Route path="/products" element={<FeatureRoute permission={PATH_PERMISSION['/products']}><ProductsManagement /></FeatureRoute>} />
+        <Route path="/low-stock" element={<FeatureRoute permission={PATH_PERMISSION['/low-stock']}><LowStockPage /></FeatureRoute>} />
         <Route
           path="/billing"
           element={
@@ -157,18 +162,7 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
-
-        <Route
-          path="/reports"
-          element={
-            <ProtectedRoute>
-              <RoleGuard allowedRoles={['admin', 'manager']}>
-                <ReportsPage />
-              </RoleGuard>
-            </ProtectedRoute>
-          }
-        />
-
+        <Route path="/reports" element={<FeatureRoute permission={PATH_PERMISSION['/reports']}><ReportsPage /></FeatureRoute>} />
         <Route
           path="/settings"
           element={
@@ -179,61 +173,11 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
-
-        <Route
-          path="/day-close"
-          element={
-            <ProtectedRoute>
-              <RoleGuard allowedRoles={['admin', 'manager', 'cashier']}>
-                <DayClosePage />
-              </RoleGuard>
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/purchases"
-          element={
-            <ProtectedRoute>
-              <RoleGuard allowedRoles={['admin', 'manager']}>
-                <PurchasesPage />
-              </RoleGuard>
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/returns"
-          element={
-            <ProtectedRoute>
-              <RoleGuard allowedRoles={['admin', 'manager']}>
-                <ReturnsPage />
-              </RoleGuard>
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/expenses"
-          element={
-            <ProtectedRoute>
-              <RoleGuard allowedRoles={['admin', 'manager', 'cashier']}>
-                <ExpensesPage />
-              </RoleGuard>
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/labels"
-          element={
-            <ProtectedRoute>
-              <RoleGuard allowedRoles={['admin', 'manager']}>
-                <LabelsPage />
-              </RoleGuard>
-            </ProtectedRoute>
-          }
-        />
+        <Route path="/day-close" element={<FeatureRoute permission={PATH_PERMISSION['/day-close']}><DayClosePage /></FeatureRoute>} />
+        <Route path="/purchases" element={<FeatureRoute permission={PATH_PERMISSION['/purchases']}><PurchasesPage /></FeatureRoute>} />
+        <Route path="/returns" element={<FeatureRoute permission={PATH_PERMISSION['/returns']}><ReturnsPage /></FeatureRoute>} />
+        <Route path="/expenses" element={<FeatureRoute permission={PATH_PERMISSION['/expenses']}><ExpensesPage /></FeatureRoute>} />
+        <Route path="/labels" element={<FeatureRoute permission={PATH_PERMISSION['/labels']}><LabelsPage /></FeatureRoute>} />
 
         <Route path="/dashboard" element={<ProtectedRoute><DashboardRedirect /></ProtectedRoute>} />
         <Route path="/" element={<Navigate to="/login" replace />} />

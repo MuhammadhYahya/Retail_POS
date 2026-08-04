@@ -27,6 +27,7 @@ const emptyForm = {
   paperWidth: 80,
   cashierMaxDiscountPct: 10,
   managerMaxDiscountPct: 25,
+  staleDayPolicy: 'block',
 };
 
 export default function SettingsPage() {
@@ -303,6 +304,28 @@ export default function SettingsPage() {
                   >
                     <option value={80}>80 (XP-80)</option>
                     <option value={58}>58</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="border-t border-border pt-4 space-y-4">
+                <div>
+                  <p className="text-sm font-semibold">Cash day past midnight</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    If yesterday&apos;s cash day was left open, choose whether billing is blocked until close &amp; reopen.
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    If cash day left open past midnight
+                  </label>
+                  <select
+                    className={inputClassName}
+                    value={form.staleDayPolicy || 'block'}
+                    onChange={(e) => setForm({ ...form, staleDayPolicy: e.target.value })}
+                  >
+                    <option value="block">Block selling (recommended)</option>
+                    <option value="warn">Warn only</option>
                   </select>
                 </div>
               </div>
