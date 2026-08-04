@@ -2069,6 +2069,11 @@ export default function ProductsManagement() {
 
                 {form.step === 2 && (
                   <div className="space-y-5">
+                    {form.name ? (
+                      <p className="text-sm text-muted-foreground">
+                        Product: <span className="font-medium text-foreground">{form.name}</span>
+                      </p>
+                    ) : null}
                     <div className="flex flex-wrap gap-3">
                       <button
                         type="button"
@@ -2623,7 +2628,15 @@ export default function ProductsManagement() {
                                       <td className="p-2">
                                         <input className="w-20 rounded-lg border border-border bg-input p-2" type="number" min="0" step="1" value={variant.lowStockAlert} onChange={(e) => updateVariantRow(index, 'lowStockAlert', e.target.value)} />
                                       </td>
-                                      <td className="p-2 text-xs text-muted-foreground whitespace-nowrap">{variant.barcode || 'AUTO-GEN'}</td>
+                                      <td className="p-2">
+                                        <input
+                                          className={cn(inputClassName, 'min-w-[8rem] p-2 text-xs')}
+                                          value={variant.barcode}
+                                          onChange={(e) => updateVariantRow(index, 'barcode', e.target.value)}
+                                          placeholder="Scan or type"
+                                          autoComplete="off"
+                                        />
+                                      </td>
                                       <td className="sticky right-0 z-10 bg-card p-2 shadow-[-6px_0_8px_-6px_rgba(0,0,0,0.15)]">
                                         <Button type="button" variant="ghost" size="sm" onClick={() => removeVariantRow(index)} disabled={form.variantRows.length === 1} title="Remove variant">
                                           <Trash2 className="h-4 w-4" />
@@ -2634,7 +2647,7 @@ export default function ProductsManagement() {
                                 </tbody>
                               </table>
                             </div>
-                            <p className="text-xs text-muted-foreground">Barcodes and SKUs are generated automatically. Use the advanced fields after creating the product if you need overrides.</p>
+                            <p className="text-xs text-muted-foreground">Barcodes and SKUs are generated automatically when left blank. Type or scan a barcode to override.</p>
                           </div>
                         ) : (
                           <p className="text-sm text-muted-foreground">

@@ -79,7 +79,7 @@ function findVariantByBarcode(db, barcode) {
       SELECT v.id, v.product_id, v.sku, v.barcode
       FROM product_variants v
       JOIN products p ON p.id = v.product_id
-      WHERE v.barcode = ? AND v.deleted_at IS NULL AND p.deleted_at IS NULL
+      WHERE lower(v.barcode) = lower(?) AND v.deleted_at IS NULL AND p.deleted_at IS NULL
     `)
     .get(barcode);
 }

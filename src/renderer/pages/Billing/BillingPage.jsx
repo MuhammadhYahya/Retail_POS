@@ -686,17 +686,28 @@ export default function BillingPage() {
 
           {paymentMethod === 'cash' && (
             <div className="space-y-3">
-              <div className="flex justify-between items-center">
+              <div className="flex justify-between items-center gap-2">
                 <label className="text-sm font-bold text-foreground" htmlFor="tendered">
                   Cash Tendered
                 </label>
-                <button
-                  type="button"
-                  onClick={() => setTendered(String(totals.total.toFixed(2)))}
-                  className="text-xs font-bold text-primary hover:underline cursor-pointer"
-                >
-                  Set exact amount
-                </button>
+                <div className="flex items-center gap-3">
+                  {tendered !== '' && (
+                    <button
+                      type="button"
+                      onClick={() => setTendered('')}
+                      className="text-xs font-semibold text-destructive hover:underline cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setTendered(String(totals.total.toFixed(2)))}
+                    className="text-xs font-bold text-primary hover:underline cursor-pointer"
+                  >
+                    Set exact amount
+                  </button>
+                </div>
               </div>
 
               <div className="relative">

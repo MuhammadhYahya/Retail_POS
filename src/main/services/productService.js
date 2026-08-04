@@ -570,7 +570,7 @@ const productService = {
       FROM product_variants v
       JOIN products p ON p.id = v.product_id
       LEFT JOIN inventory_balances b ON b.variant_id = v.id
-      WHERE v.barcode = ?
+      WHERE lower(v.barcode) = lower(?)
         AND v.deleted_at IS NULL
         AND p.deleted_at IS NULL
       LIMIT 1
@@ -645,15 +645,16 @@ const productService = {
       seenSkus.add(variant.sku);
 
       if (variant.barcode) {
-        if (seenBarcodes.has(variant.barcode)) {
+        const barcodeKey = variant.barcode.toLowerCase();
+        if (seenBarcodes.has(barcodeKey)) {
           throw new Error(`Duplicate barcode in payload: ${variant.barcode}`);
         }
         const conflict = db.prepare(`
           SELECT p.name FROM product_variants v JOIN products p ON p.id = v.product_id
-          WHERE v.barcode = ? AND v.deleted_at IS NULL AND p.deleted_at IS NULL LIMIT 1
+          WHERE lower(v.barcode) = lower(?) AND v.deleted_at IS NULL AND p.deleted_at IS NULL LIMIT 1
         `).get(variant.barcode);
         if (conflict) throw new Error(`${conflict.name} has the same barcode.`);
-        seenBarcodes.add(variant.barcode);
+        seenBarcodes.add(barcodeKey);
       }
     }
 
@@ -836,15 +837,16 @@ const productService = {
         seenSkus.add(variant.sku);
 
         if (variant.barcode) {
-          if (seenBarcodes.has(variant.barcode)) {
+          const barcodeKey = variant.barcode.toLowerCase();
+          if (seenBarcodes.has(barcodeKey)) {
             throw new Error(`Duplicate barcode in payload: ${variant.barcode}`);
           }
           const conflict = db.prepare(`
             SELECT p.name FROM product_variants v JOIN products p ON p.id = v.product_id
-            WHERE v.barcode = ? AND v.deleted_at IS NULL AND p.deleted_at IS NULL AND p.id <> ? LIMIT 1
+            WHERE lower(v.barcode) = lower(?) AND v.deleted_at IS NULL AND p.deleted_at IS NULL AND p.id <> ? LIMIT 1
           `).get(variant.barcode, productId);
           if (conflict) throw new Error(`${conflict.name} has the same barcode.`);
-          seenBarcodes.add(variant.barcode);
+          seenBarcodes.add(barcodeKey);
         }
 
         if (variant.id && existingVariantIds.has(variant.id)) {
