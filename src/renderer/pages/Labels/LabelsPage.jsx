@@ -8,8 +8,21 @@ import { invokeWithAuth } from '../../lib/ipc';
 const inputClassName =
   'w-full p-3 rounded-lg bg-input border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-ring';
 
+const qtyInputClassName =
+  'w-20 p-2 rounded-lg bg-input border border-border text-foreground text-center focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50';
+
 function formatMoney(value) {
   return `Rs. ${Number(value || 0).toFixed(2)}`;
+}
+
+function defaultLabelQty(stockQty) {
+  return Math.max(1, Number(stockQty) || 0);
+}
+
+function clampLabelQty(value) {
+  const n = Number.parseInt(String(value), 10);
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return n;
 }
 
 /** Minimal Code128-B bars as CSS divs (sufficient for shop labels). */
@@ -63,6 +76,7 @@ function printLabels(labels) {
 export default function LabelsPage() {
   const [products, setProducts] = useState([]);
   const [query, setQuery] = useState('');
+  /** @type {[Record<string, number>, Function]} selected[variantId] = label qty */
   const [selected, setSelected] = useState({});
   const [error, setError] = useState('');
 
@@ -88,6 +102,7 @@ export default function LabelsPage() {
           variantName: variant.name,
           barcode: variant.barcode,
           price: variant.sellingPrice,
+          stockQty: Number(variant.inventory?.onHand) || 0,
         });
       }
     }
@@ -101,13 +116,25 @@ export default function LabelsPage() {
     );
   }, [products, query]);
 
-  const selectedLabels = variants
-    .filter((row) => selected[row.key])
+  const selectedRows = variants
+    .filter((row) => selected[row.key] != null)
     .map((row) => ({
       name: row.variantName ? `${row.productName} (${row.variantName})` : row.productName,
       price: row.price,
       barcode: row.barcode,
+      qty: clampLabelQty(selected[row.key]),
     }));
+
+  const selectedProductCount = selectedRows.length;
+  const totalLabelCount = selectedRows.reduce((sum, row) => sum + row.qty, 0);
+
+  const labelsToPrint = selectedRows.flatMap((row) =>
+    Array.from({ length: row.qty }, () => ({
+      name: row.name,
+      price: row.price,
+      barcode: row.barcode,
+    }))
+  );
 
   return (
     <AppShell title="Barcode Labels" description="Select variants and print price labels.">
@@ -122,7 +149,8 @@ export default function LabelsPage() {
           <CardHeader>
             <CardTitle>Print labels</CardTitle>
             <CardDescription>
-              {selectedLabels.length} selected · browser print sheet (name, Rs. price, barcode)
+              {selectedProductCount} products · {totalLabelCount} labels · browser print sheet
+              (name, Rs. price, barcode)
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -137,8 +165,10 @@ export default function LabelsPage() {
                 type="button"
                 variant="outline"
                 onClick={() => {
-                  const next = {};
-                  for (const row of variants) next[row.key] = true;
+                  const next = { ...selected };
+                  for (const row of variants) {
+                    next[row.key] = defaultLabelQty(row.stockQty);
+                  }
                   setSelected(next);
                 }}
               >
@@ -149,8 +179,8 @@ export default function LabelsPage() {
               </Button>
               <Button
                 type="button"
-                disabled={!selectedLabels.length}
-                onClick={() => printLabels(selectedLabels)}
+                disabled={!totalLabelCount}
+                onClick={() => printLabels(labelsToPrint)}
               >
                 Print labels
               </Button>
@@ -164,28 +194,68 @@ export default function LabelsPage() {
                     <th className="px-3 py-2">Product</th>
                     <th className="px-3 py-2">Barcode</th>
                     <th className="px-3 py-2">Price</th>
+                    <th className="px-3 py-2">Qty</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {variants.map((row) => (
-                    <tr key={row.key} className="border-b border-border/50">
-                      <td className="px-3 py-2">
-                        <input
-                          type="checkbox"
-                          checked={!!selected[row.key]}
-                          onChange={(e) =>
-                            setSelected((prev) => ({ ...prev, [row.key]: e.target.checked }))
-                          }
-                        />
-                      </td>
-                      <td className="px-3 py-2 font-semibold">
-                        {row.productName}
-                        {row.variantName ? ` · ${row.variantName}` : ''}
-                      </td>
-                      <td className="px-3 py-2 font-mono">{row.barcode}</td>
-                      <td className="px-3 py-2">{formatMoney(row.price)}</td>
-                    </tr>
-                  ))}
+                  {variants.map((row) => {
+                    const isSelected = selected[row.key] != null;
+                    return (
+                      <tr key={row.key} className="border-b border-border/50">
+                        <td className="px-3 py-2">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => {
+                              setSelected((prev) => {
+                                const next = { ...prev };
+                                if (e.target.checked) {
+                                  next[row.key] = defaultLabelQty(row.stockQty);
+                                } else {
+                                  delete next[row.key];
+                                }
+                                return next;
+                              });
+                            }}
+                          />
+                        </td>
+                        <td className="px-3 py-2 font-semibold">
+                          {row.productName}
+                          {row.variantName ? ` · ${row.variantName}` : ''}
+                        </td>
+                        <td className="px-3 py-2 font-mono">{row.barcode}</td>
+                        <td className="px-3 py-2">{formatMoney(row.price)}</td>
+                        <td className="px-3 py-2">
+                          <div className="flex flex-col gap-0.5">
+                            <input
+                              type="number"
+                              min={1}
+                              className={qtyInputClassName}
+                              disabled={!isSelected}
+                              value={isSelected ? selected[row.key] : ''}
+                              onChange={(e) => {
+                                const raw = e.target.value;
+                                setSelected((prev) => ({
+                                  ...prev,
+                                  [row.key]: raw === '' ? '' : clampLabelQty(raw),
+                                }));
+                              }}
+                              onBlur={() => {
+                                if (!isSelected) return;
+                                setSelected((prev) => ({
+                                  ...prev,
+                                  [row.key]: clampLabelQty(prev[row.key]),
+                                }));
+                              }}
+                            />
+                            <span className="text-xs text-muted-foreground">
+                              Stock: {row.stockQty}
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

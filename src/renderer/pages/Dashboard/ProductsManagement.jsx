@@ -1877,6 +1877,12 @@ export default function ProductsManagement() {
                 </Alert>
               )}
 
+              {!dialogError && success && (
+                <Alert>
+                  <AlertDescription>{success}</AlertDescription>
+                </Alert>
+              )}
+
               {productSoftWarnings.length > 0 && (
                 <Alert>
                   <AlertDescription>
@@ -2539,8 +2545,35 @@ export default function ProductsManagement() {
                                   <label className="block text-xs font-medium mb-1">Cost Price</label>
                                   <input disabled={form.pricingMode === 'different'} className={cn(inputClassName, 'w-36', form.pricingMode === 'different' && 'cursor-not-allowed')} type="number" min="0" step="0.01" value={form.quickCostPrice || ''} onChange={(e) => updateForm('quickCostPrice', e.target.value)} placeholder="1800" />
                                 </div>
-                                <Button type="button" variant="outline" disabled={form.pricingMode === 'different'} onClick={() => setForm((prev) => ({ ...prev, variantRows: prev.variantRows.map((row) => ({ ...row, sellingPrice: prev.quickSellingPrice, costPrice: prev.quickCostPrice })) }))}>Apply Prices to All</Button>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  disabled={
+                                    form.pricingMode === 'different'
+                                    || (!cleanText(form.quickSellingPrice) && !cleanText(form.quickCostPrice))
+                                  }
+                                  onClick={() => {
+                                    const count = form.variantRows.length;
+                                    setForm((prev) => ({
+                                      ...prev,
+                                      variantRows: prev.variantRows.map((row) => ({
+                                        ...row,
+                                        sellingPrice: prev.quickSellingPrice,
+                                        costPrice: prev.quickCostPrice,
+                                      })),
+                                    }));
+                                    setDialogError('');
+                                    notifySuccess(`Prices applied to ${count} variant${count === 1 ? '' : 's'}.`);
+                                  }}
+                                >
+                                  Apply Prices to All
+                                </Button>
                               </div>
+                              {form.pricingMode !== 'different' && (
+                                <p className="mt-2 text-xs text-muted-foreground">
+                                  All variants use the shared selling and cost prices above; they also appear on each row.
+                                </p>
+                              )}
                               <div className={cn('mt-3 flex flex-wrap items-end gap-3 border-t border-border pt-3', form.pricingMode === 'different' && 'opacity-60')}>
                                 <div>
                                   <label className="block text-xs font-medium mb-1">Opening Stock</label>
@@ -2588,12 +2621,8 @@ export default function ProductsManagement() {
                                 <thead className="bg-muted/40">
                                   <tr className="border-b border-border">
                                     <th className="p-3 text-left">Variant</th>
-                                    {form.pricingMode === 'different' && (
-                                      <>
-                                        <th className="p-3 text-left">Selling</th>
-                                        <th className="p-3 text-left">Cost</th>
-                                      </>
-                                    )}
+                                    <th className="p-3 text-left">Selling</th>
+                                    <th className="p-3 text-left">Cost</th>
                                     <th className="p-3 text-left">Stock</th>
                                     <th className="p-3 text-left">Low Stock</th>
                                     <th className="p-3 text-left">Barcode</th>
@@ -2601,7 +2630,15 @@ export default function ProductsManagement() {
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {form.variantRows.map((variant, index) => (
+                                  {form.variantRows.map((variant, index) => {
+                                    const singlePricing = form.pricingMode !== 'different';
+                                    const sellingValue = singlePricing
+                                      ? (form.quickSellingPrice || '')
+                                      : variant.sellingPrice;
+                                    const costValue = singlePricing
+                                      ? (form.quickCostPrice || '')
+                                      : variant.costPrice;
+                                    return (
                                     <tr key={variant.id} className="border-b border-border last:border-0">
                                       <td className="p-2">
                                         <input
@@ -2612,16 +2649,37 @@ export default function ProductsManagement() {
                                         />
                                         <div className="mt-1 text-xs text-muted-foreground">SKU: {variant.sku || 'Auto'}</div>
                                       </td>
-                                      {form.pricingMode === 'different' && (
-                                        <>
-                                          <td className="p-2">
-                                            <input className="w-24 rounded-lg border border-border bg-input p-2" type="number" min="0.01" step="0.01" value={variant.sellingPrice} onChange={(e) => updateVariantRow(index, 'sellingPrice', e.target.value)} />
-                                          </td>
-                                          <td className="p-2">
-                                            <input className="w-24 rounded-lg border border-border bg-input p-2" type="number" min="0" step="0.01" value={variant.costPrice} onChange={(e) => updateVariantRow(index, 'costPrice', e.target.value)} data-focus="variant-cost" />
-                                          </td>
-                                        </>
-                                      )}
+                                      <td className="p-2">
+                                        <input
+                                          className={cn(
+                                            'w-24 rounded-lg border border-border bg-input p-2',
+                                            singlePricing && 'cursor-not-allowed opacity-80'
+                                          )}
+                                          type="number"
+                                          min="0.01"
+                                          step="0.01"
+                                          value={sellingValue}
+                                          disabled={singlePricing}
+                                          readOnly={singlePricing}
+                                          onChange={(e) => updateVariantRow(index, 'sellingPrice', e.target.value)}
+                                        />
+                                      </td>
+                                      <td className="p-2">
+                                        <input
+                                          className={cn(
+                                            'w-24 rounded-lg border border-border bg-input p-2',
+                                            singlePricing && 'cursor-not-allowed opacity-80'
+                                          )}
+                                          type="number"
+                                          min="0"
+                                          step="0.01"
+                                          value={costValue}
+                                          disabled={singlePricing}
+                                          readOnly={singlePricing}
+                                          onChange={(e) => updateVariantRow(index, 'costPrice', e.target.value)}
+                                          data-focus="variant-cost"
+                                        />
+                                      </td>
                                       <td className="p-2">
                                         <input className="w-20 rounded-lg border border-border bg-input p-2" type="number" min="0" step="1" value={variant.initialStock} onChange={(e) => updateVariantRow(index, 'initialStock', e.target.value)} data-focus="variant-stock" />
                                       </td>
@@ -2643,7 +2701,8 @@ export default function ProductsManagement() {
                                         </Button>
                                       </td>
                                     </tr>
-                                  ))}
+                                    );
+                                  })}
                                 </tbody>
                               </table>
                             </div>
