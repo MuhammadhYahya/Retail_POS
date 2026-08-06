@@ -4,6 +4,7 @@ import { Button } from '../../components/ui/button';
 import { Alert, AlertDescription } from '../../components/ui/alert';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { invokeWithAuth } from '../../lib/ipc';
+import { buildLabelPrintHtml } from '../../lib/labelHtml';
 
 const inputClassName =
   'w-full p-3 rounded-lg bg-input border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-ring';
@@ -25,48 +26,14 @@ function clampLabelQty(value) {
   return n;
 }
 
-/** Minimal Code128-B bars as CSS divs (sufficient for shop labels). */
-function barcodeBars(text) {
-  // Simplified visual barcode: alternating bars from character codes (not scanner-grade).
-  // For V1 we also print human-readable digits under the bars.
-  const raw = String(text || '');
-  const bars = [];
-  for (let i = 0; i < raw.length; i += 1) {
-    const code = raw.charCodeAt(i);
-    bars.push(code % 2 === 0 ? 2 : 1);
-    bars.push(code % 3 === 0 ? 1 : 2);
-  }
-  return bars;
-}
-
-function printLabels(labels) {
-  const cards = labels
-    .map((label) => {
-      const bars = barcodeBars(label.barcode)
-        .map((w, i) => `<span style="display:inline-block;width:${w}px;height:48px;background:${i % 2 ? '#000' : 'transparent'}"></span>`)
-        .join('');
-      return `<div class="label">
-        <div class="name">${label.name}</div>
-        <div class="price">${formatMoney(label.price)}</div>
-        <div class="bars">${bars}</div>
-        <div class="code">${label.barcode}</div>
-      </div>`;
-    })
-    .join('');
-
-  const html = `<!doctype html><html><head><title>Barcode Labels</title>
-    <style>
-      body{font-family:Arial,sans-serif;margin:12px}
-      .sheet{display:flex;flex-wrap:wrap;gap:8px}
-      .label{width:180px;border:1px solid #ccc;padding:8px;text-align:center;page-break-inside:avoid}
-      .name{font-size:12px;font-weight:700;min-height:32px}
-      .price{font-size:16px;font-weight:800;margin:4px 0}
-      .bars{white-space:nowrap;overflow:hidden;height:48px;margin:4px 0}
-      .code{font-size:11px;letter-spacing:1px}
-      @media print{body{margin:0}.label{border-color:#000}}
-    </style></head><body><div class="sheet">${cards}</div>
-    <script>window.onload=()=>window.print()</script></body></html>`;
-  const w = window.open('', '_blank', 'width=900,height=700');
+function printLabels(labels, { widthMm = 38, heightMm = 25 } = {}) {
+  const html = buildLabelPrintHtml({
+    labels,
+    widthMm,
+    heightMm,
+    autoPrint: true,
+  });
+  const w = window.open('', '_blank', 'width=480,height=720');
   if (w) {
     w.document.write(html);
     w.document.close();
@@ -79,15 +46,28 @@ export default function LabelsPage() {
   /** @type {[Record<string, number>, Function]} selected[variantId] = label qty */
   const [selected, setSelected] = useState({});
   const [error, setError] = useState('');
+  const [labelWidthMm, setLabelWidthMm] = useState(38);
+  const [labelHeightMm, setLabelHeightMm] = useState(25);
 
   useEffect(() => {
     (async () => {
-      const response = await invokeWithAuth('product:getAll');
-      if (!response.success) {
-        setError(response.error || 'Failed to load products.');
+      const [productsRes, settingsRes] = await Promise.all([
+        invokeWithAuth('product:getAll'),
+        invokeWithAuth('settings:get'),
+      ]);
+      if (!productsRes.success) {
+        setError(productsRes.error || 'Failed to load products.');
         return;
       }
-      setProducts(response.data || []);
+      setProducts(productsRes.data || []);
+      if (settingsRes.success && settingsRes.data) {
+        if (Number.isFinite(Number(settingsRes.data.labelWidthMm))) {
+          setLabelWidthMm(Number(settingsRes.data.labelWidthMm));
+        }
+        if (Number.isFinite(Number(settingsRes.data.labelHeightMm))) {
+          setLabelHeightMm(Number(settingsRes.data.labelHeightMm));
+        }
+      }
     })();
   }, []);
 
@@ -149,8 +129,9 @@ export default function LabelsPage() {
           <CardHeader>
             <CardTitle>Print labels</CardTitle>
             <CardDescription>
-              {selectedProductCount} products · {totalLabelCount} labels · browser print sheet
-              (name, Rs. price, barcode)
+              {selectedProductCount} products · {totalLabelCount} labels · {labelWidthMm}×{labelHeightMm} mm
+              (one label per page; name, Rs. price, Code128 barcode). Match Windows XP-365B Preferences to this
+              size; print at 100% scale.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -180,7 +161,12 @@ export default function LabelsPage() {
               <Button
                 type="button"
                 disabled={!totalLabelCount}
-                onClick={() => printLabels(labelsToPrint)}
+                onClick={() =>
+                  printLabels(labelsToPrint, {
+                    widthMm: labelWidthMm,
+                    heightMm: labelHeightMm,
+                  })
+                }
               >
                 Print labels
               </Button>

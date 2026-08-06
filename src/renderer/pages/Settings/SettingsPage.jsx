@@ -25,6 +25,8 @@ const emptyForm = {
   returnWithinDays: 7,
   printerPort: '',
   paperWidth: 80,
+  labelWidthMm: 38,
+  labelHeightMm: 25,
   cashierMaxDiscountPct: 10,
   managerMaxDiscountPct: 25,
   staleDayPolicy: 'block',
@@ -305,6 +307,40 @@ export default function SettingsPage() {
                     <option value={80}>80 (XP-80)</option>
                     <option value={58}>58</option>
                   </select>
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2 border-t border-border pt-4">
+                <div>
+                  <label className="block text-sm font-medium mb-2">Label width (mm)</label>
+                  <input
+                    type="number"
+                    min={20}
+                    max={120}
+                    step={0.1}
+                    className={inputClassName}
+                    value={form.labelWidthMm ?? 38}
+                    onChange={(e) => setForm({ ...form, labelWidthMm: Number(e.target.value) })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-2">Label height (mm)</label>
+                  <input
+                    type="number"
+                    min={15}
+                    max={100}
+                    step={0.1}
+                    className={inputClassName}
+                    value={form.labelHeightMm ?? 25}
+                    onChange={(e) => setForm({ ...form, labelHeightMm: Number(e.target.value) })}
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <p className="text-xs text-muted-foreground">
+                    Default <strong>38 × 25 mm</strong> (1.5&quot; × 1&quot;) for XP-365B price labels.
+                    Match Windows printer Preferences to the same size. When printing labels, select{' '}
+                    <strong>Xprinter XP-365B</strong>, use scale <strong>100%</strong> (do not Fit to page).
+                  </p>
                 </div>
               </div>
 

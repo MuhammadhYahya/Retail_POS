@@ -18,6 +18,12 @@ function normalizeStaleDayPolicy(value) {
   return String(value ?? '').trim().toLowerCase() === 'warn' ? 'warn' : 'block';
 }
 
+function clampLabelMm(value, fallback, min, max) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(n * 10) / 10));
+}
+
 function mapSettings(row) {
   if (!row) {
     return {
@@ -35,6 +41,8 @@ function mapSettings(row) {
       returnWithinDays: 7,
       printerPort: '',
       paperWidth: 80,
+      labelWidthMm: 38,
+      labelHeightMm: 25,
       cashierMaxDiscountPct: 10,
       managerMaxDiscountPct: 25,
       staleDayPolicy: 'block',
@@ -56,6 +64,8 @@ function mapSettings(row) {
     returnWithinDays: Math.max(1, Math.floor(toNumber(row.return_within_days, 7))),
     printerPort: row.printer_port || '',
     paperWidth: toNumber(row.paper_width, 80),
+    labelWidthMm: clampLabelMm(row.label_width_mm, 38, 20, 120),
+    labelHeightMm: clampLabelMm(row.label_height_mm, 25, 15, 100),
     cashierMaxDiscountPct: toNumber(row.cashier_max_discount_pct, 10),
     managerMaxDiscountPct: toNumber(row.manager_max_discount_pct, 25),
     staleDayPolicy: normalizeStaleDayPolicy(row.stale_day_policy),
@@ -100,6 +110,14 @@ const settingsService = {
             ? 58
             : 80
           : current.paperWidth,
+      labelWidthMm:
+        payload.labelWidthMm !== undefined
+          ? clampLabelMm(payload.labelWidthMm, current.labelWidthMm, 20, 120)
+          : current.labelWidthMm,
+      labelHeightMm:
+        payload.labelHeightMm !== undefined
+          ? clampLabelMm(payload.labelHeightMm, current.labelHeightMm, 15, 100)
+          : current.labelHeightMm,
       cashierMaxDiscountPct:
         payload.cashierMaxDiscountPct !== undefined
           ? Math.min(100, Math.max(0, toNumber(payload.cashierMaxDiscountPct, current.cashierMaxDiscountPct)))
@@ -133,6 +151,8 @@ const settingsService = {
         return_within_days = ?,
         printer_port = ?,
         paper_width = ?,
+        label_width_mm = ?,
+        label_height_mm = ?,
         cashier_max_discount_pct = ?,
         manager_max_discount_pct = ?,
         stale_day_policy = ?,
@@ -152,6 +172,8 @@ const settingsService = {
       next.returnWithinDays,
       next.printerPort || null,
       next.paperWidth,
+      next.labelWidthMm,
+      next.labelHeightMm,
       next.cashierMaxDiscountPct,
       next.managerMaxDiscountPct,
       next.staleDayPolicy,
