@@ -1,7 +1,8 @@
 import fs from 'fs';
 import path from 'path';
+import bcrypt from 'bcryptjs';
 import { app, shell } from 'electron';
-import { getDb, getDbPath, closeDb, reopenDb, setSkipMigrationSafetyBackup } from '../../database/db.js';
+import { getDb, getDbPath, getDataDir, closeDb, reopenDb, setSkipMigrationSafetyBackup } from '../../database/db.js';
 import { runMigrations, getLatestMigrationVersion } from '../../database/migrations/index.js';
 import { buildBackupArchive, collectManifestStats } from './archiveBuilder.js';
 import {
@@ -17,6 +18,40 @@ function getDefaultBackupDir() {
   const dir = path.join(app.getPath('userData'), 'backups');
   ensureDir(dir);
   return dir;
+}
+
+const DATA_CHOICE_MARKER = 'data-choice-complete.json';
+const FRESH_START_FILE = 'fresh-start-safety.zenbackup';
+
+function getRecoveryDir() {
+  const dir = path.join(getDataDir(), 'recovery');
+  ensureDir(dir);
+  return dir;
+}
+
+function dataChoiceMarkerPath() {
+  return path.join(getDataDir(), DATA_CHOICE_MARKER);
+}
+
+export function detectDataState() {
+  const dbPath = getDbPath();
+  const legacyPath = path.join(getDataDir(), 'posly.db');
+  const hasDatabase = fs.existsSync(dbPath) || fs.existsSync(legacyPath);
+  return {
+    hasDatabase,
+    needsChoice: hasDatabase && !fs.existsSync(dataChoiceMarkerPath()),
+    databasePath: fs.existsSync(dbPath) ? dbPath : legacyPath,
+  };
+}
+
+export function markDataChoiceComplete(reason = 'existing_data') {
+  ensureDir(getDataDir());
+  fs.writeFileSync(dataChoiceMarkerPath(), JSON.stringify({ reason, completedAt: new Date().toISOString() }, null, 2));
+  return { completed: true };
+}
+
+function removePathWithSidecars(filePath) {
+  for (const suffix of ['', '-wal', '-shm']) safeUnlink(`${filePath}${suffix}`);
 }
 
 function removeLiveDbFiles(dbPath) {
@@ -107,6 +142,8 @@ function readRestoredTheme(extractDir) {
 }
 
 const backupService = {
+  detectDataState,
+  markDataChoiceComplete,
   getDefaultBackupDir,
 
   createJob,
@@ -205,6 +242,57 @@ const backupService = {
       type,
       themePreference,
     });
+  },
+
+  async startFresh({ username, pin, themePreference = null } = {}) {
+    const db = getDb();
+    const user = db.prepare(`SELECT * FROM users WHERE username = ? AND role = 'admin' AND is_active = 1 AND deleted_at IS NULL`)
+      .get(String(username || '').trim());
+    if (!user || !(await bcrypt.compare(String(pin || ''), user.pin_hash))) {
+      throw new Error('Administrator credentials are incorrect.');
+    }
+
+    const recoveryDir = getRecoveryDir();
+    const safety = await this.createSafetyBackup({
+      type: 'fresh_start',
+      destinationDir: recoveryDir,
+      themePreference,
+    });
+    const managedPath = path.join(recoveryDir, FRESH_START_FILE);
+    safeUnlink(managedPath);
+    fs.renameSync(safety.path, managedPath);
+    backupHistoryService.updatePath(safety.uuid, managedPath, fs.statSync(managedPath).size);
+
+    closeDb();
+    removePathWithSidecars(getDbPath());
+    markDataChoiceComplete('start_fresh');
+    const freshDb = reopenDb();
+    const integrity = freshDb.pragma('integrity_check', { simple: true });
+    if (integrity !== 'ok') throw new Error('New database failed integrity check.');
+    return { safetyBackup: managedPath, relaunch: true, message: 'ZEN is ready with a new empty shop. The application will restart.' };
+  },
+
+  async deleteAllData({ token, pin } = {}) {
+    const db = getDb();
+    const session = db.prepare(`
+      SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id
+      WHERE s.token = ? AND s.expires_at > ? AND u.role = 'admin' AND u.is_active = 1 AND u.deleted_at IS NULL
+    `).get(token, new Date().toISOString());
+    if (!session || !(await bcrypt.compare(String(pin || ''), session.pin_hash))) {
+      throw new Error('Administrator PIN is incorrect.');
+    }
+
+    closeDb();
+    const dataDir = getDataDir();
+    for (const entry of fs.readdirSync(dataDir)) {
+      safeRmDir(path.join(dataDir, entry));
+      safeUnlink(path.join(dataDir, entry));
+    }
+    ensureDir(dataDir);
+    const freshDb = reopenDb();
+    const integrity = freshDb.pragma('integrity_check', { simple: true });
+    if (integrity !== 'ok') throw new Error('Fresh database failed integrity check.');
+    return { deleted: true, relaunch: true, message: 'All ZEN business data was deleted. The application will restart.' };
   },
 
   async verifyBackup({ backupPath }) {

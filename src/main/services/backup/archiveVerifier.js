@@ -90,19 +90,34 @@ export async function verifyBackupArchive(archivePath, { extractDir = null } = {
       if (integrity !== 'ok') {
         throw new Error('Backup is corrupted. Restore cannot continue.');
       }
+      const tables = new Set(probe.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((row) => row.name));
+      if (!tables.has('users') || !tables.has('settings')) {
+        throw new Error('This database is not a compatible ZEN backup.');
+      }
+      const count = (table, predicate = '') => {
+        try {
+          return probe.prepare(`SELECT COUNT(*) AS c FROM ${table}${predicate ? ` WHERE ${predicate}` : ''}`).get().c;
+        } catch {
+          return null;
+        }
+      };
+      const settings = probe.prepare('SELECT * FROM settings WHERE id = 1').get() || {};
+      const migration = tables.has('_migrations')
+        ? probe.prepare('SELECT version FROM _migrations ORDER BY applied_at DESC, version DESC').get()?.version
+        : 'unknown';
       return {
         legacy: true,
         valid: true,
         manifest: {
           backupId: null,
-          businessName: 'Legacy database backup',
+          businessName: settings.shop_name || 'Legacy database backup',
           createdAt: fs.statSync(archivePath).mtime.toISOString(),
           applicationVersion: 'unknown',
-          databaseVersion: 'unknown',
-          productCount: null,
+          databaseVersion: migration || 'unknown',
+          productCount: tables.has('products') ? count('products', 'deleted_at IS NULL') : null,
           customerCount: null,
-          salesCount: null,
-          userCount: null,
+          salesCount: tables.has('sales') ? count('sales', 'deleted_at IS NULL') : null,
+          userCount: count('users', 'deleted_at IS NULL'),
           backupSize: fs.statSync(archivePath).size,
           encryption: { enabled: false },
         },

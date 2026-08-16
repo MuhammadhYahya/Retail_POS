@@ -29,7 +29,7 @@ function ensureProgressBridge() {
   progressBus.on('progress', sendProgress);
 }
 
-export function registerBackupHandlers() {
+export function registerBackupHandlers(startupState = null) {
   ensureProgressBridge();
 
   ipcMain.handle('backup:create', async (event, payload = {}) => {
@@ -165,6 +165,41 @@ export function registerBackupHandlers() {
       if (!gate.ok) return gate.response;
       const data = backupService.updateBackupSettings(payload.settings || payload);
       writeAuditLog('backup_settings_update', gate.session.user.id);
+      return { success: true, data };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('data:getState', () => ({ success: true, data: startupState || backupService.detectDataState() }));
+
+  ipcMain.handle('data:useExisting', (event, payload = {}) => {
+    try {
+      backupService.markDataChoiceComplete('use_existing');
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('data:startFresh', async (event, payload = {}) => {
+    try {
+      const data = await backupService.startFresh({
+        username: payload.username,
+        pin: payload.pin,
+        themePreference: payload.themePreference || null,
+      });
+      setTimeout(() => { app.relaunch(); app.exit(0); }, 1200);
+      return { success: true, data };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('data:deleteAll', async (event, payload = {}) => {
+    try {
+      const data = await backupService.deleteAllData({ token: extractToken(payload), pin: payload.pin });
+      setTimeout(() => { app.relaunch(); app.exit(0); }, 1200);
       return { success: true, data };
     } catch (err) {
       return { success: false, error: err.message };

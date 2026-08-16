@@ -17,6 +17,8 @@ function getElectronApp() {
 let db;
 let skipMigrationSafetyBackup = false;
 
+const MIGRATION_SAFETY_FILE = 'pre_migration.db';
+
 export function getDbPath() {
   const app = getElectronApp();
   if (!app) {
@@ -31,6 +33,10 @@ export function getDataDir() {
     throw new Error('Electron app is not available. Use openDbAtPath() for headless runs.');
   }
   return app.getPath('userData');
+}
+
+export function getMigrationSafetyPath() {
+  return path.join(getDataDir(), 'backups', MIGRATION_SAFETY_FILE);
 }
 
 export function setSkipMigrationSafetyBackup(value) {
@@ -79,14 +85,15 @@ export function getDb() {
       beforePending: (pending) => {
         if (skipMigrationSafetyBackup) return;
         if (!pending?.length) return;
-        if (pending.some((m) => m.version === '012_backup_system')) return;
-
         // Sync safety: VACUUM INTO / backup API to pre_migration file before schema changes
-        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
         const backupDir = path.join(dataDir, 'backups');
         if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
-        const dest = path.join(backupDir, `pre_migration_${stamp}.db`);
+        const dest = getMigrationSafetyPath();
         try {
+          for (const suffix of ['', '-wal', '-shm']) {
+            const file = `${dest}${suffix}`;
+            if (fs.existsSync(file)) fs.unlinkSync(file);
+          }
           // better-sqlite3 backup is async; use VACUUM INTO for sync pre-migration safety
           const vacuumPath = dest.replace(/\\/g, '/').replace(/'/g, "''");
           db.exec(`VACUUM INTO '${vacuumPath}'`);
@@ -99,6 +106,10 @@ export function getDb() {
         }
       },
     });
+    for (const suffix of ['', '-wal', '-shm']) {
+      const file = `${getMigrationSafetyPath()}${suffix}`;
+      if (fs.existsSync(file)) fs.unlinkSync(file);
+    }
     console.log('Database successfully initialized at:', dbPath);
   } catch (error) {
     console.error('Failed to run database migrations:', error);

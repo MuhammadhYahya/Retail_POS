@@ -22,6 +22,7 @@ import { registerPrinterHandlers } from './main/ipc/printerHandlers.js';
 import { registerAuditHandlers } from './main/ipc/auditHandlers.js';
 import backupScheduleService from './main/services/backup/backupScheduleService.js';
 import { ensureReservedDataDirs } from './main/services/backup/dataRootRegistry.js';
+import { detectDataState, markDataChoiceComplete } from './main/services/backup/index.js';
 
 if (started) {
   app.quit();
@@ -104,7 +105,9 @@ app.on('activate', () => {
 
 app.whenReady().then(async () => {
   migrateFromPosly();
+  const startupDataState = detectDataState();
   getDb();
+  if (!startupDataState.hasDatabase) markDataChoiceComplete('new_install');
   ensureJwtSecret();
   ensureReservedDataDirs();
   clearSessionStore();
@@ -115,7 +118,7 @@ app.whenReady().then(async () => {
   registerSaleHandlers();
   registerSettingsHandlers();
   registerReportHandlers();
-  registerBackupHandlers();
+  registerBackupHandlers(startupDataState);
   registerDialogHandlers();
   registerImportExportHandlers();
   registerCashSessionHandlers();

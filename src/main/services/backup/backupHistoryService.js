@@ -43,6 +43,13 @@ const backupHistoryService = {
     return this.getByUuid(uuid);
   },
 
+  updatePath(uuid, filePath, size = null) {
+    const db = getDb();
+    db.prepare(`UPDATE backup_history SET path = ?, size = COALESCE(?, size) WHERE uuid = ?`)
+      .run(filePath, size, uuid);
+    return this.getByUuid(uuid);
+  },
+
   getByUuid(uuid) {
     const db = getDb();
     const row = db.prepare('SELECT * FROM backup_history WHERE uuid = ?').get(uuid);
