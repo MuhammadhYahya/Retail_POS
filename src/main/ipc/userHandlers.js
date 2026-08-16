@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron';
 import userService from '../services/userService.js';
 import { validateSession, requireRole, extractToken } from '../lib/sessionAuth.js';
-import { writeAuditLog } from '../lib/auditLog.js';
+import { addAuditWarning, writeAuditEvent, writeAuditLog } from '../lib/auditLog.js';
 
 export function registerUserHandlers() {
   ipcMain.handle('user:getAll', async (event, payload = {}) => {
@@ -147,8 +147,8 @@ export function registerUserHandlers() {
       }
 
       userService.softDelete(userId);
-      writeAuditLog(`user_delete:${target.username}`, session.user.id);
-      return { success: true };
+      const audit = writeAuditEvent({ action: 'user_change', entityType: 'user', entityId: userId, actorUserId: session.user.id, details: { change: 'delete', username: target.username } });
+      return addAuditWarning({ success: true }, audit);
     } catch (err) {
       return { success: false, error: err.message };
     }

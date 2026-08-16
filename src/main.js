@@ -19,6 +19,7 @@ import { registerPurchaseHandlers } from './main/ipc/purchaseHandlers.js';
 import { registerReturnHandlers } from './main/ipc/returnHandlers.js';
 import { registerExpenseHandlers } from './main/ipc/expenseHandlers.js';
 import { registerPrinterHandlers } from './main/ipc/printerHandlers.js';
+import { registerAuditHandlers } from './main/ipc/auditHandlers.js';
 import backupScheduleService from './main/services/backup/backupScheduleService.js';
 import { ensureReservedDataDirs } from './main/services/backup/dataRootRegistry.js';
 
@@ -122,6 +123,7 @@ app.whenReady().then(async () => {
   registerReturnHandlers();
   registerExpenseHandlers();
   registerPrinterHandlers();
+  registerAuditHandlers();
   createWindow();
 
   // Missed scheduled backups + recurring timer

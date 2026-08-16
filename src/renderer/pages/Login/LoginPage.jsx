@@ -30,7 +30,7 @@ function KeypadButton({ value, onClick, variant = 'default', disabled }) {
         active:scale-95 select-none disabled:opacity-50
         cursor-pointer border border-transparent shadow-sm
         ${variant === 'primary'
-          ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600 shadow-orange-500/20 active:from-orange-600 active:to-orange-700'
+          ? 'bg-primary text-primary-foreground hover:bg-primary/90 shadow-primary/20 active:bg-primary/80'
           : 'bg-muted text-foreground hover:bg-muted/80 hover:border-border hover:shadow-md'
         }
       `}
@@ -212,7 +212,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-6 sm:p-10">
-      <div className="w-full max-w-6xl grid md:grid-cols-[1.1fr_1fr] gap-8 bg-card/25 border border-border/50 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur-md">
+        <div className="w-full max-w-6xl grid md:grid-cols-[1.1fr_1fr] gap-6 bg-card border border-border/80 rounded-3xl p-5 sm:p-8 shadow-[0_16px_48px_rgba(37,55,65,0.10)]">
         
         {/* Left column: branding & user list */}
         <div className="flex flex-col justify-between pr-0 md:pr-4">
@@ -221,7 +221,7 @@ export default function LoginPage() {
             <div className="flex items-center gap-3 mb-6">
               <img src="./logo.png" alt="ZEN" className="h-16 w-16 rounded-2xl object-contain shadow-lg shadow-orange-500/20" />
               <div>
-                <h1 className="text-3xl font-black tracking-tight bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">
+                <h1 className="text-3xl font-black tracking-tight text-primary">
                   ZEN
                 </h1>
                 <p className="text-xs text-muted-foreground font-semibold uppercase tracking-widest mt-0.5">Point of Sale</p>
@@ -299,8 +299,8 @@ export default function LoginPage() {
                     >
                       <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold text-lg shadow-sm shrink-0 ${
                         isUserAdmin
-                          ? 'bg-gradient-to-tr from-rose-500 to-orange-500 text-white'
-                          : 'bg-gradient-to-tr from-sky-500 to-blue-600 text-white'
+                          ? 'bg-rose-600 text-white'
+                          : 'bg-sky-700 text-white'
                       }`}>
                         {initials}
                       </div>

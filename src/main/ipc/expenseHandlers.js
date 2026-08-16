@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron';
 import expenseService from '../services/expenseService.js';
 import { extractToken, requirePermission, validateSession } from '../lib/sessionAuth.js';
-import { writeAuditLog } from '../lib/auditLog.js';
+import { addAuditWarning, writeAuditEvent } from '../lib/auditLog.js';
 
 export function registerExpenseHandlers() {
   ipcMain.handle('expense:categories', async (event, payload = {}) => {
@@ -44,8 +44,8 @@ export function registerExpenseHandlers() {
         userId: session.user.id,
         expenseDate: payload.expenseDate,
       });
-      writeAuditLog(`expense_create:${data.id}`, session.user.id);
-      return { success: true, data };
+      const audit = writeAuditEvent({ action: 'expense_create', entityType: 'expense', entityId: data.id, amount: data.amount, actorUserId: session.user.id, details: { paymentMethod: data.paymentMethod } });
+      return addAuditWarning({ success: true, data }, audit);
     } catch (err) {
       return { success: false, error: err.message };
     }
@@ -61,8 +61,8 @@ export function registerExpenseHandlers() {
         expenseId: payload.expenseId,
         userId: session.user.id,
       });
-      writeAuditLog(`expense_delete:${data.id}`, session.user.id);
-      return { success: true, data };
+      const audit = writeAuditEvent({ action: 'expense_delete', entityType: 'expense', entityId: data.id, amount: data.amount, actorUserId: session.user.id });
+      return addAuditWarning({ success: true, data }, audit);
     } catch (err) {
       return { success: false, error: err.message };
     }

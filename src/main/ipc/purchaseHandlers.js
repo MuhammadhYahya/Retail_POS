@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron';
 import purchaseService from '../services/purchaseService.js';
 import { extractToken, requirePermission, validateSession } from '../lib/sessionAuth.js';
-import { writeAuditLog } from '../lib/auditLog.js';
+import { addAuditWarning, writeAuditEvent } from '../lib/auditLog.js';
 
 export function registerPurchaseHandlers() {
   ipcMain.handle('supplier:list', async (event, payload = {}) => {
@@ -74,8 +74,8 @@ export function registerPurchaseHandlers() {
         receiptId: payload.receiptId,
         userId: session.user.id,
       });
-      writeAuditLog(`grn_post:${data.grnNumber}`, session.user.id);
-      return { success: true, data };
+      const audit = writeAuditEvent({ action: 'purchase_post', entityType: 'purchase_receipt', entityId: data.id, referenceNumber: data.grnNumber, amount: data.total, actorUserId: session.user.id });
+      return addAuditWarning({ success: true, data }, audit);
     } catch (err) {
       return { success: false, error: err.message };
     }

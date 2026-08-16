@@ -19,6 +19,7 @@ import DayClosePage from './pages/Cash/DayClosePage';
 import PurchasesPage from './pages/Purchases/PurchasesPage';
 import ReturnsPage from './pages/Returns/ReturnsPage';
 import ExpensesPage from './pages/Expenses/ExpensesPage';
+import AuditPage from './pages/Audit/AuditPage';
 import LabelsPage from './pages/Labels/LabelsPage';
 import RecoverySetupDialog from './components/auth/RecoverySetupDialog';
 
@@ -163,6 +164,7 @@ function AppRoutes() {
           }
         />
         <Route path="/reports" element={<FeatureRoute permission={PATH_PERMISSION['/reports']}><ReportsPage /></FeatureRoute>} />
+        <Route path="/audit" element={<ProtectedRoute><RoleGuard allowedRoles={['admin']}><AuditPage /></RoleGuard></ProtectedRoute>} />
         <Route
           path="/settings"
           element={

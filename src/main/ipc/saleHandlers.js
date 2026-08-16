@@ -2,7 +2,7 @@ import { ipcMain } from 'electron';
 import saleService from '../services/saleService.js';
 import { invoiceQrAdapter } from '../services/irdService.js';
 import { extractToken, requirePermission, requireRole, validateSession } from '../lib/sessionAuth.js';
-import { writeAuditLog } from '../lib/auditLog.js';
+import { addAuditWarning, writeAuditEvent } from '../lib/auditLog.js';
 
 export function registerSaleHandlers() {
   ipcMain.handle('sale:create', async (event, payload = {}) => {
@@ -28,15 +28,25 @@ export function registerSaleHandlers() {
         console.error('[sale:create] Invoice QR generation failed:', err.message);
       }
 
-      writeAuditLog(`sale_create:${sale.invoiceNumber}`, session.user.id);
+      const audit = writeAuditEvent({
+        action: 'sale_create',
+        entityType: 'sale',
+        entityId: sale.id,
+        referenceNumber: sale.invoiceNumber,
+        amount: sale.total,
+        actorUserId: session.user.id,
+        actorDisplayName: session.user.display_name || session.user.username,
+        createdAt: sale.createdAt,
+        details: { paymentMethod: sale.paymentMethod },
+      });
 
-      return {
+      return addAuditWarning({
         success: true,
         data: {
           ...saleService.getById(sale.id),
           ird,
         },
-      };
+      }, audit);
     } catch (err) {
       return { success: false, error: err.message };
     }
@@ -73,8 +83,30 @@ export function registerSaleHandlers() {
         userId: session.user.id,
       });
 
-      writeAuditLog(`sale_void:${sale.invoiceNumber}`, session.user.id);
-      return { success: true, data: sale };
+      const audit = writeAuditEvent({
+        action: 'sale_void',
+        entityType: 'sale',
+        entityId: sale.id,
+        referenceNumber: sale.invoiceNumber,
+        amount: sale.total,
+        actorUserId: session.user.id,
+        actorDisplayName: session.user.display_name || session.user.username,
+        createdAt: sale.voidedAt,
+        details: {
+          reason: sale.voidReason,
+          paymentMethod: sale.paymentMethod,
+          restoredItems: sale.items.map((item) => ({
+            variantId: item.variantId,
+            productName: item.productName,
+            quantity: item.quantity,
+          })),
+        },
+      });
+      return {
+        success: true,
+        data: sale,
+        ...(audit.success ? {} : { auditWarning: audit.warning, auditEventId: audit.eventId }),
+      };
     } catch (err) {
       return { success: false, error: err.message };
     }

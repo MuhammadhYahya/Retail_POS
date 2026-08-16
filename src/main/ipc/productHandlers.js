@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron';
 import productService from '../services/productService.js';
 import { extractToken, requirePermission, requireRole, validateSession } from '../lib/sessionAuth.js';
-import { writeAuditLog } from '../lib/auditLog.js';
+import { addAuditWarning, writeAuditEvent, writeAuditLog } from '../lib/auditLog.js';
 
 function requireAdmin(session) {
   return requireRole(session, ['admin']);
@@ -144,9 +144,9 @@ export function registerProductHandlers() {
       if (!roleCheck.success) return roleCheck;
 
       productService.deleteProduct(payload.productId);
-      writeAuditLog(`product_delete:${payload.productId}`, session.user.id);
+      const audit = writeAuditEvent({ action: 'product_delete', entityType: 'product', entityId: payload.productId, actorUserId: session.user.id });
 
-      return { success: true };
+      return addAuditWarning({ success: true }, audit);
     } catch (err) {
       return { success: false, error: err.message };
     }
@@ -162,9 +162,9 @@ export function registerProductHandlers() {
       if (!roleCheck.success) return roleCheck;
 
       productService.deleteVariant(payload.variantId);
-      writeAuditLog(`variant_delete:${payload.variantId}`, session.user.id);
+      const audit = writeAuditEvent({ action: 'product_delete', entityType: 'variant', entityId: payload.variantId, actorUserId: session.user.id });
 
-      return { success: true };
+      return addAuditWarning({ success: true }, audit);
     } catch (err) {
       return { success: false, error: err.message };
     }
@@ -205,12 +205,12 @@ export function registerProductHandlers() {
         createdBy: session.user.id,
       });
 
-      writeAuditLog(
-        `inventory_adjust:${payload.variantId}:${payload.quantity}:${payload.transactionType || 'adjustment'}`,
-        session.user.id
-      );
-
-      return { success: true, data: summary };
+      const audit = writeAuditEvent({
+        action: 'stock_adjust', entityType: 'variant', entityId: payload.variantId,
+        amount: payload.quantity, actorUserId: session.user.id,
+        details: { transactionType: payload.transactionType || 'adjustment', notes: payload.notes },
+      });
+      return addAuditWarning({ success: true, data: summary }, audit);
     } catch (err) {
       return { success: false, error: err.message };
     }

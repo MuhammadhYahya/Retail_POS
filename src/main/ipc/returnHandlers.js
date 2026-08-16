@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron';
 import returnService from '../services/returnService.js';
 import { extractToken, requirePermission, validateSession } from '../lib/sessionAuth.js';
-import { writeAuditLog } from '../lib/auditLog.js';
+import { addAuditWarning, writeAuditEvent } from '../lib/auditLog.js';
 
 export function registerReturnHandlers() {
   ipcMain.handle('return:lookupSale', async (event, payload = {}) => {
@@ -37,8 +37,13 @@ export function registerReturnHandlers() {
         refundMethod: payload.refundMethod,
         userId: session.user.id,
       });
-      writeAuditLog(`return_create:${data.returnNumber}`, session.user.id);
-      return { success: true, data };
+      const audit = writeAuditEvent({
+        action: 'refund_create', entityType: 'sale_return', entityId: data.id,
+        referenceNumber: data.returnNumber, amount: data.refundTotal,
+        actorUserId: session.user.id, actorDisplayName: session.user.display_name || session.user.username,
+        details: { saleId: data.saleId, refundMethod: data.refundMethod, reason: data.reason },
+      });
+      return addAuditWarning({ success: true, data }, audit);
     } catch (err) {
       return { success: false, error: err.message };
     }

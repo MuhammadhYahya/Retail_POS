@@ -35,16 +35,16 @@ export default function CashierDashboard() {
     <AppShell title="POS Terminal" description="Ready to process sales.">
       <div className="space-y-8">
         {/* Welcome Greeting Banner */}
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-neutral-900 via-neutral-900 to-neutral-800 dark:from-neutral-950 dark:to-neutral-900 border border-neutral-800 p-8 shadow-xl">
+        <div className="relative overflow-hidden rounded-3xl bg-card border border-border p-6 sm:p-8 shadow-sm">
           <div className="relative z-10 space-y-2">
             <span className="px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/25 text-xs font-bold text-emerald-400 tracking-wider uppercase">
               Terminal Online
             </span>
-            <h1 className="text-3xl font-black text-white tracking-tight">
+            <h1 className="text-2xl sm:text-3xl font-black text-foreground tracking-tight">
               Welcome back, {user?.display_name || user?.username}!
             </h1>
           </div>
-          <div className="absolute right-0 top-0 bottom-0 w-1/3 bg-gradient-to-l from-emerald-500/5 to-transparent pointer-events-none" />
+          <div className="absolute right-0 top-0 bottom-0 w-1/3 bg-emerald-500/5 pointer-events-none" />
         </div>
 
         <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
@@ -64,7 +64,7 @@ export default function CashierDashboard() {
           {/* New Sale */}
           <button
             onClick={() => navigate('/billing')}
-            className="group relative overflow-hidden rounded-3xl border border-border bg-card p-8 text-left shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5 duration-200 cursor-pointer flex flex-col justify-between h-64 hover:border-emerald-500/35 hover:shadow-emerald-500/5 focus:outline-none focus:ring-2 focus:ring-primary"
+            className="group relative overflow-hidden rounded-3xl border border-border bg-card p-6 sm:p-8 text-left shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5 duration-200 cursor-pointer flex flex-col justify-between min-h-60 hover:border-emerald-500/35 hover:shadow-emerald-500/5 focus:outline-none focus:ring-2 focus:ring-primary"
           >
             <div className="space-y-4">
               <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center transition-transform group-hover:scale-110">
@@ -88,7 +88,7 @@ export default function CashierDashboard() {
           {/* Browse Products */}
           <button
             onClick={() => navigate('/products')}
-            className="group relative overflow-hidden rounded-3xl border border-border bg-card p-8 text-left shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5 duration-200 cursor-pointer flex flex-col justify-between h-64 hover:border-violet-500/35 hover:shadow-violet-500/5 focus:outline-none focus:ring-2 focus:ring-primary"
+            className="group relative overflow-hidden rounded-3xl border border-border bg-card p-6 sm:p-8 text-left shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5 duration-200 cursor-pointer flex flex-col justify-between min-h-60 hover:border-violet-500/35 hover:shadow-violet-500/5 focus:outline-none focus:ring-2 focus:ring-primary"
           >
             <div className="space-y-4">
               <div className="w-14 h-14 rounded-2xl bg-violet-500/10 text-violet-500 flex items-center justify-center transition-transform group-hover:scale-110">
@@ -115,7 +115,7 @@ export default function CashierDashboard() {
           <button
             type="button"
             onClick={() => navigate('/day-close')}
-            className="group relative overflow-hidden rounded-3xl border border-border bg-card p-8 text-left shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5 duration-200 cursor-pointer flex flex-col justify-between h-48 hover:border-teal-500/35 focus:outline-none focus:ring-2 focus:ring-primary"
+            className="group relative overflow-hidden rounded-3xl border border-border bg-card p-6 sm:p-8 text-left shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5 duration-200 cursor-pointer flex flex-col justify-between min-h-44 hover:border-teal-500/35 focus:outline-none focus:ring-2 focus:ring-primary"
           >
             <div className="space-y-3">
               <div className="w-12 h-12 rounded-2xl bg-teal-500/10 text-teal-500 flex items-center justify-center">
@@ -128,7 +128,7 @@ export default function CashierDashboard() {
           <button
             type="button"
             onClick={() => navigate('/expenses')}
-            className="group relative overflow-hidden rounded-3xl border border-border bg-card p-8 text-left shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5 duration-200 cursor-pointer flex flex-col justify-between h-48 hover:border-lime-500/35 focus:outline-none focus:ring-2 focus:ring-primary"
+            className="group relative overflow-hidden rounded-3xl border border-border bg-card p-6 sm:p-8 text-left shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5 duration-200 cursor-pointer flex flex-col justify-between min-h-44 hover:border-lime-500/35 focus:outline-none focus:ring-2 focus:ring-primary"
           >
             <div className="space-y-3">
               <div className="w-12 h-12 rounded-2xl bg-lime-500/10 text-lime-600 flex items-center justify-center">

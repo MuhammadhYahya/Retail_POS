@@ -81,6 +81,10 @@ export default function BillingPage() {
     if (paymentMethod !== 'cash') return 0;
     return Math.max(0, Number(tendered || 0) - totals.total);
   }, [paymentMethod, tendered, totals.total]);
+  const cashShortfall = useMemo(() => {
+    if (paymentMethod !== 'cash') return 0;
+    return Math.max(0, Number(totals.total || 0) - Number(tendered || 0));
+  }, [paymentMethod, tendered, totals.total]);
 
   useEffect(() => {
     barcodeRef.current?.focus();
@@ -262,8 +266,8 @@ export default function BillingPage() {
       return;
     }
     if (!validateDiscounts()) return;
-    if (paymentMethod === 'cash' && Number(tendered || 0) + 0.001 < totals.total) {
-      setError('Tendered amount is less than the total.');
+    if (paymentMethod === 'cash' && cashShortfall > 0.001) {
+      setError(`Insufficient Cash. Additional amount required: ${formatMoney(cashShortfall)}.`);
       return;
     }
 
@@ -302,7 +306,7 @@ export default function BillingPage() {
     setPaymentMethod('cash');
     setSaleDiscDraftValue('');
     setSaleDiscDraftType('fixed');
-    setPrintStatus('Printing…');
+    setPrintStatus(response.auditWarning ? response.auditWarning : 'Printing…');
     setSuccessOpen(true);
     setPrinting(true);
 
@@ -312,11 +316,10 @@ export default function BillingPage() {
       openDrawer: response.data.paymentMethod === 'cash',
     });
     if (printRes.success && printRes.data?.success) {
-      setPrintStatus(
-        response.data.paymentMethod === 'cash'
-          ? 'Receipt printed. Cash drawer opened.'
-          : 'Receipt printed.'
-      );
+      const printMessage = response.data.paymentMethod === 'cash'
+        ? 'Receipt printed. Cash drawer opened.'
+        : 'Receipt printed.';
+      setPrintStatus(response.auditWarning ? `${response.auditWarning} ${printMessage}` : printMessage);
     } else {
       const errMsg =
         printRes.data?.error
@@ -740,10 +743,17 @@ export default function BillingPage() {
                 ))}
               </div>
 
-              <div className="flex justify-between items-center text-sm font-bold pt-1">
-                <span className="text-muted-foreground">Change Due</span>
-                <span className={cn('text-base font-black', change >= 0 ? 'text-emerald-500' : 'text-destructive')}>{formatMoney(change)}</span>
-              </div>
+              {cashShortfall > 0.001 ? (
+                <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-destructive">
+                  <p className="font-black">Insufficient Cash</p>
+                  <p className="text-sm font-bold">Additional amount required: {formatMoney(cashShortfall)}</p>
+                </div>
+              ) : (
+                <div className="flex justify-between items-center text-sm font-bold pt-1">
+                  <span className="text-muted-foreground">Change Given</span>
+                  <span className="text-base font-black text-emerald-500">{formatMoney(change)}</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -752,7 +762,7 @@ export default function BillingPage() {
               type="button"
               disabled={saving || !items.length || staleDayBlocks || !dayOpen}
               onClick={handleCompleteSale}
-              className="w-full h-14 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 font-bold text-white shadow-lg shadow-orange-500/20 active:scale-[0.98] transition-all disabled:opacity-50 disabled:pointer-events-none select-none cursor-pointer flex items-center justify-center gap-2"
+              className="w-full h-14 rounded-2xl bg-primary hover:bg-primary/90 font-bold text-primary-foreground shadow-lg shadow-primary/20 active:scale-[0.98] transition-all disabled:opacity-50 disabled:pointer-events-none select-none cursor-pointer flex items-center justify-center gap-2"
             >
               {saving ? 'Processing...' : 'Complete Checkout'}
             </button>
@@ -892,7 +902,7 @@ export default function BillingPage() {
             <button
               type="button"
               onClick={startNewSale}
-              className="h-12 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 font-bold text-sm text-white shadow-md shadow-orange-500/10 flex items-center justify-center cursor-pointer transition-all active:scale-95"
+              className="h-12 rounded-xl bg-primary hover:bg-primary/90 font-bold text-sm text-primary-foreground shadow-md shadow-primary/10 flex items-center justify-center cursor-pointer transition-all active:scale-95"
             >
               New Sale
             </button>

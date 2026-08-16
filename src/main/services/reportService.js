@@ -210,7 +210,7 @@ const reportService = {
     return rows.map((row) => {
       const total = toNumber(row.total);
       const subtotal = toNumber(row.subtotal);
-      const costTotal = toNumber(row.cost_total);
+      const costTotal = row.status === 'completed' ? toNumber(row.cost_total) : 0;
       return {
         id: row.id,
         invoiceNumber: row.invoice_number,
@@ -223,8 +223,8 @@ const reportService = {
         cashierId: row.cashier_id,
         cashierName: row.cashier_name || row.cashier_username || 'Unknown',
         costTotal,
-        originalProfit: roundMoney(subtotal - costTotal),
-        discountedProfit: roundMoney(total - costTotal),
+        originalProfit: row.status === 'completed' ? roundMoney(subtotal - costTotal) : 0,
+        discountedProfit: row.status === 'completed' ? roundMoney(total - costTotal) : 0,
       };
     });
   },

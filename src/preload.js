@@ -86,6 +86,11 @@ const validChannels = [
   'printer:testPrint',
   'printer:testReturnReceipt',
   'printer:list',
+  'audit:list',
+  'audit:listVoidedSales',
+  'audit:listFailures',
+  'audit:getFailureSummary',
+  'audit:retryFailures',
 ];
 
 const validReceiveChannels = ['backup:progress', 'import:progress'];

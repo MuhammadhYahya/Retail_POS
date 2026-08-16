@@ -1,25 +1,17 @@
-import { getDb } from '../database/db.js';
+import auditService from '../services/auditService.js';
 
 export function writeAuditLog(action, userId = null, details = null) {
-  try {
-    const db = getDb();
-    const hasDetails = db
-      .prepare(`PRAGMA table_info(audit_log)`)
-      .all()
-      .some((c) => c.name === 'details');
+  return auditService.write({
+    action: String(action || 'unknown'),
+    actorUserId: userId,
+    details,
+  });
+}
 
-    if (hasDetails) {
-      db.prepare(`
-        INSERT INTO audit_log (user_id, action, created_at, details)
-        VALUES (?, ?, ?, ?)
-      `).run(userId, action, new Date().toISOString(), details != null ? String(details) : null);
-    } else {
-      db.prepare(`
-        INSERT INTO audit_log (user_id, action, created_at)
-        VALUES (?, ?, ?)
-      `).run(userId, action, new Date().toISOString());
-    }
-  } catch (err) {
-    console.error('[auditLog] Failed to write:', err.message);
-  }
+export function writeAuditEvent(event) {
+  return auditService.write(event);
+}
+
+export function addAuditWarning(response, audit) {
+  return audit?.success ? response : { ...response, auditWarning: audit?.warning };
 }

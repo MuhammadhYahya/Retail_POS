@@ -2,10 +2,18 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import AppShell from '../../components/layout/AppShell';
-import { ShoppingCart, Package, Users, BarChart3, Settings, Wallet, Truck, Undo2 } from 'lucide-react';
+import { ShoppingCart, Package, Users, BarChart3, Settings, Wallet, Truck, Undo2, ShieldCheck } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 const MODULES = [
+  {
+    title: 'Audit Log',
+    description: 'Review voided sales, critical events, and audit failures.',
+    icon: ShieldCheck,
+    path: '/audit',
+    color: 'hover:border-red-500/35 hover:shadow-red-500/5',
+    iconBg: 'bg-red-500/10 text-red-500',
+  },
   {
     title: 'Day Open / Close',
     description: 'Opening float and Z-report for the cash drawer.',
@@ -79,16 +87,16 @@ export default function AdminDashboard() {
   return (
     <AppShell title="Admin Dashboard" description="Manage your POS system and team.">
       <div className="space-y-8">
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-neutral-900 via-neutral-900 to-neutral-800 dark:from-neutral-950 dark:to-neutral-900 border border-neutral-800 p-8 shadow-xl">
+        <div className="relative overflow-hidden rounded-3xl bg-card border border-border p-6 sm:p-8 shadow-sm">
           <div className="relative z-10 space-y-2">
             <span className="px-3 py-1 rounded-full bg-rose-500/15 border border-rose-500/25 text-xs font-bold text-rose-400 tracking-wider uppercase">
               System Administrator Mode
             </span>
-            <h1 className="text-3xl font-black text-white tracking-tight">
+            <h1 className="text-2xl sm:text-3xl font-black text-foreground tracking-tight">
               Welcome back, {user?.display_name || user?.username}!
             </h1>
           </div>
-          <div className="absolute right-0 top-0 bottom-0 w-1/3 bg-gradient-to-l from-rose-500/5 to-transparent pointer-events-none" />
+          <div className="absolute right-0 top-0 bottom-0 w-1/3 bg-primary/5 pointer-events-none" />
         </div>
 
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -100,7 +108,7 @@ export default function AdminDashboard() {
                 type="button"
                 onClick={() => navigate(mod.path)}
                 className={cn(
-                  'group relative overflow-hidden rounded-2xl border border-border bg-card p-6 text-left shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5 duration-200 cursor-pointer flex flex-col justify-between h-56 focus:outline-none focus:ring-2 focus:ring-primary',
+                  'group relative overflow-hidden rounded-2xl border border-border bg-card p-6 text-left shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5 duration-200 cursor-pointer flex flex-col justify-between min-h-52 focus:outline-none focus:ring-2 focus:ring-primary',
                   mod.color
                 )}
               >

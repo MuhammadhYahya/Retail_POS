@@ -21,7 +21,7 @@ function DialogContent({ className, children, ...props }) {
   return (
     <div
       className={cn(
-        'rounded-xl border border-border bg-card text-card-foreground shadow-xl p-6',
+        'rounded-2xl border border-border bg-card text-card-foreground shadow-2xl p-6 sm:p-7',
         className
       )}
       {...props}

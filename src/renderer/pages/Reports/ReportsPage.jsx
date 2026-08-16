@@ -108,7 +108,9 @@ export default function ReportsPage() {
       return;
     }
 
-    setMessage(`Voided ${voidTarget.invoiceNumber}. Stock restored.`);
+    setMessage(response.auditWarning
+      ? `Voided ${voidTarget.invoiceNumber}. Stock restored. ${response.auditWarning}`
+      : `Voided ${voidTarget.invoiceNumber}. Stock restored.`);
     setVoidTarget(null);
     setVoidReason('');
     notifyLowStockUpdated();

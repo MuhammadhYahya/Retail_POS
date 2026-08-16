@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { useThemeStore } from '../../store/themeStore';
 import { Button } from '../ui/button';
-import { LogOut, LayoutDashboard, Users, ShoppingCart, Package, BarChart3, Settings, Sun, Moon, AlertTriangle, Wallet, Truck, Undo2, Receipt, Tag } from 'lucide-react';
+import { LogOut, LayoutDashboard, Users, ShoppingCart, Package, BarChart3, Settings, Sun, Moon, AlertTriangle, Wallet, Truck, Undo2, Receipt, Tag, ShieldCheck, Menu, X } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { getDashboardPath, invokeWithAuth, LOW_STOCK_UPDATED_EVENT } from '../../lib/ipc';
 import { useCloseDayReminder } from '../../lib/useCloseDayReminder.js';
@@ -22,6 +22,7 @@ const FEATURE_NAV = [
 ];
 
 const ADMIN_ONLY_NAV = [
+  { path: '/audit', label: 'Audit Log', icon: ShieldCheck, color: 'text-red-500' },
   { path: '/staff', label: 'Staff Management', icon: Users, color: 'text-rose-500' },
   { path: '/settings', label: 'Settings', icon: Settings, color: 'text-slate-500' },
 ];
@@ -70,6 +71,7 @@ export default function AppShell({ children, title, description }) {
 
   const [timeString, setTimeString] = React.useState('');
   const [profileOpen, setProfileOpen] = React.useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
   const [lowStockCount, setLowStockCount] = React.useState(0);
   const showCloseReminder = useCloseDayReminder();
   const canViewLowStock = hasPermission(user, 'lowStock');
@@ -114,6 +116,8 @@ export default function AppShell({ children, title, description }) {
 
   const navItems = navItemsForUser(user);
 
+  React.useEffect(() => setMobileNavOpen(false), [location.pathname]);
+
   const handleLogout = async () => {
     await setLogout();
     navigate('/login');
@@ -121,17 +125,21 @@ export default function AppShell({ children, title, description }) {
 
   return (
     <div className="h-screen overflow-hidden bg-background text-foreground flex">
+      {mobileNavOpen && <button type="button" aria-label="Close navigation" className="fixed inset-0 z-30 bg-slate-950/30 backdrop-blur-sm lg:hidden" onClick={() => setMobileNavOpen(false)} />}
       {/* Sidebar navigation */}
-      <aside className="w-64 h-screen border-r border-border bg-card flex flex-col shrink-0 select-none">
-        <button type="button" onClick={() => navigate(getDashboardPath(user?.role))} className="p-6 border-b border-border/40 flex items-center gap-3 text-left cursor-pointer hover:bg-muted/30">
+      <aside className={cn('fixed inset-y-0 left-0 z-40 w-[min(19rem,88vw)] h-screen border-r border-border bg-card flex flex-col shrink-0 select-none shadow-2xl transition-transform duration-200 lg:relative lg:z-auto lg:w-64 lg:translate-x-0 lg:shadow-none', mobileNavOpen ? 'translate-x-0' : '-translate-x-full')}>
+        <div className="flex items-center justify-between border-b border-border/60">
+        <button type="button" onClick={() => navigate(getDashboardPath(user?.role))} className="flex min-h-[76px] flex-1 items-center gap-3 p-5 text-left cursor-pointer hover:bg-muted/30">
           <img src="./logo.png" alt="ZEN" className="h-11 w-11 rounded-xl object-contain shadow-md shadow-orange-500/10" />
           <div>
-            <h1 className="text-xl font-black tracking-tight bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">
+            <h1 className="text-xl font-black tracking-tight text-primary">
               ZEN
             </h1>
             <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest mt-0.5">Point of Sale</p>
           </div>
         </button>
+        <button type="button" aria-label="Close navigation" className="mr-3 rounded-xl p-3 text-muted-foreground hover:bg-muted lg:hidden" onClick={() => setMobileNavOpen(false)}><X className="h-5 w-5" /></button>
+        </div>
 
         <nav className="flex-1 min-h-0 overflow-y-auto p-4 space-y-2">
           {navItems.map(({ path, label, icon: Icon, color }) => {
@@ -144,7 +152,7 @@ export default function AppShell({ children, title, description }) {
                 className={cn(
                   'w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-semibold transition-all cursor-pointer h-14',
                   isActive
-                    ? 'bg-primary/10 text-primary border border-primary/20 shadow-sm shadow-primary/5 font-bold'
+                    ? 'bg-primary/10 text-primary border border-primary/25 shadow-sm shadow-primary/10 font-bold'
                     : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground border border-transparent'
                 )}
               >
@@ -175,12 +183,15 @@ export default function AppShell({ children, title, description }) {
             </p>
           </div>
         )}
-        <header className="border-b border-border bg-card/45 backdrop-blur-md px-8 py-4 flex items-center justify-between">
-          <div className="flex flex-col">
+        <header className="border-b border-border bg-card/80 backdrop-blur-md px-4 py-3 sm:px-6 lg:px-8 lg:py-4 flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <button type="button" aria-label="Open navigation" className="rounded-xl border border-border bg-card p-3 text-muted-foreground shadow-sm lg:hidden" onClick={() => setMobileNavOpen(true)}><Menu className="h-5 w-5" /></button>
+            <div className="flex min-w-0 flex-col">
             <h2 className="text-xl font-bold tracking-tight">{title}</h2>
             {description && (
               <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
             )}
+            </div>
           </div>
           
           {/* Center: Real-time clock */}
@@ -190,7 +201,7 @@ export default function AppShell({ children, title, description }) {
           </div>
 
           {/* Right: Theme switch & User clerk indicator */}
-          <div className="flex items-center gap-4 select-none">
+          <div className="flex items-center gap-2 sm:gap-4 select-none">
             <button
               type="button"
               onClick={toggleTheme}
@@ -211,8 +222,8 @@ export default function AppShell({ children, title, description }) {
               </div>
               <button type="button" onClick={() => setProfileOpen((open) => !open)} aria-expanded={profileOpen} className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm shadow-sm shrink-0 cursor-pointer ${
                 user?.role === 'admin'
-                  ? 'bg-gradient-to-tr from-rose-500 to-orange-500 text-white'
-                  : 'bg-gradient-to-tr from-sky-500 to-blue-600 text-white'
+                  ? 'bg-rose-600 text-white'
+                  : 'bg-sky-700 text-white'
               }`}>
                 {nameToAvatar(user?.display_name || user?.username)}
               </button>
@@ -226,7 +237,7 @@ export default function AppShell({ children, title, description }) {
             </div>
           </div>
         </header>
-        <div className="flex-1 min-h-0 p-8 overflow-y-auto">{children}</div>
+        <div className="flex-1 min-h-0 p-4 sm:p-6 lg:p-8 overflow-y-auto">{children}</div>
       </main>
     </div>
   );
