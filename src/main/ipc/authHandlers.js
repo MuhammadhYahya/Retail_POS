@@ -26,6 +26,8 @@ import {
 import { validateSession, extractToken } from '../lib/sessionAuth.js';
 import userService from '../services/userService.js';
 import { parsePermissions } from '../lib/permissions.js';
+import { verifyUserPin } from '../services/authenticationService.js';
+import { writeStateMarker } from '../services/backup/index.js';
 
 const PIN_REGEX = /^[0-9]{4}$/;
 
@@ -140,7 +142,7 @@ export function registerAuthHandlers() {
         };
       }
 
-      const pinMatches = await bcrypt.compare(pinString, user.pin_hash);
+      const pinMatches = await verifyUserPin(user, pinString);
 
       if (!pinMatches) {
         db.prepare(`
@@ -192,6 +194,7 @@ export function registerAuthHandlers() {
       );
 
       writeAuditLog(`login_success:${user.username}`, user.id);
+      writeStateMarker('ACTIVE');
 
       return {
         success: true,
@@ -351,6 +354,7 @@ export function registerAuthHandlers() {
       }
 
       writeAuditLog(`register:${usernameClean}:${allowedRole}`, id);
+      if (allowedRole === 'admin') writeStateMarker('ACTIVE');
 
       return { success: true };
     } catch (err) {

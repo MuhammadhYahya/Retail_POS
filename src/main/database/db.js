@@ -15,6 +15,7 @@ function getElectronApp() {
 }
 
 let db;
+let activeDbPath = null;
 let skipMigrationSafetyBackup = false;
 
 const MIGRATION_SAFETY_FILE = 'pre_migration.db';
@@ -24,7 +25,23 @@ export function getDbPath() {
   if (!app) {
     throw new Error('Electron app is not available. Use openDbAtPath() for headless runs.');
   }
-  return path.join(app.getPath('userData'), 'zen.db');
+  return activeDbPath || path.join(app.getPath('userData'), 'zen.db');
+}
+
+export function setActiveDbPath(dbPath = null) {
+  const app = getElectronApp();
+  if (!app) throw new Error('Electron app is not available.');
+  const defaultDir = path.resolve(app.getPath('userData'));
+  const resolved = dbPath ? path.resolve(dbPath) : path.join(defaultDir, 'zen.db');
+  if (path.dirname(resolved) !== defaultDir || path.basename(resolved) !== 'zen.db') {
+    throw new Error('The active database path is outside the ZEN data directory.');
+  }
+  activeDbPath = resolved;
+  return activeDbPath;
+}
+
+export function clearActiveDbPath() {
+  activeDbPath = null;
 }
 
 export function getDataDir() {

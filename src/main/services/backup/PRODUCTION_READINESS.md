@@ -5,7 +5,7 @@ Scope: Complete Backup & Restore + Import/Export (no AES-256 encryption this rel
 
 ## 1. Issues found in the existing project
 
-1. **Raw DB file copy while connection open** — `backupService` used `copyFileSync` on `posly.db` (+wal/shm) after checkpoint only; not the SQLite Online Backup API.
+1. **Raw DB file copy while connection open** — simple safety copies use `copyFileSync` on `zen.db` after checkpoint; full user backups continue to use the verified archive workflow.
 2. **Restore left stale DB handle** — restore overwrote files without `closeDb()` / reopen; relied on manual restart messaging.
 3. **No archive format** — backups were lone `.db` files without manifest, checksums, assets/config bundle, or post-create verification gate.
 4. **No destination folder picker** — only a drive-letter list (all A–Z mounts), not a real browse dialog.

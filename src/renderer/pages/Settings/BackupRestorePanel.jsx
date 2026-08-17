@@ -59,6 +59,8 @@ export default function BackupRestorePanel({ onMessage, onError }) {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteAllOpen, setDeleteAllOpen] = useState(false);
   const [deleteAllPin, setDeleteAllPin] = useState('');
+  const [startFreshOpen, setStartFreshOpen] = useState(false);
+  const [startFreshPin, setStartFreshPin] = useState('');
 
   const notify = useCallback(
     (msg) => {
@@ -264,6 +266,18 @@ export default function BackupRestorePanel({ onMessage, onError }) {
     notify('All ZEN data was deleted. Restarting…');
   };
 
+  const handleStartFresh = async (event) => {
+    event.preventDefault();
+    setBusy(true);
+    const response = await invokeWithAuth('data:startFresh', { pin: startFreshPin });
+    if (!response.success) {
+      fail(response.error || 'Could not start fresh.');
+      setBusy(false);
+      return;
+    }
+    notify('A safety copy was created. ZEN will restart into first-run setup.');
+  };
+
   const saveAutoSettings = async () => {
     fail('');
     notify('');
@@ -345,6 +359,18 @@ export default function BackupRestorePanel({ onMessage, onError }) {
           </Button>
           <Button type="button" variant="outline" onClick={() => handleOpenFolder(null)} disabled={busy}>
             Open Backup Folder
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card className="border-destructive/40">
+        <CardHeader>
+          <CardTitle>Start Fresh</CardTitle>
+          <CardDescription>Keep a timestamped safety copy, remove the current shop, and restart with an empty POS.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button type="button" variant="outline" onClick={() => setStartFreshOpen(true)} disabled={busy}>
+            Start Fresh
           </Button>
         </CardContent>
       </Card>
@@ -555,6 +581,22 @@ export default function BackupRestorePanel({ onMessage, onError }) {
             <DialogFooter className="mt-5">
               <Button type="button" variant="outline" onClick={() => setDeleteAllOpen(false)} disabled={busy}>Cancel</Button>
               <Button type="submit" variant="destructive" disabled={busy}>{busy ? 'Deleting…' : 'Delete permanently'}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={startFreshOpen} onOpenChange={(open) => !busy && setStartFreshOpen(open)} dismissible={!busy}>
+        <DialogContent>
+          <form onSubmit={handleStartFresh}>
+            <DialogHeader>
+              <DialogTitle>Start Fresh?</DialogTitle>
+              <DialogDescription>ZEN will copy the current database to a timestamped safety file, remove the live database, and restart setup. Enter the current administrator PIN.</DialogDescription>
+            </DialogHeader>
+            <input className={`${inputClassName} mt-4`} type="password" inputMode="numeric" maxLength={4} placeholder="Administrator PIN" value={startFreshPin} onChange={(e) => setStartFreshPin(e.target.value)} required />
+            <DialogFooter className="mt-5">
+              <Button type="button" variant="outline" onClick={() => setStartFreshOpen(false)} disabled={busy}>Cancel</Button>
+              <Button type="submit" variant="destructive" disabled={busy}>{busy ? 'Preparing…' : 'Start Fresh'}</Button>
             </DialogFooter>
           </form>
         </DialogContent>

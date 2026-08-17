@@ -8,6 +8,14 @@ export function writeAuditLog(action, userId = null, details = null) {
   });
 }
 
+export function writeAuditLogWithoutUserRef(action, details = null) {
+  return auditService.write({
+    action: String(action || 'unknown'),
+    actorUserId: null,
+    details,
+  });
+}
+
 export function writeAuditEvent(event) {
   return auditService.write(event);
 }

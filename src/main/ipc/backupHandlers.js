@@ -1,8 +1,10 @@
 import { BrowserWindow, dialog, ipcMain, app } from 'electron';
+import fs from 'node:fs';
 import backupService from '../services/backup/index.js';
 import { progressBus } from '../services/backup/backupUtils.js';
 import { extractToken, requireRole, validateSession } from '../lib/sessionAuth.js';
-import { writeAuditLog } from '../lib/auditLog.js';
+import { writeAuditLog, writeAuditLogWithoutUserRef } from '../lib/auditLog.js';
+import { closeDb, getDb, setActiveDbPath } from '../database/db.js';
 
 function adminGate(payload = {}) {
   const token = extractToken(payload);
@@ -107,7 +109,12 @@ export function registerBackupHandlers(startupState = null) {
         themePreference: payload.themePreference || null,
         jobId,
       });
-      writeAuditLog('backup_restore', gate.session.user.id, payload.backupPath);
+      writeAuditLogWithoutUserRef('backup_restore', {
+        restoredByUsername: gate.session.user.username,
+        restoredFrom: payload.backupPath,
+        identitySource: 'pre_restore_session',
+      });
+      backupService.writeStateMarker(data.stats?.userCount > 0 ? 'ACTIVE' : 'FIRST_RUN');
 
       // Relaunch after short delay so renderer can show message
       if (data.relaunch) {
@@ -175,7 +182,15 @@ export function registerBackupHandlers(startupState = null) {
 
   ipcMain.handle('data:useExisting', (event, payload = {}) => {
     try {
-      backupService.markDataChoiceComplete('use_existing');
+      const state = backupService.detectDataState();
+      if (state.state !== 'AWAITING_CHOICE' || !fs.existsSync(state.databasePath) || !backupService.isValidZenDatabase(state.databasePath)) {
+        backupService.writeStateMarker('FIRST_RUN');
+        return { success: false, error: 'The existing ZEN database is missing or invalid.' };
+      }
+      setActiveDbPath(state.databasePath);
+      closeDb();
+      getDb();
+      backupService.writeStateMarker('ACTIVE');
       return { success: true };
     } catch (err) {
       return { success: false, error: err.message };
@@ -185,9 +200,8 @@ export function registerBackupHandlers(startupState = null) {
   ipcMain.handle('data:startFresh', async (event, payload = {}) => {
     try {
       const data = await backupService.startFresh({
-        username: payload.username,
+        token: extractToken(payload),
         pin: payload.pin,
-        themePreference: payload.themePreference || null,
       });
       setTimeout(() => { app.relaunch(); app.exit(0); }, 1200);
       return { success: true, data };

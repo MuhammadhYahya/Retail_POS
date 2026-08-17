@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import bcrypt from 'bcryptjs';
+import Database from 'better-sqlite3';
 import { app, shell } from 'electron';
 import { getDb, getDbPath, getDataDir, closeDb, reopenDb, setSkipMigrationSafetyBackup } from '../../database/db.js';
 import { runMigrations, getLatestMigrationVersion } from '../../database/migrations/index.js';
@@ -13,6 +13,7 @@ import {
 import backupHistoryService from './backupHistoryService.js';
 import { copyDirRecursive, ensureDir, finishJob, createJob, cancelJob, safeRmDir, safeUnlink, sha256File, emitProgress, assertNotCancelled } from './backupUtils.js';
 import { listExistingDataRoots } from './dataRootRegistry.js';
+import { authenticateAdminSession } from '../authenticationService.js';
 
 function getDefaultBackupDir() {
   const dir = path.join(app.getPath('userData'), 'backups');
@@ -20,43 +21,90 @@ function getDefaultBackupDir() {
   return dir;
 }
 
-const DATA_CHOICE_MARKER = 'data-choice-complete.json';
-const FRESH_START_FILE = 'fresh-start-safety.zenbackup';
+const STATE_FILE = 'zen.state.json';
 
-function getRecoveryDir() {
-  const dir = path.join(getDataDir(), 'recovery');
-  ensureDir(dir);
-  return dir;
+export function getStateMarkerPath() {
+  return path.join(getDataDir(), STATE_FILE);
 }
 
-function dataChoiceMarkerPath() {
-  return path.join(getDataDir(), DATA_CHOICE_MARKER);
+export function readStateMarker() {
+  try {
+    const marker = JSON.parse(fs.readFileSync(getStateMarkerPath(), 'utf8'));
+    return ['FIRST_RUN', 'AWAITING_CHOICE', 'ACTIVE'].includes(marker.state) ? marker : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeStateMarker(state) {
+  if (!['FIRST_RUN', 'AWAITING_CHOICE', 'ACTIVE'].includes(state)) {
+    throw new Error('Invalid ZEN data state.');
+  }
+  ensureDir(getDataDir());
+  fs.writeFileSync(getStateMarkerPath(), JSON.stringify({
+    state,
+    databasePath: getDbPath(),
+    updatedAt: new Date().toISOString(),
+  }, null, 2), 'utf8');
+  return { state };
+}
+
+export function isValidZenDatabase(dbPath) {
+  const dataDir = path.resolve(getDataDir());
+  const resolved = path.resolve(dbPath || '');
+  if (path.dirname(resolved) !== dataDir || path.basename(resolved) !== 'zen.db') return false;
+  if (!dbPath || !fs.existsSync(dbPath)) return false;
+  let probe;
+  try {
+    probe = new Database(dbPath, { readonly: true, fileMustExist: true });
+    if (probe.pragma('integrity_check', { simple: true }) !== 'ok') return false;
+    const required = new Set(probe.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((row) => row.name));
+    return ['users', 'settings', '_migrations'].every((name) => required.has(name));
+  } catch {
+    return false;
+  } finally {
+    try { probe?.close(); } catch { /* ignore */ }
+  }
 }
 
 export function detectDataState() {
   const dbPath = getDbPath();
-  const legacyPath = path.join(getDataDir(), 'posly.db');
-  const hasDatabase = fs.existsSync(dbPath) || fs.existsSync(legacyPath);
-  return {
-    hasDatabase,
-    needsChoice: hasDatabase && !fs.existsSync(dataChoiceMarkerPath()),
-    databasePath: fs.existsSync(dbPath) ? dbPath : legacyPath,
-  };
-}
+  const marker = readStateMarker();
+  if (!marker) {
+    const state = isValidZenDatabase(dbPath) ? 'AWAITING_CHOICE' : 'FIRST_RUN';
+    writeStateMarker(state);
+    return { state, databasePath: dbPath };
+  }
 
-export function markDataChoiceComplete(reason = 'existing_data') {
-  ensureDir(getDataDir());
-  fs.writeFileSync(dataChoiceMarkerPath(), JSON.stringify({ reason, completedAt: new Date().toISOString() }, null, 2));
-  return { completed: true };
-}
+  const recordedPath = marker.databasePath || dbPath;
+  if ((marker.state === 'AWAITING_CHOICE' || marker.state === 'ACTIVE') && !isValidZenDatabase(recordedPath)) {
+    writeStateMarker('FIRST_RUN');
+    return { state: 'FIRST_RUN', databasePath: dbPath };
+  }
 
-function removePathWithSidecars(filePath) {
-  for (const suffix of ['', '-wal', '-shm']) safeUnlink(`${filePath}${suffix}`);
+  return { state: marker.state, databasePath: recordedPath };
 }
 
 function removeLiveDbFiles(dbPath) {
   for (const suffix of ['', '-wal', '-shm']) {
     safeUnlink(`${dbPath}${suffix}`);
+  }
+}
+
+function createSimpleBackup(prefix) {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const backupPath = path.join(getDataDir(), `${prefix}-${stamp}.db`);
+  fs.copyFileSync(getDbPath(), backupPath);
+  return backupPath;
+}
+
+function clearDataDirectoryExcept(keepPath) {
+  const keep = path.resolve(keepPath);
+  for (const entry of fs.readdirSync(getDataDir())) {
+    const target = path.resolve(path.join(getDataDir(), entry));
+    if (target === keep) continue;
+    safeRmDir(target);
+    safeUnlink(target);
   }
 }
 
@@ -142,8 +190,11 @@ function readRestoredTheme(extractDir) {
 }
 
 const backupService = {
+  getStateMarkerPath,
+  readStateMarker,
+  writeStateMarker,
+  isValidZenDatabase,
   detectDataState,
-  markDataChoiceComplete,
   getDefaultBackupDir,
 
   createJob,
@@ -244,55 +295,27 @@ const backupService = {
     });
   },
 
-  async startFresh({ username, pin, themePreference = null } = {}) {
-    const db = getDb();
-    const user = db.prepare(`SELECT * FROM users WHERE username = ? AND role = 'admin' AND is_active = 1 AND deleted_at IS NULL`)
-      .get(String(username || '').trim());
-    if (!user || !(await bcrypt.compare(String(pin || ''), user.pin_hash))) {
-      throw new Error('Administrator credentials are incorrect.');
-    }
-
-    const recoveryDir = getRecoveryDir();
-    const safety = await this.createSafetyBackup({
-      type: 'fresh_start',
-      destinationDir: recoveryDir,
-      themePreference,
-    });
-    const managedPath = path.join(recoveryDir, FRESH_START_FILE);
-    safeUnlink(managedPath);
-    fs.renameSync(safety.path, managedPath);
-    backupHistoryService.updatePath(safety.uuid, managedPath, fs.statSync(managedPath).size);
-
+  async startFresh({ token, pin } = {}) {
+    const gate = await authenticateAdminSession({ _token: token, pin });
+    if (!gate.success) throw new Error(gate.error || 'Administrator authentication failed.');
+    getDb().pragma('wal_checkpoint(TRUNCATE)');
+    const backupPath = createSimpleBackup('zen-pre-start-fresh');
     closeDb();
-    removePathWithSidecars(getDbPath());
-    markDataChoiceComplete('start_fresh');
-    const freshDb = reopenDb();
-    const integrity = freshDb.pragma('integrity_check', { simple: true });
-    if (integrity !== 'ok') throw new Error('New database failed integrity check.');
-    return { safetyBackup: managedPath, relaunch: true, message: 'ZEN is ready with a new empty shop. The application will restart.' };
+    removeLiveDbFiles(getDbPath());
+    writeStateMarker('FIRST_RUN');
+    return { backupPath, relaunch: true, message: 'ZEN will restart into first-run setup.' };
   },
 
   async deleteAllData({ token, pin } = {}) {
-    const db = getDb();
-    const session = db.prepare(`
-      SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id
-      WHERE s.token = ? AND s.expires_at > ? AND u.role = 'admin' AND u.is_active = 1 AND u.deleted_at IS NULL
-    `).get(token, new Date().toISOString());
-    if (!session || !(await bcrypt.compare(String(pin || ''), session.pin_hash))) {
-      throw new Error('Administrator PIN is incorrect.');
-    }
-
+    const gate = await authenticateAdminSession({ _token: token, pin });
+    if (!gate.success) throw new Error(gate.error || 'Administrator authentication failed.');
+    getDb().pragma('wal_checkpoint(TRUNCATE)');
+    const backupPath = createSimpleBackup('zen-pre-delete-all');
     closeDb();
-    const dataDir = getDataDir();
-    for (const entry of fs.readdirSync(dataDir)) {
-      safeRmDir(path.join(dataDir, entry));
-      safeUnlink(path.join(dataDir, entry));
-    }
-    ensureDir(dataDir);
-    const freshDb = reopenDb();
-    const integrity = freshDb.pragma('integrity_check', { simple: true });
-    if (integrity !== 'ok') throw new Error('Fresh database failed integrity check.');
-    return { deleted: true, relaunch: true, message: 'All ZEN business data was deleted. The application will restart.' };
+    removeLiveDbFiles(getDbPath());
+    clearDataDirectoryExcept(backupPath);
+    writeStateMarker('FIRST_RUN');
+    return { deleted: true, backupPath, relaunch: true, message: 'All ZEN data was deleted. ZEN will restart into first-run setup.' };
   },
 
   async verifyBackup({ backupPath }) {

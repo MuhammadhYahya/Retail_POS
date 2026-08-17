@@ -1,8 +1,8 @@
 import { app, BrowserWindow, Menu } from 'electron';
 import path from 'node:path';
+import fs from 'node:fs';
 import started from 'electron-squirrel-startup';
-import { getDb, closeDb } from './main/database/db.js';
-import { migrateFromPosly } from './main/lib/migrateFromPosly.js';
+import { getDb, closeDb, isDbOpen, setActiveDbPath } from './main/database/db.js';
 import { ensureJwtSecret } from './main/lib/jwtSecret.js';
 import { registerAuthHandlers } from './main/ipc/authHandlers.js';
 import { registerUserHandlers } from './main/ipc/userHandlers.js';
@@ -22,7 +22,7 @@ import { registerPrinterHandlers } from './main/ipc/printerHandlers.js';
 import { registerAuditHandlers } from './main/ipc/auditHandlers.js';
 import backupScheduleService from './main/services/backup/backupScheduleService.js';
 import { ensureReservedDataDirs } from './main/services/backup/dataRootRegistry.js';
-import { detectDataState, markDataChoiceComplete } from './main/services/backup/index.js';
+import { detectDataState, isValidZenDatabase } from './main/services/backup/index.js';
 
 if (started) {
   app.quit();
@@ -38,6 +38,7 @@ function getAppIconPath() {
 }
 
 function clearSessionStore() {
+  if (!isDbOpen()) return;
   try {
     const db = getDb();
     db.prepare('DELETE FROM sessions').run();
@@ -104,10 +105,17 @@ app.on('activate', () => {
 });
 
 app.whenReady().then(async () => {
-  migrateFromPosly();
   const startupDataState = detectDataState();
+  if (startupDataState.state === 'FIRST_RUN' && fs.existsSync(startupDataState.databasePath) && !isValidZenDatabase(startupDataState.databasePath)) {
+    const quarantine = `${startupDataState.databasePath}.invalid-${Date.now()}`;
+    fs.renameSync(startupDataState.databasePath, quarantine);
+    for (const suffix of ['-wal', '-shm']) {
+      const sidecar = `${startupDataState.databasePath}${suffix}`;
+      if (fs.existsSync(sidecar)) fs.renameSync(sidecar, `${quarantine}${suffix}`);
+    }
+  }
+  setActiveDbPath(startupDataState.databasePath);
   getDb();
-  if (!startupDataState.hasDatabase) markDataChoiceComplete('new_install');
   ensureJwtSecret();
   ensureReservedDataDirs();
   clearSessionStore();

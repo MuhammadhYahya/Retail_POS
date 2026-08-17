@@ -22,13 +22,10 @@ import ExpensesPage from './pages/Expenses/ExpensesPage';
 import AuditPage from './pages/Audit/AuditPage';
 import LabelsPage from './pages/Labels/LabelsPage';
 import RecoverySetupDialog from './components/auth/RecoverySetupDialog';
-import { invokeWithAuth } from './lib/ipc';
 
 function StartupDataGate() {
+  const navigate = useNavigate();
   const [state, setState] = useState(null);
-  const [mode, setMode] = useState('choice');
-  const [username, setUsername] = useState('');
-  const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -49,45 +46,28 @@ function StartupDataGate() {
     setBusy(false);
   };
 
-  const startFresh = async (event) => {
-    event.preventDefault();
-    setBusy(true);
-    setError('');
-    const response = await window.electronAPI.invoke('data:startFresh', { username, pin });
-    if (!response.success) {
-      setError(response.error || 'Could not start fresh.');
-      setBusy(false);
-    }
-  };
+  const continueToLogin = () => setState(null);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 p-6">
       <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-xl">
-        {mode === 'choice' ? (
+        {state.state === 'FIRST_RUN' ? (
           <>
-            <h1 className="text-xl font-semibold">Existing ZEN data found</h1>
-            <p className="mt-2 text-sm text-muted-foreground">Choose whether to continue with this shop or create an empty POS.</p>
-            <div className="mt-6 flex flex-col gap-3">
-              <button className="rounded-lg bg-primary px-4 py-3 font-semibold text-primary-foreground" onClick={useExisting} disabled={busy}>Use Existing Data</button>
-              <button className="rounded-lg border border-border px-4 py-3 font-semibold" onClick={() => setMode('fresh')} disabled={busy}>Start Fresh</button>
-            </div>
+            <h1 className="text-xl font-semibold">Set up ZEN</h1>
+            <p className="mt-2 text-sm text-muted-foreground">No active shop data is configured. Create the first administrator account to begin.</p>
+            <button className="mt-6 w-full rounded-lg bg-primary px-4 py-3 font-semibold text-primary-foreground" onClick={() => { setState(null); navigate('/register'); }}>Set Up Administrator</button>
           </>
         ) : (
-          <form onSubmit={startFresh}>
-            <h1 className="text-xl font-semibold">Start Fresh</h1>
-            <p className="mt-2 text-sm text-muted-foreground">A verified safety backup will be created before the old shop is replaced.</p>
-            <div className="mt-5 space-y-3">
-              <input className="w-full rounded-lg border border-border bg-input p-3" placeholder="Administrator username" value={username} onChange={(e) => setUsername(e.target.value)} required />
-              <input className="w-full rounded-lg border border-border bg-input p-3" placeholder="Administrator PIN" type="password" inputMode="numeric" maxLength={4} value={pin} onChange={(e) => setPin(e.target.value)} required />
+          <>
+            <h1 className="text-xl font-semibold">Existing ZEN data found</h1>
+            <p className="mt-2 text-sm text-muted-foreground">Continue with this shop, or sign in as an administrator to start fresh.</p>
+            <div className="mt-6 flex flex-col gap-3">
+              <button className="rounded-lg bg-primary px-4 py-3 font-semibold text-primary-foreground" onClick={useExisting} disabled={busy}>Use Existing Data</button>
+              <button className="rounded-lg border border-border px-4 py-3 font-semibold" onClick={continueToLogin} disabled={busy}>Continue to Admin Login</button>
             </div>
-            {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
-            <div className="mt-6 flex gap-3">
-              <button type="button" className="rounded-lg border border-border px-4 py-3" onClick={() => setMode('choice')} disabled={busy}>Back</button>
-              <button type="submit" className="flex-1 rounded-lg bg-destructive px-4 py-3 font-semibold text-destructive-foreground" disabled={busy}>{busy ? 'Preparing…' : 'Create Empty POS'}</button>
-            </div>
-          </form>
+          </>
         )}
-        {mode === 'choice' && error && <p className="mt-3 text-sm text-destructive">{error}</p>}
+        {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
       </div>
     </div>
   );
