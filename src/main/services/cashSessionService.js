@@ -58,8 +58,7 @@ function buildSessionSnapshot(db, session) {
       COALESCE(SUM(CASE WHEN status = 'completed' THEN total ELSE 0 END), 0) AS revenue,
       COALESCE(SUM(CASE WHEN status = 'voided' THEN 1 ELSE 0 END), 0) AS void_count,
       COALESCE(SUM(CASE WHEN status = 'completed' AND payment_method = 'cash' THEN total ELSE 0 END), 0) AS cash_sales,
-      COALESCE(SUM(CASE WHEN status = 'completed' AND payment_method = 'card' THEN total ELSE 0 END), 0) AS card_sales,
-      COALESCE(SUM(CASE WHEN status = 'completed' AND payment_method = 'qr' THEN total ELSE 0 END), 0) AS qr_sales
+      COALESCE(SUM(CASE WHEN status = 'completed' AND payment_method = 'card' THEN total ELSE 0 END), 0) AS card_sales
     FROM sales
     WHERE deleted_at IS NULL
       AND (
@@ -73,8 +72,7 @@ function buildSessionSnapshot(db, session) {
       COUNT(*) AS return_count,
       COALESCE(SUM(refund_total), 0) AS refund_total,
       COALESCE(SUM(CASE WHEN refund_method = 'cash' THEN refund_total ELSE 0 END), 0) AS cash_refunds,
-      COALESCE(SUM(CASE WHEN refund_method = 'card' THEN refund_total ELSE 0 END), 0) AS card_refunds,
-      COALESCE(SUM(CASE WHEN refund_method = 'qr' THEN refund_total ELSE 0 END), 0) AS qr_refunds
+      COALESCE(SUM(CASE WHEN refund_method = 'card' THEN refund_total ELSE 0 END), 0) AS card_refunds
     FROM sale_returns
     WHERE status = 'completed'
       AND (
@@ -112,12 +110,10 @@ function buildSessionSnapshot(db, session) {
     voidCount: toNumber(sales.void_count),
     cashSales: roundMoney(cashSales),
     cardSales: roundMoney(toNumber(sales.card_sales)),
-    qrSales: roundMoney(toNumber(sales.qr_sales)),
     returnCount: toNumber(returns.return_count),
     refundTotal: roundMoney(toNumber(returns.refund_total)),
     cashRefunds: roundMoney(cashRefunds),
     cardRefunds: roundMoney(toNumber(returns.card_refunds)),
-    qrRefunds: roundMoney(toNumber(returns.qr_refunds)),
     expenseCount: toNumber(expenses.expense_count),
     expenseTotal: roundMoney(toNumber(expenses.expense_total)),
     cashExpenses: roundMoney(cashExpenses),

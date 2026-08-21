@@ -17,8 +17,6 @@ function ensureColumn(db, tableName, columnName, definition) {
 export function up(db) {
   ensureColumn(db, 'settings', 'shop_address', 'TEXT');
   ensureColumn(db, 'settings', 'shop_phone', 'TEXT');
-  ensureColumn(db, 'settings', 'shop_tin', 'TEXT');
-  ensureColumn(db, 'settings', 'vat_rate', 'REAL NOT NULL DEFAULT 18');
   ensureColumn(db, 'settings', 'next_invoice_seq', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'settings', 'invoice_prefix', "TEXT NOT NULL DEFAULT 'POS'");
   ensureColumn(db, 'settings', 'receipt_header', 'TEXT');
@@ -36,7 +34,6 @@ export function up(db) {
       customer_id TEXT,
       subtotal REAL NOT NULL DEFAULT 0,
       discount_total REAL NOT NULL DEFAULT 0,
-      vat_total REAL NOT NULL DEFAULT 0,
       total REAL NOT NULL DEFAULT 0,
       payment_method TEXT NOT NULL DEFAULT 'cash',
       amount_tendered REAL NOT NULL DEFAULT 0,
@@ -45,8 +42,6 @@ export function up(db) {
       void_reason TEXT,
       voided_by TEXT,
       voided_at TEXT,
-      ird_status TEXT NOT NULL DEFAULT 'none',
-      ird_uuid TEXT,
       notes TEXT,
       is_synced INTEGER NOT NULL DEFAULT 0,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -67,24 +62,11 @@ export function up(db) {
       quantity REAL NOT NULL,
       unit_price REAL NOT NULL,
       discount_amount REAL NOT NULL DEFAULT 0,
-      tax_rate REAL NOT NULL DEFAULT 0,
-      vat_amount REAL NOT NULL DEFAULT 0,
       line_total REAL NOT NULL,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(sale_id) REFERENCES sales(id),
       FOREIGN KEY(variant_id) REFERENCES product_variants(id),
       FOREIGN KEY(product_id) REFERENCES products(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS ird_invoices (
-      id TEXT PRIMARY KEY,
-      sale_id TEXT NOT NULL UNIQUE,
-      invoice_uuid TEXT NOT NULL,
-      payload_json TEXT NOT NULL,
-      qr_data TEXT,
-      status TEXT NOT NULL DEFAULT 'generated',
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(sale_id) REFERENCES sales(id)
     );
 
     CREATE INDEX IF NOT EXISTS idx_sales_sale_date ON sales(sale_date);

@@ -25,7 +25,6 @@ export function buildThermalReceiptHtml({
   const shopName = escapeHtml(shop.shopName || 'Shop');
   const address = escapeHtml(shop.shopAddress || '');
   const phone = escapeHtml(shop.shopPhone || '');
-  const tin = escapeHtml(shop.shopTin || '');
   const footer = escapeHtml(shop.receiptFooter || 'Thank you');
   const header = escapeHtml(shop.receiptHeader || '');
   const invoice = escapeHtml(sale.invoiceNumber || '');
@@ -47,9 +46,6 @@ export function buildThermalReceiptHtml({
     })
     .join('');
 
-  const qr = sale.ird?.qrData
-    ? `<img class="qr" src="${sale.ird.qrData}" alt="QR" />`
-    : '';
 
   return `<!DOCTYPE html>
 <html>
@@ -99,12 +95,6 @@ export function buildThermalReceiptHtml({
     }
     .totals .line { margin: 1px 0; }
     .total { font-weight: 700; font-size: 12px; }
-    .qr {
-      display: block;
-      width: 28mm;
-      height: 28mm;
-      margin: 4px auto 0;
-    }
     @media print {
       html, body {
         width: ${widthMm}mm;
@@ -120,7 +110,6 @@ export function buildThermalReceiptHtml({
   ${header ? `<p class="center muted">${header}</p>` : ''}
   ${address ? `<p class="center muted">${address}</p>` : ''}
   ${phone ? `<p class="center muted">Tel: ${phone}</p>` : ''}
-  ${tin ? `<p class="center muted">TIN: ${tin}</p>` : ''}
   <hr class="rule" />
   <div><strong>${invoice}</strong></div>
   ${saleDate ? `<div class="muted">${saleDate}</div>` : ''}
@@ -132,12 +121,10 @@ export function buildThermalReceiptHtml({
     <div class="line"><span>Subtotal</span><span>${money(sale.subtotal)}</span></div>
     <div class="line"><span>Discount</span><span>${Number(sale.discountTotal) > 0 ? '-' : ''}${money(sale.discountTotal)}</span></div>
     ${Number(sale.discountTotal) > 0 ? '<div class="muted">Discount applied to total purchase</div>' : ''}
-    <div class="line"><span>VAT</span><span>${money(sale.vatTotal)}</span></div>
     <div class="line total"><span>TOTAL</span><span>Rs. ${money(sale.total)}</span></div>
     <div class="line"><span>Paid (${escapeHtml(sale.paymentMethod || 'cash')})</span><span>${money(sale.amountTendered)}</span></div>
     <div class="line"><span>Change</span><span>${money(sale.changeGiven)}</span></div>
   </div>
-  ${qr}
   <p class="center muted" style="margin-top:6px">${footer}</p>
   ${Number(shop.returnWithinDays) > 0 ? `<p class="center muted">Returns accepted within ${Math.floor(Number(shop.returnWithinDays))} days</p>` : ''}
   ${autoPrint ? '<script>window.onload=function(){setTimeout(function(){window.print();},50);}</script>' : ''}
@@ -154,7 +141,6 @@ function formatSaleDateHtml(value) {
 function formatRefundMethodHtml(method) {
   const m = String(method || 'cash').toLowerCase();
   if (m === 'card') return 'Card';
-  if (m === 'qr') return 'QR';
   return 'Cash';
 }
 
@@ -169,7 +155,6 @@ export function buildThermalReturnReceiptHtml({
   const shopName = escapeHtml(shop.shopName || 'Shop');
   const address = escapeHtml(shop.shopAddress || '');
   const phone = escapeHtml(shop.shopPhone || '');
-  const tin = escapeHtml(shop.shopTin || '');
   const footer = escapeHtml(shop.receiptFooter || '');
   const header = escapeHtml(shop.receiptHeader || '');
   const returnNumber = escapeHtml(returnRecord.returnNumber || '');
@@ -267,7 +252,6 @@ export function buildThermalReturnReceiptHtml({
   ${header ? `<p class="center muted">${header}</p>` : ''}
   ${address ? `<p class="center muted">${address}</p>` : ''}
   ${phone ? `<p class="center muted">Tel: ${phone}</p>` : ''}
-  ${tin ? `<p class="center muted">TIN: ${tin}</p>` : ''}
   <hr class="rule" />
   <h2>RETURN RECEIPT</h2>
   <hr class="rule" />

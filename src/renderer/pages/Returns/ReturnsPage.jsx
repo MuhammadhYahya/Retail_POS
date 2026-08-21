@@ -235,7 +235,6 @@ export default function ReturnsPage() {
                     >
                       <option value="cash">Cash</option>
                       <option value="card">Card</option>
-                      <option value="qr">QR</option>
                     </select>
                   </div>
                   <div>

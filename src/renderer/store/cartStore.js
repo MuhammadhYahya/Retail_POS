@@ -5,7 +5,6 @@ import {
   toNumber,
   normalizeDiscountType,
   computeDiscountAmount,
-  inclusiveVat,
 } from '../lib/discountUtils.js';
 
 const DISCOUNT_NONE = DISCOUNT_TYPES.NONE;
@@ -51,7 +50,6 @@ export const useCartStore = create((set, get) => ({
           barcode: productLike.barcode || '',
           unitPrice: Number(productLike.unitPrice ?? productLike.sellingPrice ?? 0),
           costPrice: Number(productLike.costPrice ?? 0),
-          taxRate: Number(productLike.taxRate ?? productLike.product?.taxRate ?? 0),
           discountType: DISCOUNT_NONE,
           discountValue: 0,
           discountAmount: 0,
@@ -145,7 +143,6 @@ export const useCartStore = create((set, get) => ({
 
     let subtotal = 0;
     let discountTotal = 0;
-    let vatTotal = 0;
     let costTotal = 0;
 
     const rawLines = items.map((item) => {
@@ -188,9 +185,7 @@ export const useCartStore = create((set, get) => ({
         ? allocatedSaleDiscount
         : line.itemDiscountAmount;
       const lineTotal = roundMoney(Math.max(0, line.gross - discountAmount));
-      const vatAmount = inclusiveVat(lineTotal, line.taxRate);
       discountTotal = roundMoney(discountTotal + discountAmount);
-      vatTotal = roundMoney(vatTotal + vatAmount);
 
       const originalLineTotal = line.gross;
       const profit = roundMoney(lineTotal - line.unitCost * line.quantity);
@@ -199,7 +194,6 @@ export const useCartStore = create((set, get) => ({
         ...line,
         discountAmount,
         lineTotal,
-        vatAmount,
         originalLineTotal,
         profit,
         saleDiscountAllocated: allocatedSaleDiscount,
@@ -214,9 +208,7 @@ export const useCartStore = create((set, get) => ({
         const last = lines[lines.length - 1];
         last.discountAmount = roundMoney(last.discountAmount + drift);
         last.lineTotal = roundMoney(Math.max(0, last.gross - last.discountAmount));
-        last.vatAmount = inclusiveVat(last.lineTotal, last.taxRate);
         discountTotal = saleDiscountAmount;
-        vatTotal = roundMoney(lines.reduce((sum, line) => sum + line.vatAmount, 0));
       }
     }
 
@@ -228,7 +220,6 @@ export const useCartStore = create((set, get) => ({
       lines,
       subtotal,
       discountTotal,
-      vatTotal,
       total,
       costTotal,
       originalProfit,

@@ -44,7 +44,6 @@ export function up(db) {
       name TEXT NOT NULL,
       description TEXT,
       brand TEXT,
-      tax_rate REAL NOT NULL DEFAULT 0,
       category_id TEXT,
       image_urls_json TEXT NOT NULL DEFAULT '[]',
       is_active INTEGER NOT NULL DEFAULT 1,

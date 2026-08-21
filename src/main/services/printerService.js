@@ -64,7 +64,6 @@ function buildEscPosReceipt({ shop, sale, paperWidth = 80 }) {
   if (shop.receiptHeader) pushWrapped(chunks, shop.receiptHeader, chars);
   if (shop.shopAddress) pushWrapped(chunks, shop.shopAddress, chars);
   if (shop.shopPhone) chunks.push(encodeText(`Tel: ${shop.shopPhone}\n`));
-  if (shop.shopTin) chunks.push(encodeText(`TIN: ${shop.shopTin}\n`));
   chunks.push(encodeText(`${rule}\n`));
   chunks.push(Buffer.from([ESC, 0x61, 0])); // left
   chunks.push(encodeText(`Invoice: ${sale.invoiceNumber}\n`));
@@ -96,9 +95,6 @@ function buildEscPosReceipt({ shop, sale, paperWidth = 80 }) {
     chunks.push(encodeText('Discount applied to total purchase\n'));
     chunks.push(Buffer.from([ESC, 0x61, 0]));
   }
-  if (Number(sale.vatTotal) > 0) {
-    chunks.push(encodeText(`VAT: ${money(sale.vatTotal)}\n`));
-  }
   chunks.push(encodeText(`TOTAL: Rs. ${money(sale.total)}\n`));
   chunks.push(encodeText(`Paid (${sale.paymentMethod || 'cash'}): ${money(sale.amountTendered)}\n`));
   if (Number(sale.changeGiven) > 0) {
@@ -128,7 +124,6 @@ function formatSaleDate(value) {
 function formatRefundMethod(method) {
   const m = String(method || 'cash').toLowerCase();
   if (m === 'card') return 'Card';
-  if (m === 'qr') return 'QR';
   return 'Cash';
 }
 
@@ -148,7 +143,6 @@ function buildEscPosReturnReceipt({ shop, returnRecord, paperWidth = 80 }) {
   if (shop.receiptHeader) pushWrapped(chunks, shop.receiptHeader, chars);
   if (shop.shopAddress) pushWrapped(chunks, shop.shopAddress, chars);
   if (shop.shopPhone) chunks.push(encodeText(`Tel: ${shop.shopPhone}\n`));
-  if (shop.shopTin) chunks.push(encodeText(`TIN: ${shop.shopTin}\n`));
   chunks.push(encodeText(`${rule}\n`));
   chunks.push(encodeText('RETURN RECEIPT\n'));
   chunks.push(encodeText(`${rule}\n`));
@@ -247,7 +241,6 @@ function buildTestSale(shop) {
     changeGiven: 0,
     subtotal: 100,
     discountTotal: 0,
-    vatTotal: 0,
     total: 100,
     items: [
       {

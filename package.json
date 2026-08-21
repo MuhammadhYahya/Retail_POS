@@ -47,7 +47,6 @@
     "jsonwebtoken": "^9.0.3",
     "lucide-react": "^1.22.0",
     "pdfkit": "^0.19.1",
-    "qrcode": "^1.5.4",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router-dom": "^7.18.0",

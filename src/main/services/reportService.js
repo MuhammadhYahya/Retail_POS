@@ -24,12 +24,10 @@ const reportService = {
         COUNT(*) AS sale_count,
         COALESCE(SUM(CASE WHEN status = 'completed' THEN total ELSE 0 END), 0) AS revenue,
         COALESCE(SUM(CASE WHEN status = 'completed' THEN subtotal ELSE 0 END), 0) AS original_revenue,
-        COALESCE(SUM(CASE WHEN status = 'completed' THEN vat_total ELSE 0 END), 0) AS vat_total,
         COALESCE(SUM(CASE WHEN status = 'completed' THEN discount_total ELSE 0 END), 0) AS discount_total,
         COALESCE(SUM(CASE WHEN status = 'voided' THEN 1 ELSE 0 END), 0) AS void_count,
         COALESCE(SUM(CASE WHEN status = 'completed' AND payment_method = 'cash' THEN total ELSE 0 END), 0) AS cash_total,
-        COALESCE(SUM(CASE WHEN status = 'completed' AND payment_method = 'card' THEN total ELSE 0 END), 0) AS card_total,
-        COALESCE(SUM(CASE WHEN status = 'completed' AND payment_method = 'qr' THEN total ELSE 0 END), 0) AS qr_total
+        COALESCE(SUM(CASE WHEN status = 'completed' AND payment_method = 'card' THEN total ELSE 0 END), 0) AS card_total
       FROM sales
       WHERE deleted_at IS NULL
         AND sale_date >= ?
@@ -70,13 +68,11 @@ const reportService = {
       saleCount: toNumber(totals.sale_count),
       revenue: discountedRevenue,
       originalRevenue,
-      vatTotal: toNumber(totals.vat_total),
       discountTotal: toNumber(totals.discount_total),
       voidCount: toNumber(totals.void_count),
       itemsSold: toNumber(itemsSold.items_sold),
       cashTotal: toNumber(totals.cash_total),
       cardTotal: toNumber(totals.card_total),
-      qrTotal: toNumber(totals.qr_total),
       costTotal,
       originalProfit,
       discountedProfit,

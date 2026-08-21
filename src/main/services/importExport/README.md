@@ -15,7 +15,7 @@ Matching key: **SKU**, then **barcode**. Same product name on multiple rows crea
 
 ## Export
 
-Supports products, inventory, categories, suppliers, sales, purchases (GRN), returns, expenses, users, stock adjustments, low stock, and report slices (daily/VAT/profit). Formats: `.xlsx`, CSV, JSON (PDF for some reports).
+Supports products, inventory, categories, suppliers, sales, purchases (GRN), returns, expenses, users, stock adjustments, low stock, and report slices (daily/profit). Formats: `.xlsx`, CSV, JSON (PDF for some reports).
 
 ## History
 

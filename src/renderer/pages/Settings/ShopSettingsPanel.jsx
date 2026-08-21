@@ -41,30 +41,6 @@ export default function ShopSettingsPanel({ form, setForm }) {
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <label className="block text-sm font-medium mb-2">TIN / VAT number</label>
-            <input
-              className={inputClassName}
-              value={form.shopTin}
-              onChange={(e) => setForm({ ...form, shopTin: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-2">Default VAT rate (%)</label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              className={inputClassName}
-              value={form.vatRate}
-              onChange={(e) => setForm({ ...form, vatRate: e.target.value })}
-            />
-            <p className="mt-1 text-xs text-muted-foreground">
-              Applied to new products when VAT is marked Applicable on Add Product.
-            </p>
-          </div>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
             <label className="block text-sm font-medium mb-2">Invoice prefix</label>
             <input
               className={inputClassName}

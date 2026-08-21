@@ -282,9 +282,9 @@ export function importProductRows({
 
   const insertProduct = db.prepare(`
     INSERT INTO products (
-      id, name, description, brand, unit, tax_rate, category_id, supplier_id,
+      id, name, description, brand, unit, category_id, supplier_id,
       image_urls_json, is_active, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, '[]', ?, ?, ?)
   `);
   const insertVariant = db.prepare(`
     INSERT INTO product_variants (
@@ -313,7 +313,7 @@ export function importProductRows({
   `);
   const updateProduct = db.prepare(`
     UPDATE products SET
-      name = ?, description = ?, brand = ?, unit = ?, tax_rate = ?,
+      name = ?, description = ?, brand = ?, unit = ?,
       category_id = COALESCE(?, category_id),
       supplier_id = COALESCE(?, supplier_id),
       is_active = ?, updated_at = ?
@@ -332,7 +332,6 @@ export function importProductRows({
       description = COALESCE(NULLIF(?, ''), description),
       brand = COALESCE(NULLIF(?, ''), brand),
       unit = COALESCE(NULLIF(?, ''), unit),
-      tax_rate = CASE WHEN ? IS NOT NULL THEN ? ELSE tax_rate END,
       category_id = COALESCE(?, category_id),
       supplier_id = COALESCE(?, supplier_id),
       updated_at = ?
@@ -416,7 +415,6 @@ export function importProductRows({
         const stock = data.stockOnHand != null ? toNumber(data.stockOnHand, 0) : null;
         const sellingPrice = data.sellingPrice != null ? toNumber(data.sellingPrice, 0) : 0;
         const costPrice = data.costPrice != null ? toNumber(data.costPrice, 0) : 0;
-        const taxRate = data.taxRate != null ? toNumber(data.taxRate, 0) : 0;
         const lowStock = data.lowStockAlert != null ? Math.max(0, toNumber(data.lowStockAlert, 0)) : 0;
         const isActive = data.isActive === false ? 0 : 1;
         const attrsJson = JSON.stringify(data.attributes || {});
@@ -437,7 +435,6 @@ export function importProductRows({
               data.description || null,
               data.brand || null,
               data.unit || null,
-              taxRate,
               categoryId,
               supplierId,
               isActive,
@@ -480,8 +477,6 @@ export function importProductRows({
               data.description || '',
               data.brand || '',
               data.unit || '',
-              data.taxRate,
-              data.taxRate,
               categoryId,
               supplierId,
               ts,
@@ -573,7 +568,6 @@ export function importProductRows({
             data.description || null,
             data.brand || null,
             data.unit || null,
-            taxRate,
             categoryId,
             supplierId,
             isActive,
@@ -589,7 +583,6 @@ export function importProductRows({
             data.description || null,
             data.brand || null,
             data.unit || null,
-            taxRate,
             categoryId,
             supplierId,
             isActive,

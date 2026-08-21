@@ -167,9 +167,6 @@ registerEntity({
     if (filters.outOfStockOnly) {
       clauses.push('COALESCE(b.on_hand, 0) <= 0');
     }
-    if (filters.vatOnly) {
-      clauses.push('COALESCE(p.tax_rate, 0) > 0');
-    }
 
     const hasSupplierCol = db
       .prepare(`PRAGMA table_info(products)`)
@@ -187,7 +184,6 @@ registerEntity({
           p.name AS productName,
           p.brand,
           p.description,
-          p.tax_rate AS taxRate,
           p.unit,
           c.name AS categoryName,
           ${supplierSelect}
@@ -241,7 +237,6 @@ registerEntity({
       categoryName: row.categoryName || row.category || '',
       brand: row.brand || '',
       description: row.description || '',
-      taxRate: row.taxRate ?? row.tax_rate ?? row.vat,
       lowStockAlert: row.lowStockAlert ?? row.low_stock_alert,
       unit: row.unit || '',
       variantName: row.variantName || row.variant || '',
@@ -361,7 +356,6 @@ registerEntity({
           s.invoice_number AS invoiceNumber,
           s.sale_date AS saleDate,
           s.subtotal,
-          s.vat_total AS taxTotal,
           s.total AS grandTotal,
           s.payment_method AS paymentMethod,
           s.status,
@@ -423,10 +417,8 @@ registerEntity({
         shop_name = COALESCE(?, shop_name),
         shop_address = COALESCE(?, shop_address),
         shop_phone = COALESCE(?, shop_phone),
-        shop_tin = COALESCE(?, shop_tin),
         currency = COALESCE(?, currency),
         language = COALESCE(?, language),
-        vat_rate = COALESCE(?, vat_rate),
         invoice_prefix = COALESCE(?, invoice_prefix),
         receipt_header = COALESCE(?, receipt_header),
         receipt_footer = COALESCE(?, receipt_footer),
@@ -436,10 +428,8 @@ registerEntity({
       row.shop_name ?? row.shopName ?? null,
       row.shop_address ?? row.shopAddress ?? null,
       row.shop_phone ?? row.shopPhone ?? null,
-      row.shop_tin ?? row.shopTin ?? null,
       row.currency ?? null,
       row.language ?? null,
-      row.vat_rate ?? row.vatRate ?? null,
       row.invoice_prefix ?? row.invoicePrefix ?? null,
       row.receipt_header ?? row.receiptHeader ?? null,
       row.receipt_footer ?? row.receiptFooter ?? null,
@@ -466,16 +456,6 @@ registerEntity({
         return d.toISOString().slice(0, 10);
       })();
       return reportService.salesByDay(from, to);
-    }
-    if (reportType === 'vatReport') {
-      const day = date || colomboDateString();
-      const summary = reportService.dailySummary(day);
-      return [{
-        date: summary.date,
-        revenue: summary.revenue,
-        vatTotal: summary.vatTotal,
-        saleCount: summary.saleCount,
-      }];
     }
     if (reportType === 'profitReport') {
       const day = date || colomboDateString();

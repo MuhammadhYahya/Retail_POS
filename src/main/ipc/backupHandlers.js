@@ -197,29 +197,6 @@ export function registerBackupHandlers(startupState = null) {
     }
   });
 
-  ipcMain.handle('data:startFresh', async (event, payload = {}) => {
-    try {
-      const data = await backupService.startFresh({
-        token: extractToken(payload),
-        pin: payload.pin,
-      });
-      setTimeout(() => { app.relaunch(); app.exit(0); }, 1200);
-      return { success: true, data };
-    } catch (err) {
-      return { success: false, error: err.message };
-    }
-  });
-
-  ipcMain.handle('data:deleteAll', async (event, payload = {}) => {
-    try {
-      const data = await backupService.deleteAllData({ token: extractToken(payload), pin: payload.pin });
-      setTimeout(() => { app.relaunch(); app.exit(0); }, 1200);
-      return { success: true, data };
-    } catch (err) {
-      return { success: false, error: err.message };
-    }
-  });
-
 }
 
 export function registerDialogHandlers() {

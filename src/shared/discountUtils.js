@@ -1,4 +1,4 @@
-/** Shared money/VAT/discount helpers — cart preview and sale persist must stay in sync. */
+/** Shared discount helpers — cart preview and sale persist must stay in sync. */
 
 export const DISCOUNT_TYPES = {
   NONE: 'none',
@@ -9,7 +9,6 @@ export const DISCOUNT_TYPES = {
 export function roundMoney(value) {
   return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 }
-
 export function toNumber(value, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -64,11 +63,4 @@ export function assertDiscountWithinLimit({ role, settings, baseAmount, discount
       `${label} exceeds your limit of ${maxPct}%. Ask a manager or admin for a larger discount.`
     );
   }
-}
-
-export function inclusiveVat(amount, taxRatePercent) {
-  const rate = toNumber(taxRatePercent, 0);
-  const total = toNumber(amount, 0);
-  if (rate <= 0 || total <= 0) return 0;
-  return roundMoney((total * rate) / (100 + rate));
 }

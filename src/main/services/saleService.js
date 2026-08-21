@@ -7,7 +7,6 @@ import {
   DISCOUNT_TYPES,
   assertDiscountWithinLimit,
   computeDiscountAmount,
-  inclusiveVat,
   normalizeDiscountType,
   roundMoney,
   toNumber,
@@ -86,7 +85,6 @@ function loadVariantForSale(db, variantId) {
       v.is_active AS variant_is_active,
       v.deleted_at AS variant_deleted_at,
       p.name AS product_name,
-      p.tax_rate,
       p.is_active AS product_is_active,
       p.deleted_at AS product_deleted_at,
       COALESCE(b.available, 0) AS available
@@ -120,8 +118,6 @@ function mapSaleItem(item) {
     discountType: normalizeDiscountType(item.discount_type),
     discountValue: toNumber(item.discount_value),
     discountAmount,
-    taxRate: toNumber(item.tax_rate),
-    vatAmount: toNumber(item.vat_amount),
     lineTotal,
     originalLineTotal,
     profit: roundMoney(lineTotal - unitCost * quantity),
@@ -147,7 +143,6 @@ function mapSaleRow(row, items = []) {
     customerId: row.customer_id,
     subtotal,
     discountTotal: toNumber(row.discount_total),
-    vatTotal: toNumber(row.vat_total),
     total,
     costTotal,
     originalProfit: roundMoney(subtotal - costTotal),
@@ -161,8 +156,6 @@ function mapSaleRow(row, items = []) {
     voidReason: row.void_reason,
     voidedBy: row.voided_by,
     voidedAt: row.voided_at,
-    irdStatus: row.ird_status,
-    irdUuid: row.ird_uuid,
     notes: row.notes,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -190,21 +183,19 @@ function saleSelectWithCashier(whereSql = 'WHERE s.deleted_at IS NULL') {
 }
 
 const saleService = {
-  calculateCartTotals(cartItems = [], saleDiscount = {}, fallbackVatRate = 18) {
+  calculateCartTotals(cartItems = [], saleDiscount = {}) {
     const saleDiscountType = normalizeDiscountType(saleDiscount.type || saleDiscount.saleDiscountType);
     const saleDiscountValue = toNumber(saleDiscount.value ?? saleDiscount.saleDiscountValue, 0);
     const useSaleDiscount = saleDiscountType !== DISCOUNT_TYPES.NONE && saleDiscountValue > 0;
 
     let subtotal = 0;
     let discountTotal = 0;
-    let vatTotal = 0;
     let costTotal = 0;
 
     const rawLines = cartItems.map((item) => {
       const quantity = toNumber(item.quantity, 0);
       const unitPrice = toNumber(item.unitPrice ?? item.sellingPrice, 0);
       const unitCost = toNumber(item.unitCost ?? item.costPrice, 0);
-      const taxRate = toNumber(item.taxRate, fallbackVatRate);
       const gross = roundMoney(quantity * unitPrice);
 
       const lineDiscountType = useSaleDiscount
@@ -229,7 +220,6 @@ const saleService = {
         quantity,
         unitPrice,
         unitCost,
-        taxRate,
         gross,
         discountType: lineDiscountType === DISCOUNT_TYPES.NONE && itemDiscountAmount > 0
           ? DISCOUNT_TYPES.FIXED
@@ -252,15 +242,12 @@ const saleService = {
         : line.itemDiscountAmount;
 
       const lineTotal = roundMoney(Math.max(0, line.gross - discountAmount));
-      const vatAmount = inclusiveVat(lineTotal, line.taxRate > 0 ? line.taxRate : 0);
       discountTotal = roundMoney(discountTotal + discountAmount);
-      vatTotal = roundMoney(vatTotal + vatAmount);
 
       return {
         ...line,
         discountAmount,
         lineTotal,
-        vatAmount,
         originalLineTotal: line.gross,
         profit: roundMoney(lineTotal - line.unitCost * line.quantity),
       };
@@ -273,9 +260,7 @@ const saleService = {
         const last = lines[lines.length - 1];
         last.discountAmount = roundMoney(last.discountAmount + drift);
         last.lineTotal = roundMoney(Math.max(0, last.gross - last.discountAmount));
-        last.vatAmount = inclusiveVat(last.lineTotal, last.taxRate);
         discountTotal = saleDiscountAmount;
-        vatTotal = roundMoney(lines.reduce((sum, line) => sum + line.vatAmount, 0));
       }
     }
 
@@ -284,7 +269,6 @@ const saleService = {
       lines,
       subtotal,
       discountTotal,
-      vatTotal,
       total,
       costTotal,
       originalProfit: roundMoney(subtotal - costTotal),
@@ -312,7 +296,7 @@ const saleService = {
     const openSession = cashSessionService.assertSessionAllowsPosting();
 
     const paymentMethod = cleanText(payment.method || payment.paymentMethod || 'cash').toLowerCase() || 'cash';
-    const allowedMethods = new Set(['cash', 'card', 'qr']);
+    const allowedMethods = new Set(['cash', 'card']);
     if (!allowedMethods.has(paymentMethod)) {
       throw new Error('Unsupported payment method.');
     }
@@ -346,7 +330,6 @@ const saleService = {
         unitPrice: item.unitPrice,
         discountType,
         discountValue,
-        taxRate: item.taxRate,
       };
     });
 
@@ -382,11 +365,6 @@ const saleService = {
         if (unitPrice < 0) throw new Error('Unit price cannot be negative.');
         if (unitPrice <= 0) throw new Error(`Selling price must be greater than 0 for ${variant.product_name}.`);
 
-        const taxRate =
-          item.taxRate !== undefined && item.taxRate !== null && item.taxRate !== ''
-            ? toNumber(item.taxRate, 0)
-            : toNumber(variant.tax_rate, 0);
-
         const gross = roundMoney(quantity * unitPrice);
         if (!useSaleDiscount && item.discountType !== DISCOUNT_TYPES.NONE) {
           const lineDiscount = computeDiscountAmount(gross, item.discountType, item.discountValue);
@@ -412,7 +390,6 @@ const saleService = {
           unitPrice,
           discountType: item.discountType,
           discountValue: item.discountValue,
-          taxRate,
         };
       });
 
@@ -425,7 +402,7 @@ const saleService = {
           type: useSaleDiscount ? incomingSaleType : DISCOUNT_TYPES.NONE,
           value: useSaleDiscount ? incomingSaleValue : 0,
         },
-        settings.vatRate
+
       );
 
       if (useSaleDiscount) {
@@ -438,7 +415,7 @@ const saleService = {
         });
       }
 
-      const { lines, subtotal, discountTotal, vatTotal, total } = totals;
+      const { lines, subtotal, discountTotal, total } = totals;
 
       const amountTendered =
         paymentMethod === 'cash'
@@ -467,11 +444,11 @@ const saleService = {
       db.prepare(`
         INSERT INTO sales (
           id, invoice_number, invoice_seq, sale_date, cashier_id, customer_id,
-          subtotal, discount_total, vat_total, total,
+          subtotal, discount_total, total,
           payment_method, amount_tendered, change_given, status,
-          ird_status, notes, created_at, updated_at,
+          notes, created_at, updated_at,
           sale_discount_type, sale_discount_value, session_id
-        ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, 'completed', 'none', ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?)
       `).run(
         saleId,
         invoiceNumber,
@@ -480,7 +457,6 @@ const saleService = {
         cleanCashierId,
         subtotal,
         discountTotal,
-        vatTotal,
         total,
         paymentMethod,
         amountTendered,
@@ -496,9 +472,9 @@ const saleService = {
       const insertItem = db.prepare(`
         INSERT INTO sale_items (
           id, sale_id, variant_id, product_id, product_name, variant_name,
-          sku, barcode, quantity, unit_price, discount_amount, tax_rate, vat_amount, line_total, created_at,
+          sku, barcode, quantity, unit_price, discount_amount, line_total, created_at,
           discount_type, discount_value, unit_cost, original_line_total
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       for (const line of lines) {
@@ -519,8 +495,6 @@ const saleService = {
           line.quantity,
           line.unitPrice,
           line.discountAmount,
-          line.taxRate,
-          line.vatAmount,
           line.lineTotal,
           timestamp,
           storedDiscountType,
@@ -687,12 +661,6 @@ const saleService = {
     return this.getById(id);
   },
 
-  updateIrdStatus(saleId, { irdStatus, irdUuid }) {
-    const db = getDb();
-    db.prepare(`
-      UPDATE sales SET ird_status = ?, ird_uuid = ?, updated_at = ? WHERE id = ?
-    `).run(irdStatus, irdUuid || null, now(), saleId);
-  },
 };
 
 export default saleService;

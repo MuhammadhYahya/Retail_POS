@@ -31,7 +31,6 @@ console.log('columnMapper');
     'Qty',
     'Category',
     'Supplier',
-    'VAT %',
     'Reorder',
     'Size',
     'Colour',
@@ -43,7 +42,6 @@ console.log('columnMapper');
   assert(result.mapping['Buying Price'] === 'costPrice', 'maps Buying Price → cost');
   assert(result.mapping['Retail Price'] === 'sellingPrice', 'maps Retail Price → selling');
   assert(result.mapping['Qty'] === 'stockOnHand', 'maps Qty → stock');
-  assert(result.mapping['VAT %'] === 'taxRate', 'maps VAT % → taxRate');
   assert(result.mapping['Colour'] === 'color', 'maps Colour → color');
   assert(result.requiredMissing.length === 0, 'no required fields missing when Name mapped');
 
@@ -66,7 +64,6 @@ console.log('validationEngine');
       sellingPrice: 100,
       costPrice: 50,
       stockOnHand: 5,
-      taxRate: 18,
       categoryName: 'Drinks',
     },
     {

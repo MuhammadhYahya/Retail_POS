@@ -16,7 +16,7 @@
 | HTML fallback | Reprint only (before fix pass); auto-print had no fallback |
 | Return receipts | Missing |
 | Z-report thermal | Missing (browser print only) |
-| Thermal QR / barcode | Missing on ESC/POS |
+| Thermal barcode | Missing on ESC/POS |
 | Sinhala/Tamil on thermal | Not supported (ASCII → `?`) |
 | Production debug stripped | Required before ship |
 
@@ -79,7 +79,7 @@ UI Button (Complete Sale / Reprint)
 | Feed + cut | Prefer `GS V 65 n` (feed-and-cut) for XP-80U |
 | `1B 70 00 19 FA` | Drawer kick pin 2 |
 
-**Not used on thermal:** QR (`GS ( k`), barcode (`GS k`), raster logo, bold/double-width, Sinhala/Tamil code pages.
+**Not used on thermal:** barcode (`GS k`), raster logo, bold/double-width, Sinhala/Tamil code pages.
 
 ### Paper width
 
@@ -92,12 +92,10 @@ UI Button (Complete Sale / Reprint)
 
 `toPrinterText()` NFKD-normalizes then strips non-ASCII to `?`. Thermal path cannot render Sinhala/Tamil. HTML fallback keeps Unicode.
 
-### QR / barcode
+### Barcode
 
 | Path | Behavior |
 |------|----------|
-| IRD QR | Generated in `irdService`, shown on Billing success UI and HTML receipt |
-| ESC/POS thermal | No QR (deferred) |
 | Product barcode on receipt | Not printed |
 | Labels page | Decorative CSS bars + browser print (not Code128) |
 
@@ -127,7 +125,6 @@ Order: receipt → feed/cut → `ESC p` kick. Gated on cash payment. Reprint sho
 | 2 | Software truncation looks like cut-off | `line()` sliced names/address with no wrap |
 | 3 | Variant line hidden | `productName \|\| variantName` drops variant when product name set |
 | 4 | Non-ASCII → `?` | Sinhala/Tamil shop text mangled |
-| 5 | Expected QR absent on thermal | IRD QR not in ESC/POS; `getById` omits `ird.qrData` |
 | 6 | Buffer truncate | Unlikely — Windows path checks full `WritePrinter` length |
 
 Secondary: no auto HTML fallback, no reprint debounce, PowerShell hang without timeout, agent debug instrumentation in production path.
@@ -146,7 +143,6 @@ Secondary: no auto HTML fallback, no reprint debounce, PowerShell hang without t
 | Auto-print no HTML fallback | High | `BillingPage.jsx` | Same fallback as Reprint |
 | Reprint spam + double drawer | High | `BillingPage.jsx` | Debounce; `openDrawer: false` on reprint |
 | No Settings test print | Medium | Settings / IPC | Add `printer:testPrint` |
-| Thermal QR missing | Medium | ESC/POS + sale load | Defer ESC/POS QR |
 | Return receipt missing | Medium | Returns module | Defer |
 | Z-report not thermal | Medium | `DayClosePage.jsx` | Defer (browser OK short-term) |
 | Sinhala/Tamil thermal | Medium | Encoding | Defer / document ASCII-only |
@@ -159,7 +155,7 @@ Secondary: no auto HTML fallback, no reprint debounce, PowerShell hang without t
 
 ## Missing Features
 
-- ESC/POS QR / barcode on thermal receipt
+- ESC/POS barcode on thermal receipt
 - Return slip printing
 - Z / X report ESC/POS
 - Historical Z reprint UI (IPC `cashSession:getZ` exists, no UI)
@@ -183,7 +179,6 @@ Secondary: no auto HTML fallback, no reprint debounce, PowerShell hang without t
 6. Settings test print  
 
 ### Medium
-7. Thermal QR  
 8. Return receipts  
 9. Z ESC/POS (optional if browser print accepted)  
 
@@ -196,7 +191,7 @@ Secondary: no auto HTML fallback, no reprint debounce, PowerShell hang without t
 
 Print a sale containing:
 
-**Header:** Business name, address, phone, TIN/VAT, invoice #, date/time, cashier  
+**Header:** Business name, address, phone, invoice #, date/time, cashier
 
 **Products:**
 - Normal product  
@@ -204,12 +199,11 @@ Print a sale containing:
 - Product with variant  
 - Product with barcode (field stored; thermal text optional)  
 - Discount item  
-- VAT item / non-VAT item  
 - Multiple quantities  
 
 **Payment:** Cash and/or card; tendered + change  
 
-**Footer:** Thank you / return policy; QR expected on HTML path (thermal deferred)  
+**Footer:** Thank you / return policy
 
 **Verify:** Nothing cut off, all lines print, alignment OK, `Rs.` money formatting, English ASCII OK; Sinhala/Tamil → document limitation on thermal.
 
@@ -247,13 +241,13 @@ A shop owner should be able to:
 ## POS function notes
 
 ### Sales
-Invoice `PREFIX-YYYYMMDD-######`, discounts, VAT-inclusive totals, stock deduct, cash/card/qr payments — wired to thermal print after `sale:create`.
+Invoice `PREFIX-YYYYMMDD-######`, discounts, totals, stock deduct, cash/card payments — wired to thermal print after `sale:create`.
 
 ### Returns
 Creates `RET-…`, stock `return_in`, refunds in Z math — **no print**.
 
 ### Day Close / Z
-Totals include cash/card/qr, refunds, expenses, variance — browser print only; popup block = silent fail historically.
+Totals include cash/card, refunds, expenses, variance — browser print only; popup block = silent fail historically.
 
 ### Expenses
 Included in Z/X expected cash; not in `ReportsPage` daily summary.

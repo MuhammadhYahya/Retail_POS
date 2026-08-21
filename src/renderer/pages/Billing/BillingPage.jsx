@@ -145,7 +145,6 @@ export default function BillingPage() {
       barcode: variant.barcode,
       sellingPrice: variant.sellingPrice,
       costPrice: variant.costPrice,
-      taxRate: variant.product?.taxRate ?? 0,
     });
     setBarcode('');
     barcodeRef.current?.focus();
@@ -171,7 +170,6 @@ export default function BillingPage() {
       barcode: variant.barcode,
       sellingPrice: variant.sellingPrice,
       costPrice: variant.costPrice,
-      taxRate: variant.product?.taxRate ?? 0,
     });
     setCatalogOpen(false);
     setCatalogQuery('');
@@ -279,7 +277,6 @@ export default function BillingPage() {
         unitPrice: item.unitPrice,
         discountType: item.discountType,
         discountValue: item.discountValue,
-        taxRate: item.taxRate,
       })),
       saleDiscount: {
         type: saleDiscountType,
@@ -598,11 +595,10 @@ export default function BillingPage() {
             <p className="text-xs text-muted-foreground">Choose customer checkout method</p>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             {[
               { id: 'cash', label: 'Cash', activeBg: 'bg-emerald-500/15 border-emerald-500 text-emerald-500 font-bold' },
               { id: 'card', label: 'Card', activeBg: 'bg-violet-500/15 border-violet-500 text-violet-500 font-bold' },
-              { id: 'qr', label: 'QR Pay', activeBg: 'bg-amber-500/15 border-amber-500 text-amber-500 font-bold' },
             ].map(({ id, label, activeBg }) => {
               const isActive = paymentMethod === id;
               return (
@@ -670,10 +666,6 @@ export default function BillingPage() {
             <div className="flex justify-between font-semibold">
               <span className="text-muted-foreground">Discount</span>
               <span className="text-foreground">{formatMoney(totals.discountTotal)}</span>
-            </div>
-            <div className="flex justify-between font-semibold">
-              <span className="text-muted-foreground">VAT (incl.)</span>
-              <span className="text-foreground">{formatMoney(totals.vatTotal)}</span>
             </div>
             <div className="flex justify-between text-lg font-black pt-3 border-t border-border border-dashed">
               <span className="text-foreground">Grand Total</span>
@@ -870,14 +862,6 @@ export default function BillingPage() {
                 <span className="font-black text-emerald-500 text-base">{formatMoney(completedSale.changeGiven)}</span>
               </div>
 
-              {completedSale.ird?.qrData && (
-                <div className="pt-4 flex flex-col items-center justify-center">
-                  <div className="p-3 bg-white rounded-xl shadow-sm border border-border/40">
-                    <img src={completedSale.ird.qrData} alt="Invoice QR" className="h-32 w-32 object-contain" />
-                  </div>
-                  <span className="text-[10px] text-muted-foreground font-semibold mt-2 tracking-wider">LOCAL INVOICE QR</span>
-                </div>
-              )}
             </div>
           )}
 

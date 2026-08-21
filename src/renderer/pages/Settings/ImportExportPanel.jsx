@@ -61,7 +61,6 @@ export default function ImportExportPanel({ onMessage, onError }) {
   const [exportDateTo, setExportDateTo] = useState('');
   const [exportReportType, setExportReportType] = useState('dailySummary');
   const [exportLowStock, setExportLowStock] = useState(false);
-  const [exportVatOnly, setExportVatOnly] = useState(false);
 
   // Wizard state
   const [wizardOpen, setWizardOpen] = useState(false);
@@ -300,7 +299,6 @@ export default function ImportExportPanel({ onMessage, onError }) {
     if (exportActiveFilter === 'active') filters.activeOnly = true;
     if (exportActiveFilter === 'inactive') filters.inactiveOnly = true;
     if (exportLowStock) filters.lowStockOnly = true;
-    if (exportVatOnly) filters.vatOnly = true;
 
     const res = await invokeWithAuth('export:run', {
       entityId: exportEntity,
@@ -422,14 +420,6 @@ export default function ImportExportPanel({ onMessage, onError }) {
                     />
                     Low stock only
                   </label>
-                  <label className="flex items-center gap-2 text-sm mt-8">
-                    <input
-                      type="checkbox"
-                      checked={exportVatOnly}
-                      onChange={(e) => setExportVatOnly(e.target.checked)}
-                    />
-                    VAT items only
-                  </label>
                 </>
               )}
             </div>
@@ -446,7 +436,6 @@ export default function ImportExportPanel({ onMessage, onError }) {
                 <option value="dailySummary">Daily sales summary</option>
                 <option value="salesByDay">Sales by day</option>
                 <option value="monthlySales">Monthly sales trend</option>
-                <option value="vatReport">VAT report</option>
                 <option value="profitReport">Profit report</option>
                 <option value="lowStock">Low stock</option>
                 <option value="topProducts">Top products</option>

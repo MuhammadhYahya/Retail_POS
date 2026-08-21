@@ -60,7 +60,7 @@ function StartupDataGate() {
         ) : (
           <>
             <h1 className="text-xl font-semibold">Existing ZEN data found</h1>
-            <p className="mt-2 text-sm text-muted-foreground">Continue with this shop, or sign in as an administrator to start fresh.</p>
+            <p className="mt-2 text-sm text-muted-foreground">Continue with this shop or sign in as an administrator.</p>
             <div className="mt-6 flex flex-col gap-3">
               <button className="rounded-lg bg-primary px-4 py-3 font-semibold text-primary-foreground" onClick={useExisting} disabled={busy}>Use Existing Data</button>
               <button className="rounded-lg border border-border px-4 py-3 font-semibold" onClick={continueToLogin} disabled={busy}>Continue to Admin Login</button>

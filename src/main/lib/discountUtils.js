@@ -1,4 +1,4 @@
-/** Main-process discount/VAT helpers — re-exports shared math. */
+/** Main-process discount helpers — re-exports shared math. */
 export {
   DISCOUNT_TYPES,
   roundMoney,
@@ -8,5 +8,4 @@ export {
   discountAsPercent,
   maxDiscountPercentForRole,
   assertDiscountWithinLimit,
-  inclusiveVat,
 } from '../../shared/discountUtils.js';

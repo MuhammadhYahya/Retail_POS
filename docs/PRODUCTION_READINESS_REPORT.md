@@ -10,7 +10,7 @@
 | Domain | Status | Notes |
 |--------|--------|-------|
 | Printing (XP-80U) | Code ready — needs hardware sign-off | Feed-and-cut, wrap, debug strip, fallback, timeout, test print |
-| Sales / billing | Ready (core) | Stock, VAT, discounts, payments OK |
+| Sales / billing | Ready (core) | Stock, discounts, cash/card payments OK |
 | Returns | Partial | Logic OK; no print |
 | Day close / Z | Partial | Browser print only |
 | Backup / restore | Ready | Printer settings in DB survive restore |
@@ -60,7 +60,7 @@ Critical path: Billing → IPC → `printerService` → COM or Windows RAW → X
 
 Blockers addressed in fix pass: debug instrumentation, feed-and-cut, line wrap, variant line, PowerShell timeout, auto HTML fallback, reprint debounce, Settings test print.
 
-Deferred: thermal QR, return slips, Z ESC/POS, Sinhala/Tamil thermal fonts.
+Deferred: return slips, Z ESC/POS, Sinhala/Tamil thermal fonts.
 
 ---
 
@@ -68,7 +68,6 @@ Deferred: thermal QR, return slips, Z ESC/POS, Sinhala/Tamil thermal fonts.
 
 1. **Hardware variance** — XP-80U firmware may still need cut `n` tuning after feed-and-cut change.  
 2. **ASCII-only thermal text** — Non-English shop names print as `?`.  
-3. **No thermal QR** — Fiscal/IRD QR only on screen / HTML.  
 4. **Z-report popup blockers** — Browser print can fail silently if not handled.  
 5. **Restored printer name** — May not exist on a different PC after restore.  
 6. **PowerShell dependency** — Windows RAW path requires `powershell.exe`.  

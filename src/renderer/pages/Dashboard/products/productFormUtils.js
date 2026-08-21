@@ -158,7 +158,6 @@ function productToForm(product, { step = 1 } = {}) {
         sizeMode: 'numeric',
         activeGroupId: '',
       };
-  const taxRate = Number(product.taxRate ?? 0);
   const unitValue = product.unit || '';
 
   return {
@@ -169,8 +168,6 @@ function productToForm(product, { step = 1 } = {}) {
     brand: product.brand || '',
     unit: unitValue,
     unitSelect: resolveUnitSelectValue(unitValue),
-    vatApplicable: taxRate > 0,
-    taxRate: String(taxRate),
     categoryId: product.categoryId || '',
     imageUrls: Array.isArray(product.imageUrls) ? [...product.imageUrls] : [],
     variantMode: isMatrix ? 'matrix' : 'single',
@@ -229,9 +226,7 @@ function productToForm(product, { step = 1 } = {}) {
   };
 }
 
-function emptyProductForm(categoryId = '', { defaultVatRate = 0 } = {}) {
-  const rate = Number(defaultVatRate);
-  const vatApplicable = Number.isFinite(rate) && rate > 0;
+function emptyProductForm(categoryId = '') {
   return {
     id: null,
     step: 1,
@@ -240,8 +235,6 @@ function emptyProductForm(categoryId = '', { defaultVatRate = 0 } = {}) {
     brand: '',
     unit: '',
     unitSelect: '',
-    vatApplicable,
-    taxRate: vatApplicable ? String(rate) : '0',
     categoryId: categoryId || '',
     imageUrls: [],
     variantMode: 'single',
@@ -470,13 +463,11 @@ function collectProductSoftWarnings(form) {
 }
 
 function prepareProductPayload(form) {
-  const taxRate = form.vatApplicable ? Number(form.taxRate || 0) : 0;
   const base = {
     name: cleanText(form.name),
     description: cleanText(form.description) || undefined,
     brand: cleanText(form.brand) || undefined,
     unit: cleanText(form.unit) || undefined,
-    taxRate: Number.isFinite(taxRate) ? taxRate : 0,
     categoryId: form.categoryId || undefined,
     imageUrls: form.imageUrls,
   };

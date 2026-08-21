@@ -191,12 +191,6 @@ export default function ReportsPage() {
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription>VAT collected</CardDescription>
-              <CardTitle>{formatMoney(summary?.vatTotal)}</CardTitle>
-            </CardHeader>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
               <CardDescription>Discounts given</CardDescription>
               <CardTitle>{formatMoney(summary?.discountTotal)}</CardTitle>
             </CardHeader>
@@ -318,7 +312,6 @@ export default function ReportsPage() {
               <p>Sales: {summary.saleCount}</p>
               <p>Voids: {summary.voidCount}</p>
               <p>Card: {formatMoney(summary.cardTotal)}</p>
-              <p>QR: {formatMoney(summary.qrTotal)}</p>
               <p>Cost of goods: {formatMoney(summary.costTotal)}</p>
               <p>Profit before discount: {formatMoney(summary.originalProfit)}</p>
             </CardContent>

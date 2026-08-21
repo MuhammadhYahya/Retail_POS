@@ -84,9 +84,7 @@ async function main() {
     shopName: 'Nimal Stores',
     shopAddress: 'Colombo 05',
     shopPhone: '0112345678',
-    shopTin: '123456789',
     currency: 'LKR',
-    vatRate: 18,
     receiptFooter: 'Thank you — Nimal Stores',
   });
 
@@ -97,7 +95,6 @@ async function main() {
       name: `Item ${i}`,
       brand: i % 2 ? 'Anchor' : 'MD',
       categoryId: cat.id,
-      taxRate: 18,
       unit: 'pcs',
       variants: [
         {
@@ -166,7 +163,7 @@ async function main() {
     saleService.createSale({
       cartItems: [{ variantId: p.variants[0].id, quantity: 1 }],
       payment: {
-        method: i % 5 === 0 ? 'card' : i % 7 === 0 ? 'qr' : 'cash',
+        method: i % 5 === 0 ? 'card' : 'cash',
         amountTendered: price + 500,
       },
       cashierId: adminId,

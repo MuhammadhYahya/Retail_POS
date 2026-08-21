@@ -47,7 +47,6 @@ export default function ProductsManagement() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [dialogError, setDialogError] = useState('');
-  const [defaultVatRate, setDefaultVatRate] = useState(18);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategoryId, setSelectedCategoryId] = useState(null);
   const [dateFromDraft, setDateFromDraft] = useState('');
@@ -89,10 +88,9 @@ export default function ProductsManagement() {
     setError('');
 
     try {
-      const [productsResponse, categoriesResponse, settingsResponse] = await Promise.all([
+      const [productsResponse, categoriesResponse] = await Promise.all([
         invokeWithAuth('product:getAll'),
         invokeWithAuth('category:getAll'),
-        invokeWithAuth('settings:get'),
       ]);
 
       if (productsResponse.success) {
@@ -109,10 +107,6 @@ export default function ProductsManagement() {
         setError(categoriesResponse.error || 'Failed to load categories');
       }
 
-      if (settingsResponse.success) {
-        const rate = Number(settingsResponse.data?.vatRate);
-        if (Number.isFinite(rate) && rate >= 0) setDefaultVatRate(rate);
-      }
     } catch (err) {
       console.error(err);
       setError('Failed to load product data');
@@ -237,7 +231,7 @@ export default function ProductsManagement() {
     if (!isAdmin) return;
     setDialogError('');
     setError('');
-    setForm(emptyProductForm(categoryId || selectedCategoryId || '', { defaultVatRate }));
+    setForm(emptyProductForm(categoryId || selectedCategoryId || ''));
     setProductDialogOpen(true);
   };
 
@@ -605,13 +599,6 @@ export default function ProductsManagement() {
       return;
     }
 
-    if (form.vatApplicable) {
-      const rate = Number(form.taxRate);
-      if (!Number.isFinite(rate) || rate <= 0) {
-        setDialogError('Enter a VAT rate greater than 0, or mark VAT as not applicable.');
-        return;
-      }
-    }
 
     if (form.variantMode === 'matrix' && !form.variantRows.length) {
       setDialogError('Generate at least one variant before saving.');
@@ -668,7 +655,7 @@ export default function ProductsManagement() {
 
     if (response.success) {
       setProductDialogOpen(false);
-      setForm(emptyProductForm('', { defaultVatRate }));
+      setForm(emptyProductForm(''));
       const baseMsg = form.id ? 'Product updated successfully.' : 'Product added successfully.';
       notifySuccess(softWarnings.length ? `${baseMsg} ${softWarnings[0]}` : baseMsg);
       loadData();
@@ -1027,7 +1014,6 @@ export default function ProductsManagement() {
             handleSaveProduct={handleSaveProduct}
             updateForm={updateForm}
             categories={categories}
-            defaultVatRate={defaultVatRate}
             imageInputRef={imageInputRef}
             handleImageFiles={handleImageFiles}
             removeImage={removeImage}

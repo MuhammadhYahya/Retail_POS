@@ -52,7 +52,7 @@ const returnService = {
     }
 
     const method = cleanText(refundMethod).toLowerCase() || 'cash';
-    if (!['cash', 'card', 'qr'].includes(method)) {
+    if (!['cash', 'card'].includes(method)) {
       throw new Error('Unsupported refund method.');
     }
 

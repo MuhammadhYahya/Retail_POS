@@ -61,7 +61,7 @@ const expenseService = {
     if (value <= 0) throw new Error('Expense amount must be greater than zero.');
 
     const method = cleanText(paymentMethod).toLowerCase() || 'cash';
-    if (!['cash', 'card', 'qr'].includes(method)) {
+    if (!['cash', 'card'].includes(method)) {
       throw new Error('Unsupported payment method.');
     }
 

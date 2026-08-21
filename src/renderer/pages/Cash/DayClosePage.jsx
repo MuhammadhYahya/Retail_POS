@@ -24,7 +24,6 @@ function printZReport(z) {
       <tr><td>Opening float</td><td class="r">${formatMoney(z.openingFloat)}</td></tr>
       <tr><td>Cash sales</td><td class="r">${formatMoney(z.cashSales)}</td></tr>
       <tr><td>Card sales</td><td class="r">${formatMoney(z.cardSales)}</td></tr>
-      <tr><td>QR sales</td><td class="r">${formatMoney(z.qrSales)}</td></tr>
       <tr><td>Cash refunds</td><td class="r">-${formatMoney(z.cashRefunds)}</td></tr>
       <tr><td>Cash expenses</td><td class="r">-${formatMoney(z.cashExpenses)}</td></tr>
       <tr><td><strong>Expected cash</strong></td><td class="r"><strong>${formatMoney(z.expectedCash)}</strong></td></tr>
@@ -178,7 +177,6 @@ export default function DayClosePage() {
               <CardContent className="grid gap-3 sm:grid-cols-2 text-sm">
                 <p>Cash sales: {formatMoney(xReport?.cashSales)}</p>
                 <p>Card sales: {formatMoney(xReport?.cardSales)}</p>
-                <p>QR sales: {formatMoney(xReport?.qrSales)}</p>
                 <p>Cash refunds: {formatMoney(xReport?.cashRefunds)}</p>
                 <p>Cash expenses: {formatMoney(xReport?.cashExpenses)}</p>
                 <p className="font-bold">Expected cash: {formatMoney(xReport?.expectedCash)}</p>

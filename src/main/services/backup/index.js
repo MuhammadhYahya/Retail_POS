@@ -13,7 +13,6 @@ import {
 import backupHistoryService from './backupHistoryService.js';
 import { copyDirRecursive, ensureDir, finishJob, createJob, cancelJob, safeRmDir, safeUnlink, sha256File, emitProgress, assertNotCancelled } from './backupUtils.js';
 import { listExistingDataRoots } from './dataRootRegistry.js';
-import { authenticateAdminSession } from '../authenticationService.js';
 
 function getDefaultBackupDir() {
   const dir = path.join(app.getPath('userData'), 'backups');
@@ -83,29 +82,6 @@ export function detectDataState() {
   }
 
   return { state: marker.state, databasePath: recordedPath };
-}
-
-function removeLiveDbFiles(dbPath) {
-  for (const suffix of ['', '-wal', '-shm']) {
-    safeUnlink(`${dbPath}${suffix}`);
-  }
-}
-
-function createSimpleBackup(prefix) {
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const backupPath = path.join(getDataDir(), `${prefix}-${stamp}.db`);
-  fs.copyFileSync(getDbPath(), backupPath);
-  return backupPath;
-}
-
-function clearDataDirectoryExcept(keepPath) {
-  const keep = path.resolve(keepPath);
-  for (const entry of fs.readdirSync(getDataDir())) {
-    const target = path.resolve(path.join(getDataDir(), entry));
-    if (target === keep) continue;
-    safeRmDir(target);
-    safeUnlink(target);
-  }
 }
 
 function swapRestoredDatabase(extractedDbPath, liveDbPath) {
@@ -293,29 +269,6 @@ const backupService = {
       type,
       themePreference,
     });
-  },
-
-  async startFresh({ token, pin } = {}) {
-    const gate = await authenticateAdminSession({ _token: token, pin });
-    if (!gate.success) throw new Error(gate.error || 'Administrator authentication failed.');
-    getDb().pragma('wal_checkpoint(TRUNCATE)');
-    const backupPath = createSimpleBackup('zen-pre-start-fresh');
-    closeDb();
-    removeLiveDbFiles(getDbPath());
-    writeStateMarker('FIRST_RUN');
-    return { backupPath, relaunch: true, message: 'ZEN will restart into first-run setup.' };
-  },
-
-  async deleteAllData({ token, pin } = {}) {
-    const gate = await authenticateAdminSession({ _token: token, pin });
-    if (!gate.success) throw new Error(gate.error || 'Administrator authentication failed.');
-    getDb().pragma('wal_checkpoint(TRUNCATE)');
-    const backupPath = createSimpleBackup('zen-pre-delete-all');
-    closeDb();
-    removeLiveDbFiles(getDbPath());
-    clearDataDirectoryExcept(backupPath);
-    writeStateMarker('FIRST_RUN');
-    return { deleted: true, backupPath, relaunch: true, message: 'All ZEN data was deleted. ZEN will restart into first-run setup.' };
   },
 
   async verifyBackup({ backupPath }) {

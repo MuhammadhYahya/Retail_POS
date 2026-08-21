@@ -38,7 +38,6 @@ export function ProductEditorDialog({
   handleSaveProduct,
   updateForm,
   categories,
-  defaultVatRate,
   imageInputRef,
   handleImageFiles,
   removeImage,
@@ -172,47 +171,6 @@ export function ProductEditorDialog({
                             value={form.unit}
                             onChange={(e) => updateForm('unit', e.target.value)}
                             placeholder="e.g. carton, dozen"
-                          />
-                        )}
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium mb-2">VAT</label>
-                        <div className="flex flex-wrap gap-3 mb-2">
-                          <label className="flex items-center gap-2 text-sm">
-                            <input
-                              type="radio"
-                              checked={Boolean(form.vatApplicable)}
-                              onChange={() => setForm((prev) => ({
-                                ...prev,
-                                vatApplicable: true,
-                                taxRate: Number(prev.taxRate) > 0 ? prev.taxRate : String(defaultVatRate),
-                              }))}
-                            />
-                            Applicable
-                          </label>
-                          <label className="flex items-center gap-2 text-sm">
-                            <input
-                              type="radio"
-                              checked={!form.vatApplicable}
-                              onChange={() => setForm((prev) => ({
-                                ...prev,
-                                vatApplicable: false,
-                                taxRate: '0',
-                              }))}
-                            />
-                            Not applicable
-                          </label>
-                        </div>
-                        {form.vatApplicable && (
-                          <input
-                            id="product-vat"
-                            type="number"
-                            min="0.01"
-                            step="0.01"
-                            className={inputClassName}
-                            value={form.taxRate}
-                            onChange={(e) => updateForm('taxRate', e.target.value)}
-                            placeholder={String(defaultVatRate)}
                           />
                         )}
                       </div>

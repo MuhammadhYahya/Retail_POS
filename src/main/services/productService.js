@@ -125,7 +125,6 @@ function normalizeProductRow(row, variants = [], category = null) {
     description: row.description,
     brand: row.brand,
     unit: row.unit,
-    taxRate: toNumber(row.tax_rate),
     categoryId: row.category_id || null,
     category,
     imageUrls: parseJsonArray(row.image_urls_json),
@@ -388,7 +387,7 @@ const productService = {
   listProducts() {
     const db = getDb();
     const products = db.prepare(`
-      SELECT id, name, description, brand, unit, tax_rate, category_id, image_urls_json,
+      SELECT id, name, description, brand, unit, category_id, image_urls_json,
              is_active, created_at, updated_at, deleted_at
       FROM products
       WHERE deleted_at IS NULL
@@ -482,7 +481,7 @@ const productService = {
   getProductById(productId) {
     const db = getDb();
     const row = db.prepare(`
-      SELECT id, name, description, brand, unit, tax_rate, category_id, image_urls_json,
+      SELECT id, name, description, brand, unit, category_id, image_urls_json,
              is_active, created_at, updated_at, deleted_at
       FROM products
       WHERE id = ? AND deleted_at IS NULL
@@ -560,7 +559,6 @@ const productService = {
         p.description AS product_description,
         p.brand AS product_brand,
         p.unit AS product_unit,
-        p.tax_rate AS product_tax_rate,
         p.category_id AS product_category_id,
         p.image_urls_json AS product_image_urls_json,
         p.is_active AS product_is_active,
@@ -585,7 +583,6 @@ const productService = {
         description: row.product_description,
         brand: row.product_brand,
         unit: row.product_unit,
-        tax_rate: row.product_tax_rate,
         category_id: row.product_category_id,
         image_urls_json: row.product_image_urls_json,
         is_active: row.product_is_active,
@@ -681,17 +678,16 @@ const productService = {
     const createTx = db.transaction(() => {
       db.prepare(`
         INSERT INTO products (
-          id, name, description, brand, unit, tax_rate, category_id, image_urls_json,
+          id, name, description, brand, unit, category_id, image_urls_json,
           is_active, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
       `).run(
         id,
         productName,
         cleanText(payload.description) || null,
         cleanText(payload.brand) || null,
         unit,
-        toNumber(payload.taxRate ?? payload.tax_rate, 0),
         categoryId,
         imageUrlsJson,
         timestamp,
@@ -776,7 +772,6 @@ const productService = {
             description = ?,
             brand = ?,
             unit = ?,
-            tax_rate = ?,
             category_id = ?,
             image_urls_json = ?,
             updated_at = ?
@@ -786,9 +781,6 @@ const productService = {
         Object.prototype.hasOwnProperty.call(payload, 'description') ? (cleanText(payload.description) || null) : existing.description,
         Object.prototype.hasOwnProperty.call(payload, 'brand') ? (cleanText(payload.brand) || null) : existing.brand,
         nextUnit,
-        Object.prototype.hasOwnProperty.call(payload, 'taxRate') || Object.prototype.hasOwnProperty.call(payload, 'tax_rate')
-          ? toNumber(payload.taxRate ?? payload.tax_rate, 0)
-          : existing.taxRate,
         nextCategoryId,
         nextImageUrlsJson,
         timestamp,

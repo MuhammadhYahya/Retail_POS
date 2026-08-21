@@ -56,8 +56,6 @@ const validChannels = [
   'backup:updateSettings',
   'data:getState',
   'data:useExisting',
-  'data:startFresh',
-  'data:deleteAll',
   'dialog:showOpen',
   'dialog:showSave',
   'export:entities',

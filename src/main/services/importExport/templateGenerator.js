@@ -8,7 +8,7 @@ const INSTRUCTIONS = [
   '1. Fill the Products sheet. Keep the header row unchanged for easiest mapping.',
   '2. Required: Name (productName). SKU and Barcode are optional — Zen can auto-generate them.',
   '3. One row = one variant. Same product name on multiple rows creates multi-variant products (use Size/Color).',
-  '4. Prices in LKR. VAT is a percentage (e.g. 18 for 18%).',
+  '4. Prices in LKR.',
   '5. Opening Stock sets inventory on create/update.',
   '6. Category and Supplier names: choose Auto-create in the Import Wizard if they do not exist yet.',
   '7. Do not paste Excel formulas — use values only.',
