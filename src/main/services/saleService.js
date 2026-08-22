@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { getDb } from '../database/db.js';
 import settingsService from './settingsService.js';
 import cashSessionService from './cashSessionService.js';
+import { applyInventoryMovement } from './inventoryCostService.js';
 import { colomboDateString, colomboDayCompact, colomboDayBounds } from '../lib/colomboTime.js';
 import {
   DISCOUNT_TYPES,
@@ -26,49 +27,16 @@ function assertTruthy(value, message) {
 }
 
 function applyStockDelta(db, { variantId, delta, transactionType, referenceId, notes, createdBy, unitCost = null }) {
-  const timestamp = now();
-  const txnId = crypto.randomUUID();
-
-  db.prepare(`
-    INSERT INTO inventory_transactions (
-      id, variant_id, transaction_type, quantity, unit_cost,
-      reference_type, reference_id, notes, created_by, created_at
-    )
-    VALUES (?, ?, ?, ?, ?, 'sale', ?, ?, ?, ?)
-  `).run(
-    txnId,
+  return applyInventoryMovement(db, {
     variantId,
+    quantity: Math.abs(delta),
     transactionType,
-    delta,
-    unitCost,
+    valuationUnitCost: unitCost,
+    referenceType: 'sale',
     referenceId,
     notes,
     createdBy,
-    timestamp
-  );
-
-  const existing = db.prepare(`
-    SELECT on_hand, reserved FROM inventory_balances WHERE variant_id = ?
-  `).get(variantId);
-
-  const onHand = toNumber(existing?.on_hand, 0) + delta;
-  const reserved = toNumber(existing?.reserved, 0);
-  const available = onHand - reserved;
-
-  if (existing) {
-    db.prepare(`
-      UPDATE inventory_balances
-      SET on_hand = ?, available = ?, updated_at = ?
-      WHERE variant_id = ?
-    `).run(onHand, available, timestamp, variantId);
-  } else {
-    db.prepare(`
-      INSERT INTO inventory_balances (variant_id, on_hand, reserved, available, updated_at)
-      VALUES (?, ?, 0, ?, ?)
-    `).run(variantId, onHand, available, timestamp);
-  }
-
-  return { onHand, available };
+  });
 }
 
 function loadVariantForSale(db, variantId) {
@@ -80,7 +48,7 @@ function loadVariantForSale(db, variantId) {
       v.sku,
       v.barcode,
       v.selling_price,
-      v.cost_price,
+      COALESCE(ic.average_cost, v.cost_price) AS cost_price,
       v.track_inventory,
       v.is_active AS variant_is_active,
       v.deleted_at AS variant_deleted_at,
@@ -91,6 +59,7 @@ function loadVariantForSale(db, variantId) {
     FROM product_variants v
     JOIN products p ON p.id = v.product_id
     LEFT JOIN inventory_balances b ON b.variant_id = v.id
+    LEFT JOIN inventory_costing ic ON ic.variant_id = v.id
     WHERE v.id = ?
   `).get(variantId);
 }
@@ -591,6 +560,35 @@ const saleService = {
     }));
   },
 
+  listBillingHistory({ date = colomboDateString(), days = 30, limit = 1000 } = {}) {
+    const db = getDb();
+    const take = Math.min(Math.max(toNumber(limit, 1000), 1), 2000);
+    const [year, month, day] = String(date).slice(0, 10).split('-').map(Number);
+    const fromDate = new Date(Date.UTC(year, month - 1, day - (Math.max(toNumber(days, 30), 1) - 1)));
+    const from = `${fromDate.getUTCFullYear()}-${String(fromDate.getUTCMonth() + 1).padStart(2, '0')}-${String(fromDate.getUTCDate()).padStart(2, '0')}`;
+    const bounds = colomboDayBounds(date);
+    const fromBounds = colomboDayBounds(from);
+    const rows = db.prepare(`
+      SELECT s.*, COUNT(si.id) AS item_count,
+        u.display_name AS cashier_name,
+        u.username AS cashier_username
+      FROM sales s
+      LEFT JOIN sale_items si ON si.sale_id = s.id
+      LEFT JOIN users u ON u.id = s.cashier_id
+      WHERE s.deleted_at IS NULL
+        AND s.status = 'completed'
+        AND s.sale_date >= ?
+        AND s.sale_date <= ?
+      GROUP BY s.id
+      ORDER BY s.sale_date DESC
+      LIMIT ?
+    `).all(fromBounds.start, bounds.end, take);
+    return rows.map((row) => ({
+      ...mapSaleRow(row, []),
+      itemCount: Number(row.item_count || 0),
+    }));
+  },
+
   voidSale({ saleId, reason, userId }) {
     const db = getDb();
     const id = cleanText(saleId);
@@ -650,7 +648,7 @@ const saleService = {
           referenceId: id,
           notes: `Void ${sale.invoice_number}: ${voidReason}`,
           createdBy: cleanUserId,
-          unitCost: null,
+          unitCost: toNumber(item.unit_cost, 0),
         });
       }
 

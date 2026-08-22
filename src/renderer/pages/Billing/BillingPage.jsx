@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Trash2, Plus, Minus, Printer } from 'lucide-react';
+import { Search, Trash2, Plus, Minus, Printer, ChevronDown, ChevronRight } from 'lucide-react';
 import AppShell from '../../components/layout/AppShell';
 import { Button } from '../../components/ui/button';
 import { Alert, AlertDescription } from '../../components/ui/alert';
@@ -17,7 +17,7 @@ import { useCartStore } from '../../store/cartStore';
 import { useAuthStore } from '../../store/authStore';
 import { cn } from '../../lib/utils';
 import { buildThermalReceiptHtml } from '../../lib/receiptHtml';
-import { isStaleOpenSession } from '../../lib/colomboTime.js';
+import { colomboDateString, isStaleOpenSession } from '../../lib/colomboTime.js';
 
 const inputClassName =
   'w-full p-3.5 rounded-xl bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-all duration-100 font-semibold';
@@ -59,6 +59,10 @@ export default function BillingPage() {
   const [saleDiscDraftType, setSaleDiscDraftType] = useState('fixed');
   const [saleDiscDraftValue, setSaleDiscDraftValue] = useState('');
   const [dayOpen, setDayOpen] = useState(null);
+  const [salesHistory, setSalesHistory] = useState([]);
+  const [salesHistoryLoading, setSalesHistoryLoading] = useState(true);
+  const [salesHistoryError, setSalesHistoryError] = useState('');
+  const [expandedDates, setExpandedDates] = useState({});
 
   const items = useCartStore((state) => state.items);
   const saleDiscountType = useCartStore((state) => state.saleDiscountType);
@@ -97,6 +101,7 @@ export default function BillingPage() {
       if (productsResponse.success) setCatalog(productsResponse.data || []);
       if (sessionResponse.success) setDayOpen(sessionResponse.data);
     });
+    loadSalesHistory();
   }, []);
 
   useEffect(() => {
@@ -303,13 +308,15 @@ export default function BillingPage() {
     setPaymentMethod('cash');
     setSaleDiscDraftValue('');
     setSaleDiscDraftType('fixed');
+    loadSalesHistory();
     setPrintStatus(response.auditWarning ? response.auditWarning : 'Printing…');
     setSuccessOpen(true);
     setPrinting(true);
 
     // Auto-print + cash drawer (cash sales)
-    const printRes = await invokeWithAuth('printer:printReceipt', {
+    const printRes = await invokeWithAuth('printer:printInitialReceipt', {
       saleId: response.data.id,
+      initialPrintToken: response.data.initialPrintToken,
       openDrawer: response.data.paymentMethod === 'cash',
     });
     if (printRes.success && printRes.data?.success) {
@@ -355,7 +362,7 @@ export default function BillingPage() {
     setPrinting(true);
     setPrintStatus('Printing…');
     // Reprint: do not kick the cash drawer again
-    const thermal = await invokeWithAuth('printer:printReceipt', {
+    const thermal = await invokeWithAuth('printer:reprintReceipt', {
       saleId: completedSale.id,
       openDrawer: false,
     });
@@ -365,7 +372,9 @@ export default function BillingPage() {
       return;
     }
 
-    const fallback = openHtmlReceiptFallback(completedSale, settings);
+    const receiptResponse = await invokeWithAuth('sale:getReceipt', { saleId: completedSale.id });
+    const fallbackSale = receiptResponse.success ? receiptResponse.data?.sale : completedSale;
+    const fallback = openHtmlReceiptFallback(fallbackSale, settings);
     if (fallback.ok) {
       setPrintStatus('Opened browser print dialog.');
     } else {
@@ -404,6 +413,28 @@ export default function BillingPage() {
 
   const resetReceiptCountdown = () => setReceiptSeconds(120);
   const saleDiscountActive = saleDiscountType !== 'none' && Number(saleDiscountValue) > 0;
+  const todayDate = colomboDateString();
+  const groupedSales = useMemo(() => {
+    const groups = new Map();
+    for (const sale of salesHistory) {
+      const date = new Date(sale.saleDate).toLocaleDateString('en-CA', { timeZone: 'Asia/Colombo' });
+      if (!groups.has(date)) groups.set(date, []);
+      groups.get(date).push(sale);
+    }
+    return [...groups.entries()].map(([date, sales]) => ({ date, sales, isToday: date === todayDate }));
+  }, [salesHistory, todayDate]);
+
+  async function loadSalesHistory() {
+    setSalesHistoryLoading(true);
+    const response = await invokeWithAuth('sale:listBillingHistory');
+    if (response.success) {
+      setSalesHistory(response.data || []);
+      setSalesHistoryError('');
+    } else {
+      setSalesHistoryError(response.error || 'Failed to load sales history.');
+    }
+    setSalesHistoryLoading(false);
+  }
 
   return (
     <AppShell title="New Sale" description="Scan barcode, take payment, save the sale.">
@@ -587,6 +618,45 @@ export default function BillingPage() {
               </table>
             </div>
           </div>
+
+          <section className="rounded-2xl border border-border bg-card overflow-hidden shadow-sm">
+            <div className="border-b border-border/60 px-5 py-4">
+              <h2 className="text-lg font-extrabold text-foreground">Sales History</h2>
+              <p className="text-xs text-muted-foreground">Today&apos;s sales and the previous 29 days.</p>
+            </div>
+            {salesHistoryLoading ? <p className="p-5 text-sm text-muted-foreground">Loading sales history...</p> : salesHistoryError ? <p className="p-5 text-sm text-destructive">{salesHistoryError}</p> : !groupedSales.length ? <p className="p-5 text-sm text-muted-foreground">No completed sales in recent history.</p> : (
+              <div className="divide-y divide-border/60">
+                {groupedSales.map(({ date, sales, isToday }) => {
+                  const forcedCollapsed = isToday && items.length > 0;
+                  const expanded = isToday ? items.length === 0 && expandedDates[date] !== false : Boolean(expandedDates[date]);
+                  return (
+                    <div key={date}>
+                      <button type="button" className="w-full flex items-center justify-between gap-3 px-5 py-4 text-left hover:bg-muted/30 transition-colors" onClick={() => {
+                        if (forcedCollapsed) return;
+                        setExpandedDates((current) => ({ ...current, [date]: !expanded }));
+                      }} aria-expanded={expanded} aria-disabled={forcedCollapsed}>
+                        <span className="flex items-center gap-2">
+                          {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                          <span className="font-bold">{isToday ? "Today's Sales" : new Date(`${date}T00:00:00`).toLocaleDateString([], { dateStyle: 'medium' })}</span>
+                          <span className="text-xs text-muted-foreground">({sales.length})</span>
+                        </span>
+                        {forcedCollapsed && <span className="text-[11px] font-semibold text-muted-foreground">Cart active</span>}
+                      </button>
+                      {expanded && <div className="overflow-x-auto border-t border-border/40"><table className="w-full text-sm"><tbody className="divide-y divide-border/40">
+                        {sales.map((sale) => <tr key={sale.id}>
+                          <td className="px-5 py-3 font-mono font-semibold">{sale.invoiceNumber}</td>
+                          <td className="px-5 py-3 text-muted-foreground">{new Date(sale.saleDate).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</td>
+                          <td className="px-5 py-3">{sale.itemCount} item{sale.itemCount === 1 ? '' : 's'}</td>
+                          <td className="px-5 py-3 font-bold">{formatMoney(sale.total)}</td>
+                          {user?.role === 'admin' && <td className="px-5 py-3 text-right"><button type="button" onClick={() => { setCompletedSale(sale); setSuccessOpen(true); setPrintStatus(''); }} className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-bold hover:bg-muted"><Printer className="h-3.5 w-3.5" /> Reprint</button></td>}
+                        </tr>)}
+                      </tbody></table></div>}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
         </div>
 
         <div className="rounded-2xl border border-border bg-card p-6 space-y-6 h-fit shadow-md">
@@ -873,8 +943,8 @@ export default function BillingPage() {
             </p>
           ) : null}
 
-          <DialogFooter className="grid grid-cols-2 gap-3 sm:space-x-0">
-            <button
+          <DialogFooter className={cn('grid gap-3 sm:space-x-0', user?.role === 'admin' ? 'grid-cols-2' : 'grid-cols-1')}>
+            {user?.role === 'admin' && <button
               type="button"
               onClick={handlePrintReceipt}
               disabled={printing}
@@ -882,7 +952,7 @@ export default function BillingPage() {
             >
               <Printer className="h-4 w-4" />
               {printing ? 'Printing…' : 'Reprint Receipt'}
-            </button>
+            </button>}
             <button
               type="button"
               onClick={startNewSale}

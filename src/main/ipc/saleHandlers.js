@@ -2,6 +2,7 @@ import { ipcMain } from 'electron';
 import saleService from '../services/saleService.js';
 import { extractToken, requirePermission, requireRole, validateSession } from '../lib/sessionAuth.js';
 import { addAuditWarning, writeAuditEvent } from '../lib/auditLog.js';
+import { issueInitialPrintGrant } from '../lib/initialPrintGrants.js';
 
 export function registerSaleHandlers() {
   ipcMain.handle('sale:create', async (event, payload = {}) => {
@@ -35,6 +36,7 @@ export function registerSaleHandlers() {
         success: true,
         data: {
           ...saleService.getById(sale.id),
+          initialPrintToken: issueInitialPrintGrant({ saleId: sale.id, userId: session.user.id }),
         },
       }, audit);
     } catch (err) {
@@ -53,6 +55,17 @@ export function registerSaleHandlers() {
         success: true,
         data: saleService.listTodayForCashier({ cashierId: session.user.id, limit: payload.limit }),
       };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('sale:listBillingHistory', async (event, payload = {}) => {
+    try {
+      const token = extractToken(payload);
+      const session = validateSession(token);
+      if (!session.success) return session;
+      return { success: true, data: saleService.listBillingHistory({ days: 30, limit: 1000 }) };
     } catch (err) {
       return { success: false, error: err.message };
     }

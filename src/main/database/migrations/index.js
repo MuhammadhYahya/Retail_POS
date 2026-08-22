@@ -19,6 +19,7 @@ import * as migration018 from './018_label_size.js';
 import * as migration019 from './019_drop_sales_is_synced.js';
 import * as migration020 from './020_audit_reliability.js';
 import * as migration021 from './021_remove_legacy_features.js';
+import * as migration022 from './022_inventory_wac.js';
 
 const migrations = [
   migration001,
@@ -42,6 +43,7 @@ const migrations = [
   migration019,
   migration020,
   migration021,
+  migration022,
 ];
 
 export function getLatestMigrationVersion() {

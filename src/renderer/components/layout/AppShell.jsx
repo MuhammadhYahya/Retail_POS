@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { useThemeStore } from '../../store/themeStore';
 import { Button } from '../ui/button';
-import { LogOut, LayoutDashboard, Users, ShoppingCart, Package, BarChart3, Settings, Sun, Moon, AlertTriangle, Wallet, Truck, Undo2, Receipt, Tag, ShieldCheck, Menu, X } from 'lucide-react';
+import { LogOut, LayoutDashboard, Users, ShoppingCart, Package, BarChart3, Settings, Sun, Moon, AlertTriangle, Wallet, Truck, Undo2, Receipt, Tag, ShieldCheck, Menu, X, ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { getDashboardPath, invokeWithAuth, LOW_STOCK_UPDATED_EVENT } from '../../lib/ipc';
 import { useCloseDayReminder } from '../../lib/useCloseDayReminder.js';
@@ -12,13 +12,17 @@ import { hasPermission } from '../../lib/permissions.js';
 const FEATURE_NAV = [
   { path: '/day-close', label: 'Day Open/Close', icon: Wallet, color: 'text-teal-500', permission: 'dayClose' },
   { path: '/billing', label: 'New Sale', icon: ShoppingCart, color: 'text-emerald-500', permission: null },
-  { path: '/purchases', label: 'Purchases', icon: Truck, color: 'text-cyan-500', permission: 'purchases' },
-  { path: '/products', label: 'Products', icon: Package, color: 'text-violet-500', permission: 'products' },
   { path: '/labels', label: 'Labels', icon: Tag, color: 'text-fuchsia-500', permission: 'labels' },
-  { path: '/returns', label: 'Returns', icon: Undo2, color: 'text-orange-500', permission: 'returns' },
+  { path: '/returns', label: 'Customer Returns', icon: Undo2, color: 'text-orange-500', permission: 'returns' },
   { path: '/expenses', label: 'Expenses', icon: Receipt, color: 'text-lime-600', permission: 'expenses' },
   { path: '/low-stock', label: 'Low Stock', icon: AlertTriangle, color: 'text-red-500', permission: 'lowStock' },
   { path: '/reports', label: 'Reports', icon: BarChart3, color: 'text-sky-500', permission: 'reports' },
+];
+
+const INVENTORY_NAV = [
+  { path: '/products', label: 'Products', icon: Package, color: 'text-violet-500', permission: 'products' },
+  { path: '/purchases', label: 'New Purchase / GRN', icon: Truck, color: 'text-cyan-500', permission: 'purchases' },
+  { path: '/purchase-returns', label: 'Purchase Returns', icon: Undo2, color: 'text-orange-500', permission: 'purchaseReturns' },
 ];
 
 const ADMIN_ONLY_NAV = [
@@ -41,6 +45,18 @@ function navItemsForUser(user) {
   ];
 
   for (const item of FEATURE_NAV) {
+    if (item.path === '/labels') {
+      const inventoryChildren = INVENTORY_NAV.filter((child) => hasPermission(user, child.permission));
+      if (inventoryChildren.length) {
+        items.push({
+          key: 'inventory',
+          label: 'Inventory',
+          icon: Package,
+          color: 'text-violet-500',
+          children: inventoryChildren,
+        });
+      }
+    }
     if (!item.permission || hasPermission(user, item.permission)) {
       items.push(item);
     }
@@ -72,6 +88,8 @@ export default function AppShell({ children, title, description }) {
   const [timeString, setTimeString] = React.useState('');
   const [profileOpen, setProfileOpen] = React.useState(false);
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
+  const inventoryPathActive = ['/products', '/purchases', '/purchase-returns'].includes(location.pathname);
+  const [inventoryOpen, setInventoryOpen] = React.useState(inventoryPathActive);
   const [lowStockCount, setLowStockCount] = React.useState(0);
   const showCloseReminder = useCloseDayReminder();
   const canViewLowStock = hasPermission(user, 'lowStock');
@@ -118,6 +136,10 @@ export default function AppShell({ children, title, description }) {
 
   React.useEffect(() => setMobileNavOpen(false), [location.pathname]);
 
+  React.useEffect(() => {
+    if (inventoryPathActive) setInventoryOpen(true);
+  }, [inventoryPathActive]);
+
   const handleLogout = async () => {
     await setLogout();
     navigate('/login');
@@ -142,7 +164,58 @@ export default function AppShell({ children, title, description }) {
         </div>
 
         <nav className="flex-1 min-h-0 overflow-y-auto p-4 space-y-2">
-          {navItems.map(({ path, label, icon: Icon, color }) => {
+          {navItems.map((item) => {
+            if (item.children) {
+              const Icon = item.icon;
+              const isActive = item.children.some((child) => location.pathname === child.path);
+              return (
+                <div key={item.key} className="space-y-1">
+                  <button
+                    type="button"
+                    aria-expanded={inventoryOpen}
+                    onClick={() => setInventoryOpen((open) => !open)}
+                    className={cn(
+                      'w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-semibold transition-all cursor-pointer h-14 border',
+                      isActive
+                        ? 'bg-primary/10 text-primary border-primary/25 shadow-sm shadow-primary/10 font-bold'
+                        : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground border-transparent'
+                    )}
+                  >
+                    <Icon className={cn('h-5 w-5 shrink-0', item.color, isActive && 'scale-110')} />
+                    <span className="flex min-w-0 flex-1 items-center justify-between gap-2">
+                      <span>{item.label}</span>
+                      {inventoryOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    </span>
+                  </button>
+                  {inventoryOpen && (
+                    <div className="ml-3 space-y-1 border-l border-border/70 pl-3">
+                      {item.children.map((child) => {
+                        const ChildIcon = child.icon;
+                        const childActive = location.pathname === child.path;
+                        return (
+                          <button
+                            key={child.path}
+                            type="button"
+                            onClick={() => navigate(child.path)}
+                            className={cn(
+                              'w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-all cursor-pointer',
+                              childActive
+                                ? 'bg-primary/10 text-primary font-bold'
+                                : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
+                            )}
+                          >
+                            <ChildIcon className={cn('h-4 w-4 shrink-0', child.color)} />
+                            <span>{child.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            const { path, label, icon: Icon, color } = item;
             const isActive = location.pathname === path;
             return (
               <button

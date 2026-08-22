@@ -20,6 +20,8 @@ export default function PurchasesPage() {
   const [barcode, setBarcode] = useState('');
   const [lines, setLines] = useState([]);
   const [notes, setNotes] = useState('');
+  const [invoiceNumber, setInvoiceNumber] = useState('');
+  const [invoiceDate, setInvoiceDate] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
@@ -56,7 +58,7 @@ export default function PurchasesPage() {
     setError('');
     const response = await invokeWithAuth('product:lookupBarcode', { barcode: code });
     if (!response.success || !response.data) {
-      setError(response.error || 'Barcode not found.');
+      setError(response.error || `No active product found for "${code}". Enter a barcode or SKU.`);
       return;
     }
     const variant = response.data;
@@ -108,6 +110,9 @@ export default function PurchasesPage() {
 
     const createRes = await invokeWithAuth('purchase:create', {
       supplierId: supplierId || null,
+      invoiceNumber: invoiceNumber || null,
+      invoiceDate: invoiceDate || null,
+      receivedDate: new Date().toISOString().slice(0, 10),
       notes: notes || null,
       items: lines.map((line) => ({
         variantId: line.variantId,
@@ -130,6 +135,8 @@ export default function PurchasesPage() {
     setMessage(`Posted ${postRes.data.grnNumber}. Stock updated.`);
     setLines([]);
     setNotes('');
+    setInvoiceNumber('');
+    setInvoiceDate('');
     refresh();
   };
 
@@ -180,10 +187,14 @@ export default function PurchasesPage() {
                   ))}
                 </select>
               </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <input className={inputClassName} placeholder="Supplier invoice number" value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
+                <input className={inputClassName} type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
+              </div>
               <div className="flex gap-2">
                 <input
                   className={inputClassName}
-                  placeholder="Scan barcode"
+                  placeholder="Scan barcode or enter SKU"
                   value={barcode}
                   onChange={(e) => setBarcode(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addByBarcode())}

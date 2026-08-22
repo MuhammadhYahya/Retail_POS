@@ -13,7 +13,8 @@
     "lint": "echo \"No linting configured\"",
     "test:backup": "node src/main/services/backup/selftest.mjs",
     "test:import-export": "node src/main/services/importExport/selftest.mjs",
-    "test:v1-sim": "electron scripts/v1-shop-simulation.mjs"
+    "test:v1-sim": "electron scripts/v1-shop-simulation.mjs",
+    "test:wac": "electron scripts/wac-inventory-simulation.mjs"
   },
   "keywords": [],
   "author": "spt",

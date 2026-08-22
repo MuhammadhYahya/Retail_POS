@@ -4,6 +4,7 @@ import { tableExists } from './formatUtils.js';
 import reportService from '../reportService.js';
 import { importProductRows } from './productImporter.js';
 import { colomboDateString, colomboDayBounds } from '../../lib/colomboTime.js';
+import { applyInventoryMovement } from '../inventoryCostService.js';
 
 function now() {
   return new Date().toISOString();
@@ -278,6 +279,9 @@ registerEntity({
           p.name AS productName,
           v.name AS variantName,
           b.on_hand AS onHand,
+          COALESCE(ic.average_cost, v.cost_price, 0) AS averageCost,
+          COALESCE(ic.inventory_value, b.on_hand * v.cost_price, 0) AS inventoryValue,
+          COALESCE(ic.is_reconciled, 1) AS costingReconciled,
           b.reserved,
           b.available,
           b.updated_at AS updatedAt
@@ -306,14 +310,6 @@ registerEntity({
     const findVariant = db.prepare(
       `SELECT id FROM product_variants WHERE sku = ? AND deleted_at IS NULL`
     );
-    const upsert = db.prepare(`
-      INSERT INTO inventory_balances (variant_id, on_hand, reserved, available, updated_at)
-      VALUES (?, ?, 0, ?, ?)
-      ON CONFLICT(variant_id) DO UPDATE SET
-        on_hand = excluded.on_hand,
-        available = excluded.available,
-        updated_at = excluded.updated_at
-    `);
 
     const tx = db.transaction(() => {
       for (let i = 0; i < rows.length; i += 1) {
@@ -332,7 +328,19 @@ registerEntity({
           continue;
         }
         const onHand = Number(rows[i].onHand ?? rows[i].on_hand ?? rows[i].stock ?? 0) || 0;
-        upsert.run(variant.id, onHand, onHand, now());
+        const history = db.prepare(`SELECT COUNT(*) AS c FROM inventory_transactions WHERE variant_id = ?`).get(variant.id).c;
+        const current = Number(db.prepare(`SELECT COALESCE(on_hand, 0) AS q FROM inventory_balances WHERE variant_id = ?`).get(variant.id)?.q || 0);
+        if (history > 0 || current > 0) {
+          report.errors.push({ row: i + 1, message: `Opening stock import blocked for ${sku}; existing stock/history requires a controlled adjustment.` });
+          continue;
+        }
+        if (onHand > 0) {
+          const cost = Number(rows[i].unitCost ?? rows[i].costPrice ?? 0) || 0;
+          applyInventoryMovement(db, {
+            variantId: variant.id, quantity: onHand, transactionType: 'initial', unitCost: cost,
+            referenceType: 'inventory_import', referenceId: sku, notes: 'Opening stock inventory import',
+          });
+        }
         report.updated += 1;
       }
     });
@@ -713,6 +721,36 @@ registerEntity({
 });
 
 registerEntity({
+  id: 'purchase_returns',
+  label: 'Purchase Returns',
+  formats: ['csv', 'xlsx', 'json'],
+  isAvailable: () => tableExists('purchase_returns'),
+  export({ dateFrom, dateTo } = {}) {
+    requireTable('purchase_returns');
+    const db = getDb();
+    const clauses = ['pr.status = \'completed\''];
+    const params = [];
+    if (dateFrom) { clauses.push('pr.return_date >= ?'); params.push(String(dateFrom).slice(0, 10)); }
+    if (dateTo) { clauses.push('pr.return_date <= ?'); params.push(String(dateTo).slice(0, 10)); }
+    return db.prepare(`
+      SELECT pr.return_number AS returnNumber, pr.return_date AS returnDate,
+        s.name AS supplierName, pr.reason, pr.notes, p.name AS productName,
+        v.sku, pri.quantity, pri.original_unit_cost AS originalUnitCost,
+        pri.valuation_unit_cost AS valuationUnitCost, pri.line_total AS lineTotal,
+        pr.created_at AS createdAt
+      FROM purchase_returns pr
+      LEFT JOIN suppliers s ON s.id = pr.supplier_id
+      JOIN purchase_return_items pri ON pri.return_id = pr.id
+      JOIN product_variants v ON v.id = pri.variant_id
+      JOIN products p ON p.id = v.product_id
+      WHERE ${clauses.join(' AND ')}
+      ORDER BY pr.created_at DESC LIMIT 100000
+    `).all(...params);
+  },
+  import: null,
+});
+
+registerEntity({
   id: 'stock_adjustments',
   label: 'Stock Adjustments',
   formats: ['csv', 'xlsx', 'json'],
@@ -779,6 +817,7 @@ registerEntity({
         FROM product_variants v
         JOIN products p ON p.id = v.product_id
         LEFT JOIN inventory_balances b ON b.variant_id = v.id
+        LEFT JOIN inventory_costing ic ON ic.variant_id = v.id
         WHERE v.deleted_at IS NULL AND p.deleted_at IS NULL
           AND v.low_stock_alert > 0
           AND COALESCE(b.on_hand, 0) <= v.low_stock_alert

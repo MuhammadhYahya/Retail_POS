@@ -109,4 +109,14 @@ export function registerReportHandlers() {
       return { success: false, error: err.message };
     }
   });
+
+  ipcMain.handle('report:inventoryValuation', async (event, payload = {}) => {
+    try {
+      const session = validateSession(extractToken(payload));
+      if (!session.success) return session;
+      const permCheck = requirePermission(session, 'reports');
+      if (!permCheck.success) return permCheck;
+      return { success: true, data: reportService.inventoryValuation(payload) };
+    } catch (err) { return { success: false, error: err.message }; }
+  });
 }

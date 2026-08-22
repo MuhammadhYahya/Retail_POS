@@ -17,6 +17,7 @@ import SettingsPage from './pages/Settings/SettingsPage';
 import LowStockPage from './pages/Inventory/LowStockPage';
 import DayClosePage from './pages/Cash/DayClosePage';
 import PurchasesPage from './pages/Purchases/PurchasesPage';
+import PurchaseReturnsPage from './pages/Purchases/PurchaseReturnsPage';
 import ReturnsPage from './pages/Returns/ReturnsPage';
 import ExpensesPage from './pages/Expenses/ExpensesPage';
 import AuditPage from './pages/Audit/AuditPage';
@@ -228,6 +229,7 @@ function AppRoutes() {
         />
         <Route path="/day-close" element={<FeatureRoute permission={PATH_PERMISSION['/day-close']}><DayClosePage /></FeatureRoute>} />
         <Route path="/purchases" element={<FeatureRoute permission={PATH_PERMISSION['/purchases']}><PurchasesPage /></FeatureRoute>} />
+        <Route path="/purchase-returns" element={<FeatureRoute permission={PATH_PERMISSION['/purchase-returns']}><PurchaseReturnsPage /></FeatureRoute>} />
         <Route path="/returns" element={<FeatureRoute permission={PATH_PERMISSION['/returns']}><ReturnsPage /></FeatureRoute>} />
         <Route path="/expenses" element={<FeatureRoute permission={PATH_PERMISSION['/expenses']}><ExpensesPage /></FeatureRoute>} />
         <Route path="/labels" element={<FeatureRoute permission={PATH_PERMISSION['/labels']}><LabelsPage /></FeatureRoute>} />

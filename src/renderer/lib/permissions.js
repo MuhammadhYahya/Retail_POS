@@ -12,6 +12,7 @@ export {
 export const PATH_PERMISSION = {
   '/day-close': 'dayClose',
   '/purchases': 'purchases',
+  '/purchase-returns': 'purchaseReturns',
   '/products': 'products',
   '/labels': 'labels',
   '/returns': 'returns',

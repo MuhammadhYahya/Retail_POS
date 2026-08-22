@@ -224,6 +224,30 @@ const reportService = {
       };
     });
   },
+
+  inventoryValuation({ limit = 10000 } = {}) {
+    const db = getDb();
+    return db.prepare(`
+      SELECT v.id AS variantId, p.name AS productName, v.name AS variantName,
+        v.sku, COALESCE(ic.quantity, b.on_hand, 0) AS onHand,
+        COALESCE(ic.average_cost, v.cost_price, 0) AS averageCost,
+        COALESCE(ic.inventory_value, COALESCE(b.on_hand, 0) * v.cost_price, 0) AS inventoryValue,
+        COALESCE(ic.is_reconciled, 1) AS isReconciled,
+        ic.backfill_status AS costingStatus, ic.backfill_notes AS costingNotes
+      FROM product_variants v
+      JOIN products p ON p.id = v.product_id
+      LEFT JOIN inventory_balances b ON b.variant_id = v.id
+      LEFT JOIN inventory_costing ic ON ic.variant_id = v.id
+      WHERE v.deleted_at IS NULL AND p.deleted_at IS NULL
+      ORDER BY p.name, v.name LIMIT ?
+    `).all(Math.min(Math.max(Number(limit) || 10000, 1), 20000)).map((row) => ({
+      ...row,
+      onHand: toNumber(row.onHand),
+      averageCost: toNumber(row.averageCost),
+      inventoryValue: toNumber(row.inventoryValue),
+      isReconciled: Boolean(row.isReconciled),
+    }));
+  },
 };
 
 export default reportService;

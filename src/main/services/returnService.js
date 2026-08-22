@@ -3,6 +3,7 @@ import { getDb } from '../database/db.js';
 import productService from './productService.js';
 import cashSessionService from './cashSessionService.js';
 import { colomboDayCompact, nowIso } from '../lib/colomboTime.js';
+import { applyInventoryMovement } from './inventoryCostService.js';
 
 function toNumber(value, fallback = 0) {
   const parsed = Number(value);
@@ -92,6 +93,7 @@ const returnService = {
         quantity: qty,
         unitRefund,
         lineRefund,
+        saleUnitCost: toNumber(saleItem.unit_cost, 0),
       };
     });
 
@@ -132,10 +134,11 @@ const returnService = {
           timestamp
         );
 
-        productService.recordInventoryTransaction({
+        applyInventoryMovement(db, {
           variantId: line.variantId,
           quantity: line.quantity,
           transactionType: 'return_in',
+          valuationUnitCost: line.saleUnitCost,
           referenceType: 'sale_return',
           referenceId: returnId,
           notes: `Return ${returnNumber}`,

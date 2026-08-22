@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { getDb } from '../../database/db.js';
 import { validateMappedRows, buildErrorReportRows, cleanText } from './validationEngine.js';
+import { applyInventoryMovement } from '../inventoryCostService.js';
 
 function now() {
   return new Date().toISOString();
@@ -295,21 +296,8 @@ export function importProductRows({
   `);
   const insertBalance = db.prepare(`
     INSERT INTO inventory_balances (variant_id, on_hand, reserved, available, updated_at)
-    VALUES (?, ?, 0, ?, ?)
-  `);
-  const upsertBalance = db.prepare(`
-    INSERT INTO inventory_balances (variant_id, on_hand, reserved, available, updated_at)
-    VALUES (?, ?, 0, ?, ?)
-    ON CONFLICT(variant_id) DO UPDATE SET
-      on_hand = excluded.on_hand,
-      available = excluded.available,
-      updated_at = excluded.updated_at
-  `);
-  const insertTxn = db.prepare(`
-    INSERT INTO inventory_transactions (
-      id, variant_id, transaction_type, quantity, unit_cost,
-      reference_type, reference_id, notes, created_by, created_at
-    ) VALUES (?, ?, ?, ?, NULL, 'import', ?, ?, ?, ?)
+    VALUES (?, 0, 0, 0, ?)
+    ON CONFLICT(variant_id) DO NOTHING
   `);
   const updateProduct = db.prepare(`
     UPDATE products SET
@@ -420,6 +408,21 @@ export function importProductRows({
         const attrsJson = JSON.stringify(data.attributes || {});
 
         if (existing) {
+          if (stock != null) {
+            const history = db.prepare(`SELECT COUNT(*) AS c FROM inventory_transactions WHERE variant_id = ?`).get(existing.id).c;
+            const onHand = Number(db.prepare(`SELECT COALESCE(on_hand, 0) AS q FROM inventory_balances WHERE variant_id = ?`).get(existing.id)?.q || 0);
+            if (history > 0 || onHand > 0) {
+              report.failed += 1;
+              report.errors.push({
+                row: rowResult.rowNumber,
+                message: `Opening stock import blocked for ${data.sku || existing.sku}: variant already has stock or inventory history. Use a controlled stock adjustment.`,
+                productName: data.productName,
+                sku: data.sku || existing.sku,
+                suggestedFix: 'Remove stock from this row and use Stock Adjustment / Opening Balance.',
+              });
+              continue;
+            }
+          }
           if (duplicateMode === 'skip' || duplicateMode === 'create') {
             // create mode skips existing (don't invent new SKU collision)
             report.skipped += 1;
@@ -451,24 +454,16 @@ export function importProductRows({
               barcode,
               attrsJson,
               sellingPrice,
-              costPrice,
+              Number(existing.cost_price || 0),
               lowStock,
               ts,
               existing.id
             );
-            if (stock != null) {
-              upsertBalance.run(existing.id, stock, stock, ts);
-              insertTxn.run(
-                crypto.randomUUID(),
-                existing.id,
-                'adjustment',
-                stock,
-                'import',
-                'Stock set via Excel import',
-                userId,
-                ts
-              );
-            }
+            if (stock != null && stock > 0) applyInventoryMovement(db, {
+              variantId: existing.id, quantity: stock, transactionType: 'initial', unitCost: costPrice,
+              referenceType: 'import', referenceId: `row-${rowResult.rowNumber}`,
+              notes: 'Opening stock on Excel import', createdBy: userId, timestamp: ts,
+            });
             report.updated += 1;
             continue;
           } else if (duplicateMode === 'merge') {
@@ -490,16 +485,15 @@ export function importProductRows({
               attrsJson,
               data.sellingPrice,
               data.sellingPrice,
-              data.costPrice,
-              data.costPrice,
+              Number(existing.cost_price || 0),
+              Number(existing.cost_price || 0),
               data.lowStockAlert,
               data.lowStockAlert,
               ts,
               existing.id
             );
-            if (stock != null) {
-              upsertBalance.run(existing.id, stock, stock, ts);
-            }
+            // Existing variants with stock/history were rejected above; zero-stock
+            // variants do not need a balance overwrite during metadata merge.
             report.updated += 1;
             continue;
           }
@@ -614,19 +608,17 @@ export function importProductRows({
         );
 
         const opening = stock != null ? stock : 0;
-        insertBalance.run(variantId, opening, opening, ts);
-        if (opening > 0) {
-          insertTxn.run(
-            crypto.randomUUID(),
-            variantId,
-            'initial',
-            opening,
-            'import',
-            isNewProduct ? 'Opening stock on import' : 'Stock on variant import',
-            userId,
-            ts
-          );
-        }
+        insertBalance.run(variantId, ts);
+        db.prepare(`
+          INSERT OR IGNORE INTO inventory_costing
+            (variant_id, quantity, inventory_value, average_cost, is_reconciled, backfill_status, updated_at)
+          VALUES (?, 0, 0, 0, 1, 'live', ?)
+        `).run(variantId, ts);
+        if (opening > 0) applyInventoryMovement(db, {
+          variantId, quantity: opening, transactionType: 'initial', unitCost: costPrice,
+          referenceType: 'import', referenceId: `row-${rowResult.rowNumber}`,
+          notes: isNewProduct ? 'Opening stock on import' : 'Stock on variant import', createdBy: userId, timestamp: ts,
+        });
 
         report.inserted += 1;
       } catch (err) {

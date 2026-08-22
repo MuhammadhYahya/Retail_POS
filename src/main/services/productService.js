@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { getDb } from '../database/db.js';
+import { applyInventoryMovement, getInventoryCost, recordInventoryMovement } from './inventoryCostService.js';
 
 function now() {
   return new Date().toISOString();
@@ -528,7 +529,9 @@ const productService = {
 
   lookupVariantByBarcode(barcode) {
     const db = getDb();
-    const cleanBarcode = cleanText(barcode);
+    const cleanBarcode = String(barcode ?? '')
+      .replace(/[\u0000-\u001F\u007F]/g, '')
+      .trim();
     if (!cleanBarcode) return null;
 
     const row = db.prepare(`
@@ -540,7 +543,7 @@ const productService = {
         v.barcode,
         v.attributes_json,
         v.selling_price,
-        v.cost_price,
+        COALESCE(ic.average_cost, v.cost_price) AS cost_price,
         v.low_stock_alert,
         v.track_inventory,
         v.is_default,
@@ -568,11 +571,15 @@ const productService = {
       FROM product_variants v
       JOIN products p ON p.id = v.product_id
       LEFT JOIN inventory_balances b ON b.variant_id = v.id
-      WHERE lower(v.barcode) = lower(?)
+      LEFT JOIN inventory_costing ic ON ic.variant_id = v.id
+      WHERE (lower(v.barcode) = lower(?) OR lower(v.sku) = lower(?))
         AND v.deleted_at IS NULL
+        AND v.is_active = 1
         AND p.deleted_at IS NULL
+        AND p.is_active = 1
+      ORDER BY CASE WHEN lower(v.barcode) = lower(?) THEN 0 ELSE 1 END
       LIMIT 1
-    `).get(cleanBarcode);
+    `).get(cleanBarcode, cleanBarcode, cleanBarcode);
 
     if (!row) return null;
 
@@ -722,19 +729,28 @@ const productService = {
         );
 
         const openingStock = initialStockByVariant.get(variant.id) || 0;
-        db.prepare(`
-          INSERT INTO inventory_balances (variant_id, on_hand, reserved, available, updated_at)
-          VALUES (?, ?, 0, ?, ?)
-        `).run(variant.id, openingStock, openingStock, timestamp);
-
         if (openingStock > 0) {
+          applyInventoryMovement(db, {
+            variantId: variant.id,
+            quantity: openingStock,
+            transactionType: 'initial',
+            unitCost: variant.costPrice,
+            referenceType: 'product',
+            referenceId: id,
+            notes: 'Opening stock on create',
+            createdBy: payload.createdBy || null,
+            timestamp,
+          });
+        } else {
           db.prepare(`
-            INSERT INTO inventory_transactions (
-              id, variant_id, transaction_type, quantity, unit_cost,
-              reference_type, reference_id, notes, created_by, created_at
-            )
-            VALUES (?, ?, 'initial', ?, NULL, 'product', ?, 'Opening stock on create', ?, ?)
-          `).run(crypto.randomUUID(), variant.id, openingStock, id, payload.createdBy || null, timestamp);
+            INSERT OR IGNORE INTO inventory_balances (variant_id, on_hand, reserved, available, updated_at)
+            VALUES (?, 0, 0, 0, ?)
+          `).run(variant.id, timestamp);
+          db.prepare(`
+            INSERT OR IGNORE INTO inventory_costing
+              (variant_id, quantity, inventory_value, average_cost, is_reconciled, backfill_status, updated_at)
+            VALUES (?, 0, 0, 0, 1, 'live', ?)
+          `).run(variant.id, timestamp);
         }
       }
     });
@@ -849,7 +865,7 @@ const productService = {
                 barcode = ?,
                 attributes_json = ?,
                 selling_price = ?,
-                cost_price = ?,
+                cost_price = COALESCE((SELECT average_cost FROM inventory_costing WHERE variant_id = ?), ?),
                 low_stock_alert = ?,
                 track_inventory = ?,
                 is_default = ?,
@@ -865,6 +881,7 @@ const productService = {
             variant.barcode,
             variant.attributesJson,
             variant.sellingPrice,
+            variant.id,
             variant.costPrice,
             variant.lowStockAlert,
             variant.trackInventory,
@@ -914,11 +931,17 @@ const productService = {
           const balance = db.prepare(`SELECT on_hand FROM inventory_balances WHERE variant_id = ?`).get(variant.id);
           const delta = variant.initialStock - toNumber(balance?.on_hand, 0);
           if (delta !== 0) {
-            db.prepare(`
-              INSERT INTO inventory_transactions (id, variant_id, transaction_type, quantity, unit_cost, reference_type, reference_id, notes, created_by, created_at)
-              VALUES (?, ?, 'adjustment', ?, NULL, 'product_edit', ?, 'Stock updated from product edit', ?, ?)
-            `).run(crypto.randomUUID(), variant.id, delta, productId, payload.createdBy || null, timestamp);
-            upsertInventoryBalance(db, variant.id, delta);
+            applyInventoryMovement(db, {
+              variantId: variant.id,
+              quantity: delta,
+              transactionType: 'adjustment',
+              unitCost: variant.costPrice,
+              referenceType: 'product_edit',
+              referenceId: productId,
+              notes: 'Stock updated from product edit',
+              createdBy: payload.createdBy || null,
+              timestamp,
+            });
           }
         }
       }
@@ -1186,64 +1209,11 @@ const productService = {
     notes = null,
     createdBy = null,
   }) {
-    const db = getDb();
-    const cleanVariantId = cleanText(variantId);
-    const cleanType = cleanText(transactionType);
-    const delta = signedStockDelta(quantity, cleanType);
-
-    assertTruthy(cleanVariantId, 'Variant ID is required.');
-    assertTruthy(cleanType, 'Transaction type is required.');
-    assertTruthy(delta !== 0, 'Quantity cannot be zero.');
-
-    const variant = db.prepare(`
-      SELECT id
-      FROM product_variants
-      WHERE id = ? AND deleted_at IS NULL
-    `).get(cleanVariantId);
-
-    if (!variant) {
-      throw new Error('Variant not found.');
-    }
-
-    const id = crypto.randomUUID();
-    const timestamp = now();
-
-    const tx = db.transaction(() => {
-      if (delta < 0) {
-        const balance = db
-          .prepare(`SELECT on_hand FROM inventory_balances WHERE variant_id = ?`)
-          .get(cleanVariantId);
-        const onHand = balance ? toNumber(balance.on_hand) : 0;
-        if (onHand + delta < -0.0001) {
-          throw new Error('Insufficient stock for this adjustment.');
-        }
-      }
-
-      db.prepare(`
-        INSERT INTO inventory_transactions (
-          id, variant_id, transaction_type, quantity, unit_cost,
-          reference_type, reference_id, notes, created_by, created_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        id,
-        cleanVariantId,
-        cleanType,
-        delta,
-        unitCost === null || unitCost === undefined ? null : toNumber(unitCost, null),
-        referenceType || null,
-        referenceId || null,
-        notes || null,
-        createdBy || null,
-        timestamp
-      );
-
-      upsertInventoryBalance(db, cleanVariantId, delta);
+    const result = recordInventoryMovement({
+      variantId, quantity, transactionType, unitCost,
+      referenceType, referenceId, notes, createdBy,
     });
-
-    wrapDbCall(() => tx());
-
-    return this.getInventorySummary(cleanVariantId);
+    return { ...this.getInventorySummary(variantId), inventoryValue: result.inventoryValue, averageCost: result.averageCost };
   },
 
   adjustStock(payload = {}) {
@@ -1258,6 +1228,7 @@ const productService = {
       WHERE variant_id = ?
     `).get(variantId);
 
+    const cost = getInventoryCost(variantId);
     if (!row) {
       return {
         variantId,
@@ -1265,6 +1236,9 @@ const productService = {
         reserved: 0,
         available: 0,
         updatedAt: null,
+        inventoryValue: cost.inventoryValue,
+        averageCost: cost.averageCost,
+        costingStatus: cost.status,
       };
     }
 
@@ -1274,6 +1248,9 @@ const productService = {
       reserved: toNumber(row.reserved),
       available: toNumber(row.available),
       updatedAt: row.updated_at,
+      inventoryValue: cost.inventoryValue,
+      averageCost: cost.averageCost,
+      costingStatus: cost.status,
     };
   },
 };

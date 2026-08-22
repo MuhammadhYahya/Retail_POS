@@ -1,7 +1,8 @@
 import { ipcMain } from 'electron';
 import purchaseService from '../services/purchaseService.js';
+import purchaseReturnService from '../services/purchaseReturnService.js';
 import { extractToken, requirePermission, validateSession } from '../lib/sessionAuth.js';
-import { addAuditWarning, writeAuditEvent } from '../lib/auditLog.js';
+import { addAuditWarning, writeAuditEvent, writeAuditLog } from '../lib/auditLog.js';
 
 export function registerPurchaseHandlers() {
   ipcMain.handle('supplier:list', async (event, payload = {}) => {
@@ -53,6 +54,9 @@ export function registerPurchaseHandlers() {
       if (!permCheck.success) return permCheck;
       const data = purchaseService.createReceipt({
         supplierId: payload.supplierId,
+        invoiceNumber: payload.invoiceNumber,
+        invoiceDate: payload.invoiceDate,
+        receivedDate: payload.receivedDate,
         notes: payload.notes,
         items: payload.items || [],
         createdBy: session.user.id,
@@ -79,5 +83,37 @@ export function registerPurchaseHandlers() {
     } catch (err) {
       return { success: false, error: err.message };
     }
+  });
+
+  ipcMain.handle('purchaseReturn:listable', async (event, payload = {}) => {
+    try {
+      const session = validateSession(extractToken(payload));
+      if (!session.success) return session;
+      const permCheck = requirePermission(session, 'purchaseReturns');
+      if (!permCheck.success) return permCheck;
+      return { success: true, data: purchaseReturnService.listReturnableReceipts(payload) };
+    } catch (err) { return { success: false, error: err.message }; }
+  });
+
+  ipcMain.handle('purchaseReturn:list', async (event, payload = {}) => {
+    try {
+      const session = validateSession(extractToken(payload));
+      if (!session.success) return session;
+      const permCheck = requirePermission(session, 'purchaseReturns');
+      if (!permCheck.success) return permCheck;
+      return { success: true, data: purchaseReturnService.list(payload) };
+    } catch (err) { return { success: false, error: err.message }; }
+  });
+
+  ipcMain.handle('purchaseReturn:create', async (event, payload = {}) => {
+    try {
+      const session = validateSession(extractToken(payload));
+      if (!session.success) return session;
+      const permCheck = requirePermission(session, 'purchaseReturns');
+      if (!permCheck.success) return permCheck;
+      const data = purchaseReturnService.create({ ...payload, userId: session.user.id });
+      writeAuditLog(`purchase_return_create:${data.returnNumber}`, session.user.id);
+      return { success: true, data };
+    } catch (err) { return { success: false, error: err.message }; }
   });
 }

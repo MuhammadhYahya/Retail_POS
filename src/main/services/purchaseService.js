@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { getDb } from '../database/db.js';
 import productService from './productService.js';
 import { nowIso } from '../lib/colomboTime.js';
+import { applyInventoryMovement } from './inventoryCostService.js';
 
 function toNumber(value, fallback = 0) {
   const parsed = Number(value);
@@ -44,6 +45,9 @@ function mapReceipt(row, items = []) {
     createdBy: row.created_by,
     postedBy: row.posted_by,
     postedAt: row.posted_at,
+    invoiceNumber: row.invoice_number || null,
+    invoiceDate: row.invoice_date || null,
+    receivedDate: row.received_date || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     items,
@@ -149,7 +153,7 @@ const purchaseService = {
     return mapReceipt(row, this.getReceiptItems(row.id));
   },
 
-  createReceipt({ supplierId = null, notes = null, items = [], createdBy } = {}) {
+  createReceipt({ supplierId = null, invoiceNumber = null, invoiceDate = null, receivedDate = null, notes = null, items = [], createdBy } = {}) {
     const db = getDb();
     if (!Array.isArray(items) || !items.length) {
       throw new Error('Add at least one line to the GRN.');
@@ -178,12 +182,16 @@ const purchaseService = {
 
       db.prepare(`
         INSERT INTO purchase_receipts (
-          id, grn_number, supplier_id, status, notes, total_cost, created_by, created_at, updated_at
-        ) VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?)
+          id, grn_number, supplier_id, status, invoice_number, invoice_date, received_date,
+          notes, total_cost, created_by, created_at, updated_at
+        ) VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         id,
         grnNumber,
         supplierId ? cleanText(supplierId) : null,
+        invoiceNumber ? cleanText(invoiceNumber) : null,
+        invoiceDate || null,
+        receivedDate || null,
         notes ? cleanText(notes) : null,
         totalCost,
         cleanText(createdBy),
@@ -222,7 +230,7 @@ const purchaseService = {
     const timestamp = nowIso();
     const run = db.transaction(() => {
       for (const item of receipt.items) {
-        productService.recordInventoryTransaction({
+        applyInventoryMovement(db, {
           variantId: item.variantId,
           quantity: item.quantity,
           transactionType: 'purchase',
@@ -233,21 +241,18 @@ const purchaseService = {
           createdBy: userId,
         });
 
-        // Update cost price on variant when receiving
-        db.prepare(`
-          UPDATE product_variants SET cost_price = ?, updated_at = ? WHERE id = ?
-        `).run(item.unitCost, timestamp, item.variantId);
       }
 
       db.prepare(`
         UPDATE purchase_receipts SET
           status = 'posted',
           received_at = ?,
+          received_date = COALESCE(received_date, ?),
           posted_by = ?,
           posted_at = ?,
           updated_at = ?
         WHERE id = ?
-      `).run(timestamp, cleanText(userId), timestamp, timestamp, receipt.id);
+      `).run(timestamp, receipt.receivedDate || timestamp.slice(0, 10), cleanText(userId), timestamp, timestamp, receipt.id);
     });
 
     run();

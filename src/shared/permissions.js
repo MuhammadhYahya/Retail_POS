@@ -3,6 +3,7 @@
 export const PERMISSION_KEYS = [
   'returns',
   'purchases',
+  'purchaseReturns',
   'reports',
   'labels',
   'expenses',
@@ -16,6 +17,7 @@ export const PERMISSION_KEYS = [
 export const PERMISSION_LABELS = {
   returns: 'Returns',
   purchases: 'Purchases',
+  purchaseReturns: 'Purchase returns',
   reports: 'Reports',
   labels: 'Labels',
   expenses: 'Expenses',
@@ -31,6 +33,7 @@ const ALL_ON = Object.fromEntries(PERMISSION_KEYS.map((key) => [key, true]));
 const CASHIER_DEFAULTS = {
   returns: false,
   purchases: false,
+  purchaseReturns: false,
   reports: false,
   labels: false,
   expenses: true,

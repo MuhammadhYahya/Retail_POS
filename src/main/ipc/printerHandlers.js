@@ -3,6 +3,8 @@ import printerService from '../services/printerService.js';
 import saleService from '../services/saleService.js';
 import returnService from '../services/returnService.js';
 import { extractToken, requirePermission, requireRole, validateSession } from '../lib/sessionAuth.js';
+import { consumeInitialPrintGrant } from '../lib/initialPrintGrants.js';
+import { writeAuditEvent } from '../lib/auditLog.js';
 
 export function registerPrinterHandlers() {
   ipcMain.handle('printer:list', async (event, payload = {}) => {
@@ -20,7 +22,7 @@ export function registerPrinterHandlers() {
     try {
       const session = validateSession(extractToken(payload));
       if (!session.success) return session;
-      const roleCheck = requireRole(session, ['admin', 'manager', 'cashier']);
+      const roleCheck = requireRole(session, ['admin']);
       if (!roleCheck.success) return roleCheck;
 
       const sale = saleService.getById(payload.saleId);
@@ -30,6 +32,62 @@ export function registerPrinterHandlers() {
       });
       return { success: true, data: result };
     } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('printer:printInitialReceipt', async (event, payload = {}) => {
+    try {
+      const session = validateSession(extractToken(payload));
+      if (!session.success) return session;
+      const roleCheck = requireRole(session, ['admin', 'manager', 'cashier']);
+      if (!roleCheck.success) return roleCheck;
+      const sale = saleService.getById(payload.saleId);
+      if (!consumeInitialPrintGrant(payload.initialPrintToken, { saleId: sale.id, userId: session.user.id })) {
+        return { success: false, error: 'Initial receipt print authorization expired or is invalid.', code: 'FORBIDDEN' };
+      }
+      const result = await printerService.printReceipt({
+        sale,
+        openDrawer: payload.openDrawer !== false && sale.paymentMethod === 'cash',
+      });
+      return { success: true, data: result };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('printer:reprintReceipt', async (event, payload = {}) => {
+    let session;
+    let sale;
+    try {
+      session = validateSession(extractToken(payload));
+      if (!session.success) return session;
+      const roleCheck = requireRole(session, ['admin']);
+      if (!roleCheck.success) return roleCheck;
+      sale = saleService.getById(payload.saleId);
+      if (sale.status !== 'completed') return { success: false, error: 'Only completed sales can be reprinted.' };
+      const result = await printerService.printReceipt({ sale, openDrawer: false });
+      const audit = writeAuditEvent({
+        action: 'sale_reprint',
+        entityType: 'sale',
+        entityId: sale.id,
+        referenceNumber: sale.invoiceNumber,
+        amount: sale.total,
+        actorUserId: session.user.id,
+        actorDisplayName: session.user.display_name || session.user.username,
+        details: { success: Boolean(result?.success), error: result?.error || null },
+      });
+      return { success: true, data: result, ...(audit.success ? {} : { auditWarning: audit.warning }) };
+    } catch (err) {
+      if (session?.success && sale) {
+        writeAuditEvent({
+          action: 'sale_reprint', entityType: 'sale', entityId: sale.id,
+          referenceNumber: sale.invoiceNumber, amount: sale.total,
+          actorUserId: session.user.id,
+          actorDisplayName: session.user.display_name || session.user.username,
+          details: { success: false, error: err.message },
+        });
+      }
       return { success: false, error: err.message };
     }
   });
