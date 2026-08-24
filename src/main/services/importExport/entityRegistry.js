@@ -646,19 +646,22 @@ registerEntity({
     }
     return db
       .prepare(`
-        SELECT
-          pr.grn_number AS grnNumber,
-          s.name AS supplierName,
-          pr.status,
-          pr.total_cost AS totalCost,
-          pr.received_at AS receivedAt,
-          pr.posted_at AS postedAt,
-          pr.notes,
-          v.sku,
-          p.name AS productName,
-          pri.quantity,
-          pri.unit_cost AS unitCost,
-          pri.line_total AS lineTotal
+          SELECT
+            pr.grn_number AS grnNumber,
+            s.name AS supplierName,
+            pr.status,
+            pr.total_cost AS totalCost,
+            pr.received_at AS receivedAt,
+            pr.posted_at AS postedAt,
+            pr.notes,
+            v.sku,
+            p.name AS productName,
+            pri.quantity,
+            pri.unit_cost AS unitCost,
+            pri.line_total AS lineTotal,
+            pri.batch_number AS batchNumber,
+            pri.expiry_date AS expiryDate,
+            pri.sale_status AS saleStatus
         FROM purchase_receipts pr
         LEFT JOIN suppliers s ON s.id = pr.supplier_id
         LEFT JOIN purchase_receipt_items pri ON pri.receipt_id = pr.id

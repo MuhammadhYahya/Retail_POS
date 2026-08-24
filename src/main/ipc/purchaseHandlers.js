@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron';
 import purchaseService from '../services/purchaseService.js';
 import purchaseReturnService from '../services/purchaseReturnService.js';
+import printerService from '../services/printerService.js';
 import { extractToken, requirePermission, validateSession } from '../lib/sessionAuth.js';
 import { addAuditWarning, writeAuditEvent, writeAuditLog } from '../lib/auditLog.js';
 
@@ -25,6 +26,20 @@ export function registerPurchaseHandlers() {
       if (!permCheck.success) return permCheck;
       const data = purchaseService.createSupplier(payload);
       writeAuditLog(`supplier_create:${data.name}`, session.user.id);
+      return { success: true, data };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('supplier:update', async (event, payload = {}) => {
+    try {
+      const session = validateSession(extractToken(payload));
+      if (!session.success) return session;
+      const permCheck = requirePermission(session, 'purchases');
+      if (!permCheck.success) return permCheck;
+      const data = purchaseService.updateSupplier(payload);
+      writeAuditLog(`supplier_update:${data.name}`, session.user.id);
       return { success: true, data };
     } catch (err) {
       return { success: false, error: err.message };
@@ -78,8 +93,46 @@ export function registerPurchaseHandlers() {
         receiptId: payload.receiptId,
         userId: session.user.id,
       });
+      const printResult = await printerService.printPurchaseReceipt({
+        receipt: data,
+        openDrawer: false,
+      });
       const audit = writeAuditEvent({ action: 'purchase_post', entityType: 'purchase_receipt', entityId: data.id, referenceNumber: data.grnNumber, amount: data.total, actorUserId: session.user.id });
-      return addAuditWarning({ success: true, data }, audit);
+      return addAuditWarning({
+        success: true,
+        data: {
+          ...data,
+          printResult,
+        },
+      }, audit);
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('purchase:expiryAlerts', async (event, payload = {}) => {
+    try {
+      const session = validateSession(extractToken(payload));
+      if (!session.success) return session;
+      const permCheck = requirePermission(session, 'lowStock');
+      if (!permCheck.success) return permCheck;
+      return { success: true, data: purchaseService.listExpiryAlerts(payload) };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('purchase:updateReceiptItemStatus', async (event, payload = {}) => {
+    try {
+      const session = validateSession(extractToken(payload));
+      if (!session.success) return session;
+      const permCheck = requirePermission(session, 'lowStock');
+      if (!permCheck.success) return permCheck;
+      const data = purchaseService.updateReceiptItemStatus({
+        receiptItemId: payload.receiptItemId,
+        saleStatus: payload.saleStatus,
+      });
+      return { success: true, data };
     } catch (err) {
       return { success: false, error: err.message };
     }

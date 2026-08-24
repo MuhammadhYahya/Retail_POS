@@ -13,6 +13,11 @@ export const PRODUCT_UNITS = [
 ];
 
 export const CUSTOM_UNIT_VALUE = '__custom__';
+export const MEASURED_UNITS = ['kg', 'g', 'l', 'ml', 'm'];
+
+export function isMeasuredUnit(unit) {
+  return MEASURED_UNITS.includes(String(unit || '').trim());
+}
 
 export function resolveUnitSelectValue(unit) {
   const value = String(unit || '').trim();

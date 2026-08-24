@@ -16,8 +16,24 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function roundMoney(value) {
+  return Math.round((toNumber(value, 0) + Number.EPSILON) * 100) / 100;
+}
+
 function normalizeLowStockAlert(value) {
   return Math.max(0, toNumber(value, 0));
+}
+
+function normalizePriceType(value) {
+  return String(value ?? '').trim().toUpperCase() === 'MRP' ? 'MRP' : 'FREE';
+}
+
+function calculateMargin(sellingPrice, costPrice) {
+  const selling = toNumber(sellingPrice, 0);
+  const cost = toNumber(costPrice, 0);
+  const marginAmount = roundMoney(selling - cost);
+  const marginPct = selling > 0 ? roundMoney((marginAmount / selling) * 100) : 0;
+  return { marginAmount, marginPct };
 }
 
 function parseJsonArray(value) {
@@ -92,6 +108,8 @@ function normalizeCategoryRow(row, depth = 0, path = []) {
 }
 
 function normalizeVariantRow(row) {
+  const priceType = normalizePriceType(row.price_type);
+  const { marginAmount, marginPct } = calculateMargin(row.selling_price, row.cost_price);
   return {
     id: row.id,
     productId: row.product_id,
@@ -101,6 +119,7 @@ function normalizeVariantRow(row) {
     attributes: parseJsonObject(row.attributes_json),
     sellingPrice: toNumber(row.selling_price),
     costPrice: toNumber(row.cost_price),
+    priceType,
     lowStockAlert: toNumber(row.low_stock_alert),
     trackInventory: Boolean(row.track_inventory),
     isDefault: Boolean(row.is_default),
@@ -110,6 +129,8 @@ function normalizeVariantRow(row) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     deletedAt: row.deleted_at || null,
+    marginAmount,
+    marginPct,
     inventory: {
       onHand: toNumber(row.on_hand),
       reserved: toNumber(row.reserved),
@@ -126,17 +147,71 @@ function normalizeProductRow(row, variants = [], category = null) {
     description: row.description,
     brand: row.brand,
     unit: row.unit,
+    hasExpiry: Boolean(row.has_expiry),
     categoryId: row.category_id || null,
     category,
     imageUrls: parseJsonArray(row.image_urls_json),
     isActive: Boolean(row.is_active),
+    isDraft: Boolean(row.is_draft),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     deletedAt: row.deleted_at || null,
     variants,
+    expiryHistory: parseJsonArray(row.expiry_history),
     inventoryTotal: variants.reduce((sum, variant) => sum + toNumber(variant.inventory?.onHand), 0),
     defaultVariant: variants.find((variant) => variant.isDefault) || variants[0] || null,
   };
+}
+
+function mapExpiryHistoryRow(row) {
+  const saleStatus = cleanText(row.sale_status).toLowerCase();
+  return {
+    receiptItemId: row.receipt_item_id,
+    receiptId: row.receipt_id,
+    grnNumber: row.grn_number,
+    receiptStatus: row.receipt_status,
+    variantId: row.variant_id,
+    variantName: row.variant_name,
+    sku: row.sku,
+    batchNumber: row.batch_number || null,
+    expiryDate: row.expiry_date || null,
+    saleStatus: saleStatus === 'discounted' || saleStatus === 'removed' ? saleStatus : 'active',
+    quantity: toNumber(row.quantity),
+    unitCost: toNumber(row.unit_cost),
+    lineTotal: toNumber(row.line_total),
+    receivedDate: row.received_date || null,
+    createdAt: row.created_at,
+  };
+}
+
+function loadExpiryHistory(db, productId, limit = 12) {
+  return db.prepare(`
+    SELECT
+      pri.id AS receipt_item_id,
+      pri.receipt_id,
+      pri.variant_id,
+      pri.quantity,
+      pri.unit_cost,
+      pri.line_total,
+      pri.batch_number,
+      pri.expiry_date,
+      pri.sale_status,
+      pri.created_at,
+      pr.grn_number,
+      pr.status AS receipt_status,
+      pr.received_date,
+      pv.name AS variant_name,
+      pv.sku
+    FROM purchase_receipt_items pri
+    JOIN purchase_receipts pr ON pr.id = pri.receipt_id
+    JOIN product_variants pv ON pv.id = pri.variant_id
+    WHERE pr.deleted_at IS NULL
+      AND pr.status = 'posted'
+      AND pv.product_id = ?
+      AND pri.expiry_date IS NOT NULL
+    ORDER BY pri.expiry_date ASC, pr.created_at DESC
+    LIMIT ?
+  `).all(productId, limit).map(mapExpiryHistoryRow);
 }
 
 function getCategoryTree(rows) {
@@ -239,14 +314,9 @@ function prepareVariantPayload(productName, variant, index = 0, isSimpleDefault 
   const barcode = cleanText(variant?.barcode) || generateBarcode();
   const sellingPrice = toNumber(variant?.sellingPrice ?? variant?.selling_price, 0);
   const costPrice = toNumber(variant?.costPrice ?? variant?.cost_price, 0);
-  if (sellingPrice <= 0) {
-    throw new Error(`Selling price must be greater than 0 for variant "${variantName}".`);
-  }
+  const priceType = normalizePriceType(variant?.priceType ?? variant?.price_type);
   if (costPrice < 0 || Number.isNaN(costPrice)) {
     throw new Error(`Cost price must be 0 or greater for variant "${variantName}".`);
-  }
-  if (sellingPrice < costPrice) {
-    throw new Error(`Selling price cannot be lower than cost price for variant "${variantName}".`);
   }
 
   return {
@@ -257,6 +327,7 @@ function prepareVariantPayload(productName, variant, index = 0, isSimpleDefault 
     attributesJson: JSON.stringify(normalized),
     sellingPrice,
     costPrice,
+    priceType,
     lowStockAlert: normalizeLowStockAlert(variant?.lowStockAlert ?? variant?.low_stock_alert),
     trackInventory: variant?.trackInventory === false || variant?.track_inventory === 0 ? 0 : 1,
     isDefault: (variant?.isDefault || isSimpleDefault) ? 1 : 0,
@@ -389,7 +460,7 @@ const productService = {
     const db = getDb();
     const products = db.prepare(`
       SELECT id, name, description, brand, unit, category_id, image_urls_json,
-             is_active, created_at, updated_at, deleted_at
+             has_expiry, is_active, is_draft, created_at, updated_at, deleted_at
       FROM products
       WHERE deleted_at IS NULL
       ORDER BY created_at DESC
@@ -405,6 +476,7 @@ const productService = {
         v.attributes_json,
         v.selling_price,
         v.cost_price,
+        v.price_type,
         v.low_stock_alert,
         v.track_inventory,
         v.is_default,
@@ -437,7 +509,10 @@ const productService = {
 
     return products.map((product) =>
       normalizeProductRow(
-        product,
+        {
+          ...product,
+          expiry_history: loadExpiryHistory(db, product.id),
+        },
         variantsByProduct.get(product.id) || [],
         product.category_id ? categoryMap.get(product.category_id) || null : null
       )
@@ -483,7 +558,7 @@ const productService = {
     const db = getDb();
     const row = db.prepare(`
       SELECT id, name, description, brand, unit, category_id, image_urls_json,
-             is_active, created_at, updated_at, deleted_at
+             has_expiry, is_active, is_draft, created_at, updated_at, deleted_at
       FROM products
       WHERE id = ? AND deleted_at IS NULL
     `).get(productId);
@@ -500,6 +575,7 @@ const productService = {
         v.attributes_json,
         v.selling_price,
         v.cost_price,
+        v.price_type,
         v.low_stock_alert,
         v.track_inventory,
         v.is_default,
@@ -524,7 +600,14 @@ const productService = {
     const categories = this.listCategories();
     const categoryMap = new Map(categories.map((category) => [category.id, category]));
 
-    return normalizeProductRow(row, variants, row.category_id ? categoryMap.get(row.category_id) || null : null);
+    return normalizeProductRow(
+      {
+        ...row,
+        expiry_history: loadExpiryHistory(db, row.id),
+      },
+      variants,
+      row.category_id ? categoryMap.get(row.category_id) || null : null
+    );
   },
 
   lookupVariantByBarcode(barcode) {
@@ -544,6 +627,7 @@ const productService = {
         v.attributes_json,
         v.selling_price,
         COALESCE(ic.average_cost, v.cost_price) AS cost_price,
+        v.price_type,
         v.low_stock_alert,
         v.track_inventory,
         v.is_default,
@@ -564,6 +648,7 @@ const productService = {
         p.unit AS product_unit,
         p.category_id AS product_category_id,
         p.image_urls_json AS product_image_urls_json,
+        p.has_expiry AS product_has_expiry,
         p.is_active AS product_is_active,
         p.created_at AS product_created_at,
         p.updated_at AS product_updated_at,
@@ -592,10 +677,12 @@ const productService = {
         unit: row.product_unit,
         category_id: row.product_category_id,
         image_urls_json: row.product_image_urls_json,
+        has_expiry: row.product_has_expiry,
         is_active: row.product_is_active,
         created_at: row.product_created_at,
         updated_at: row.product_updated_at,
         deleted_at: row.product_deleted_at,
+        expiry_history: loadExpiryHistory(db, row.product_id_ref),
       },
       [normalizeVariantRow(row)]
     );
@@ -665,6 +752,7 @@ const productService = {
     const id = crypto.randomUUID();
     const timestamp = now();
     const imageUrlsJson = JSON.stringify(parseJsonArray(payload.imageUrls || payload.imageUrlsJson));
+    const hasExpiry = Boolean(payload.hasExpiry);
     const initialStockByVariant = new Map();
 
     for (let index = 0; index < variantsInput.length; index += 1) {
@@ -686,9 +774,9 @@ const productService = {
       db.prepare(`
         INSERT INTO products (
           id, name, description, brand, unit, category_id, image_urls_json,
-          is_active, created_at, updated_at
+          has_expiry, is_active, is_draft, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
       `).run(
         id,
         productName,
@@ -697,6 +785,8 @@ const productService = {
         unit,
         categoryId,
         imageUrlsJson,
+        hasExpiry ? 1 : 0,
+        payload.isDraft ? 1 : 0,
         timestamp,
         timestamp
       );
@@ -705,10 +795,9 @@ const productService = {
         db.prepare(`
           INSERT INTO product_variants (
             id, product_id, name, sku, barcode, attributes_json,
-            selling_price, cost_price, low_stock_alert, track_inventory, is_default,
+            selling_price, cost_price, price_type, low_stock_alert, track_inventory, is_default,
             is_hidden, sort_order, is_active, created_at, updated_at
-          )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           variant.id,
           id,
@@ -718,6 +807,7 @@ const productService = {
           variant.attributesJson,
           variant.sellingPrice,
           variant.costPrice,
+          variant.priceType,
           variant.lowStockAlert,
           variant.trackInventory,
           variant.isDefault,
@@ -779,6 +869,12 @@ const productService = {
     const nextUnit = Object.prototype.hasOwnProperty.call(payload, 'unit')
       ? cleanText(payload.unit) || null
       : existing.unit || null;
+    const nextHasExpiry = Object.prototype.hasOwnProperty.call(payload, 'hasExpiry')
+      ? Boolean(payload.hasExpiry)
+      : Boolean(existing.hasExpiry);
+    const nextIsDraft = Object.prototype.hasOwnProperty.call(payload, 'isDraft')
+      ? Boolean(payload.isDraft)
+      : Boolean(existing.isDraft);
 
     const variantsInput = Array.isArray(payload.variants) ? payload.variants : null;
     const updateTx = db.transaction(() => {
@@ -790,6 +886,8 @@ const productService = {
             unit = ?,
             category_id = ?,
             image_urls_json = ?,
+            has_expiry = ?,
+            is_draft = ?,
             updated_at = ?
         WHERE id = ?
       `).run(
@@ -799,6 +897,8 @@ const productService = {
         nextUnit,
         nextCategoryId,
         nextImageUrlsJson,
+        nextHasExpiry ? 1 : 0,
+        nextIsDraft ? 1 : 0,
         timestamp,
         productId
       );
@@ -816,6 +916,14 @@ const productService = {
           AND deleted_at IS NULL
       `).all(productId);
       const existingVariantIds = new Set(currentVariants.map((variant) => variant.id));
+      const currentVariantMap = new Map(
+        db.prepare(`
+          SELECT id, selling_price, price_type
+          FROM product_variants
+          WHERE product_id = ?
+            AND deleted_at IS NULL
+        `).all(productId).map((row) => [row.id, row])
+      );
       const normalizedVariants = variantsInput.map((variant, index) => prepareVariantPayload(
         nextName,
         variant,
@@ -858,6 +966,13 @@ const productService = {
         }
 
         if (variant.id && existingVariantIds.has(variant.id)) {
+          const current = currentVariantMap.get(variant.id);
+          if (normalizePriceType(current?.price_type) === 'MRP' && normalizePriceType(variant.priceType) === 'MRP') {
+            const currentSelling = toNumber(current?.selling_price, 0);
+            if (Math.abs(toNumber(variant.sellingPrice, 0) - currentSelling) > 0.0001) {
+              throw new Error(`Selling price is locked for MRP variant "${variant.name}". Change the price type to FREE to edit it.`);
+            }
+          }
           db.prepare(`
             UPDATE product_variants
             SET name = ?,
@@ -866,6 +981,7 @@ const productService = {
                 attributes_json = ?,
                 selling_price = ?,
                 cost_price = COALESCE((SELECT average_cost FROM inventory_costing WHERE variant_id = ?), ?),
+                price_type = ?,
                 low_stock_alert = ?,
                 track_inventory = ?,
                 is_default = ?,
@@ -877,15 +993,16 @@ const productService = {
             WHERE id = ?
           `).run(
             variant.name,
-            variant.sku,
-            variant.barcode,
-            variant.attributesJson,
-            variant.sellingPrice,
-            variant.id,
-            variant.costPrice,
-            variant.lowStockAlert,
-            variant.trackInventory,
-            variant.isDefault,
+              variant.sku,
+              variant.barcode,
+              variant.attributesJson,
+              variant.sellingPrice,
+              variant.id,
+              variant.costPrice,
+              variant.priceType,
+              variant.lowStockAlert,
+              variant.trackInventory,
+              variant.isDefault,
             variant.isHidden,
             variant.sortOrder,
             variant.isActive,
@@ -898,10 +1015,9 @@ const productService = {
           db.prepare(`
             INSERT INTO product_variants (
               id, product_id, name, sku, barcode, attributes_json,
-              selling_price, cost_price, low_stock_alert, track_inventory, is_default,
+              selling_price, cost_price, price_type, low_stock_alert, track_inventory, is_default,
               is_hidden, sort_order, is_active, created_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `).run(
             variantId,
             productId,
@@ -911,6 +1027,7 @@ const productService = {
             variant.attributesJson,
             variant.sellingPrice,
             variant.costPrice,
+            variant.priceType,
             variant.lowStockAlert,
             variant.trackInventory,
             variant.isDefault,

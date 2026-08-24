@@ -15,7 +15,7 @@ import {
   DialogFooter,
 } from '../../../components/ui/dialog';
 import { cn } from '../../../lib/utils';
-import { CUSTOM_UNIT_VALUE, PRODUCT_UNITS } from '../../../lib/productUnits';
+import { CUSTOM_UNIT_VALUE, PRODUCT_UNITS, isMeasuredUnit } from '../../../lib/productUnits';
 import {
   CLOTHING_SIZES,
   countAttributeSets,
@@ -24,7 +24,7 @@ import {
   VARIANT_AXIS_TYPES,
   VARIANT_BUILD_MODES,
 } from '../../../lib/productVariantOptions';
-import { cleanText, inputClassName } from './productFormUtils';
+import { calculateMargin, cleanText, inputClassName, formatCurrency } from './productFormUtils';
 
 export function ProductEditorDialog({
   productDialogOpen,
@@ -36,6 +36,7 @@ export function ProductEditorDialog({
   success,
   productSoftWarnings,
   handleSaveProduct,
+  handleSaveDraft,
   updateForm,
   categories,
   imageInputRef,
@@ -47,6 +48,7 @@ export function ProductEditorDialog({
   switchAxisType,
   addSimpleValue,
   removeSimpleValue,
+  addPackSizeValue,
   addSimpleSizeRange,
   addVariantGroup,
   switchBuildMode,
@@ -66,6 +68,8 @@ export function ProductEditorDialog({
   products,
   requestDeleteProduct,
 }) {
+  const measuredUnit = isMeasuredUnit(form.unit);
+  const packSizeUnitLabel = cleanText(form.unit) || 'unit';
   return (
           <Dialog
             open={productDialogOpen}
@@ -76,7 +80,14 @@ export function ProductEditorDialog({
           >
             <DialogContent className="max-h-[90vh] overflow-y-auto max-w-3xl">
               <DialogHeader>
-                <DialogTitle>{form.id ? 'Edit Product' : 'Add Product'}</DialogTitle>
+                <DialogTitle className="flex items-center gap-2">
+                  {form.id ? 'Edit Product' : 'Add Product'}
+                  {form.isDraft && (
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border">
+                      Draft
+                    </span>
+                  )}
+                </DialogTitle>
                 <DialogDescription>
                   Product master: identity, prices, and barcodes. Receive stock via Purchases / GRN; print from Labels.
                 </DialogDescription>
@@ -150,6 +161,7 @@ export function ProductEditorDialog({
                           id="product-unit"
                           className={inputClassName}
                           value={form.unitSelect || ''}
+                          disabled={form.variantAxisType === VARIANT_AXIS_TYPES.packSize}
                           onChange={(e) => {
                             const next = e.target.value;
                             setForm((prev) => ({
@@ -172,6 +184,16 @@ export function ProductEditorDialog({
                             onChange={(e) => updateForm('unit', e.target.value)}
                             placeholder="e.g. carton, dozen"
                           />
+                        )}
+                        {measuredUnit && (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Measured units unlock quantity-based pack size variants.
+                          </p>
+                        )}
+                        {form.variantAxisType === VARIANT_AXIS_TYPES.packSize && (
+                          <p className="mt-1 text-xs font-medium text-primary">
+                            Pack size mode is locked to {packSizeUnitLabel} from step 1.
+                          </p>
                         )}
                       </div>
                     </div>
@@ -201,6 +223,52 @@ export function ProductEditorDialog({
                         placeholder="Optional product notes"
                       />
                     </div>
+
+                    <label className="flex items-start gap-3 rounded-xl border border-border bg-muted/20 p-3 text-sm">
+                      <input
+                        type="checkbox"
+                        className="mt-1 h-4 w-4"
+                        checked={Boolean(form.hasExpiry)}
+                        onChange={(e) => updateForm('hasExpiry', e.target.checked)}
+                      />
+                      <span>
+                        <span className="font-medium">Track expiry on GRN</span>
+                        <span className="block text-xs text-muted-foreground">
+                          Receive batch number and expiry date when stock arrives. Inventory value still follows WAC.
+                        </span>
+                      </span>
+                    </label>
+
+                    {(form.hasExpiry || (form.expiryHistory || []).length > 0) && (
+                      <div className="rounded-xl border border-border bg-muted/20 p-3 space-y-3">
+                        <div>
+                          <p className="text-sm font-semibold">Recent expiry receipts</p>
+                          <p className="text-xs text-muted-foreground">
+                            Read-only GRN history for this product. Batch and expiry stay at receipt level in phase 1.
+                          </p>
+                        </div>
+                        {(form.expiryHistory || []).length === 0 ? (
+                          <p className="text-xs text-muted-foreground">No posted GRN expiry records yet.</p>
+                        ) : (
+                          <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                            {form.expiryHistory.slice(0, 8).map((item) => (
+                              <div key={item.receiptItemId} className="rounded-lg border border-border bg-card px-3 py-2 text-xs">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <p className="font-semibold">{item.grnNumber}</p>
+                                  <p className="text-muted-foreground">{item.saleStatus}</p>
+                                </div>
+                                <p className="text-muted-foreground">
+                                  {item.variantName || 'Variant'}{item.sku ? ` - ${item.sku}` : ''}
+                                </p>
+                                <p className="text-muted-foreground">
+                                  {item.batchNumber ? `Batch ${item.batchNumber}` : 'No batch'}{item.expiryDate ? ` - Expiry ${item.expiryDate}` : ''}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     <div className="space-y-3">
                       <div className="flex items-center justify-between gap-3">
@@ -290,12 +358,11 @@ export function ProductEditorDialog({
                               id="single-selling-price"
                               type="number"
                               step="0.01"
-                              min="0.01"
+                              min="0"
                               className={inputClassName}
                               value={form.singleVariant.sellingPrice}
                               onChange={(e) => updateSingleVariant('sellingPrice', e.target.value)}
-                              placeholder="Required"
-                              required
+                              placeholder="Optional — set later if unknown"
                             />
                           </div>
                           <div>
@@ -312,8 +379,40 @@ export function ProductEditorDialog({
                               onChange={(e) => updateSingleVariant('costPrice', e.target.value)}
                               placeholder="0"
                               data-focus="variant-cost"
-                              required
                             />
+                          </div>
+                        </div>
+
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <div>
+                            <label className="block text-sm font-medium mb-2">Price type</label>
+                            <select
+                              className={inputClassName}
+                              value={form.singleVariant.priceType || 'FREE'}
+                              onChange={(e) => updateSingleVariant('priceType', e.target.value)}
+                            >
+                              <option value="FREE">FREE</option>
+                              <option value="MRP">MRP</option>
+                            </select>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              MRP locks the selling price after save. WAC still updates underneath it.
+                            </p>
+                          </div>
+                          <div className="rounded-xl border border-border bg-muted/20 p-3 text-sm">
+                            {(() => {
+                              const { marginAmount, marginPct } = calculateMargin(
+                                form.singleVariant.sellingPrice,
+                                form.singleVariant.costPrice
+                              );
+                              return (
+                                <>
+                                  <p className="font-medium">Live margin</p>
+                                  <p className={marginAmount < 0 ? 'text-destructive' : 'text-foreground'}>
+                                    {formatCurrency(marginAmount)} · {marginPct.toFixed(1)}%
+                                  </p>
+                                </>
+                              );
+                            })()}
                           </div>
                         </div>
 
@@ -330,7 +429,7 @@ export function ProductEditorDialog({
                             <input
                               id="single-stock"
                               type="number"
-                              step="1"
+                              step={measuredUnit ? '0.001' : '1'}
                               min="0"
                               className={inputClassName}
                               value={form.singleVariant.initialStock}
@@ -347,7 +446,7 @@ export function ProductEditorDialog({
                             <input
                               id="single-low-stock"
                               type="number"
-                              step="1"
+                              step={measuredUnit ? '0.001' : '1'}
                               min="0"
                               className={inputClassName}
                               value={form.singleVariant.lowStockAlert}
@@ -394,7 +493,8 @@ export function ProductEditorDialog({
                               { id: VARIANT_AXIS_TYPES.colorOnly, title: 'Color only', hint: 'e.g. Black, Blue' },
                               { id: VARIANT_AXIS_TYPES.sizeAndColor, title: 'Size + Color', hint: 'Assign per group' },
                               { id: VARIANT_AXIS_TYPES.custom, title: 'Custom field', hint: 'Material, Style…' },
-                            ].map((option) => (
+                              measuredUnit ? { id: VARIANT_AXIS_TYPES.packSize, title: 'Quantity / Pack size', hint: `e.g. 400 ${packSizeUnitLabel}, 1 ${packSizeUnitLabel}` } : null,
+                            ].filter(Boolean).map((option) => (
                               <button
                                 key={option.id}
                                 type="button"
@@ -455,6 +555,45 @@ export function ProductEditorDialog({
                               )}
                               <div className="flex flex-wrap gap-2 min-h-8">
                                 {(form.simpleValues || []).length === 0 && <p className="text-xs text-muted-foreground">No sizes yet.</p>}
+                                {(form.simpleValues || []).map((value) => (
+                                  <button key={value} type="button" className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs" onClick={() => removeSimpleValue(value)}>
+                                    {value}<X className="h-3 w-3" />
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {form.variantAxisType === VARIANT_AXIS_TYPES.packSize && (
+                            <div className="space-y-3 border-t border-border pt-4">
+                              <div>
+                                <p className="text-sm font-semibold">2. Add pack sizes</p>
+                                <p className="text-xs text-muted-foreground">
+                                  Use the same base unit from step 1. Each chip becomes its own variant row.
+                                </p>
+                              </div>
+                              <div className="flex flex-wrap items-end gap-2">
+                                <div>
+                                  <label className="block text-xs font-medium mb-1">Quantity</label>
+                                  <input
+                                    className={cn(inputClassName, 'w-40')}
+                                    type="number"
+                                    min="0.01"
+                                    step="0.01"
+                                    value={form.packSizePicker || ''}
+                                    onChange={(e) => updateForm('packSizePicker', e.target.value)}
+                                    placeholder="400"
+                                  />
+                                </div>
+                                <div className="rounded-lg border border-border bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
+                                  {packSizeUnitLabel}
+                                </div>
+                                <Button type="button" variant="outline" disabled={!cleanText(form.packSizePicker)} onClick={addPackSizeValue}>
+                                  Add pack size
+                                </Button>
+                              </div>
+                              <div className="flex flex-wrap gap-2 min-h-8">
+                                {(form.simpleValues || []).length === 0 && <p className="text-xs text-muted-foreground">No pack sizes yet.</p>}
                                 {(form.simpleValues || []).map((value) => (
                                   <button key={value} type="button" className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs" onClick={() => removeSimpleValue(value)}>
                                     {value}<X className="h-3 w-3" />
@@ -709,11 +848,41 @@ export function ProductEditorDialog({
                               <div className={cn('mt-3 flex flex-wrap items-end gap-3', form.pricingMode === 'different' && 'opacity-60')}>
                                 <div>
                                   <label className="block text-xs font-medium mb-1">Selling Price</label>
-                                  <input disabled={form.pricingMode === 'different'} className={cn(inputClassName, 'w-36', form.pricingMode === 'different' && 'cursor-not-allowed')} type="number" min="0.01" step="0.01" value={form.quickSellingPrice || ''} onChange={(e) => updateForm('quickSellingPrice', e.target.value)} placeholder="2500" />
+                                  <input
+                                    disabled={form.pricingMode === 'different'}
+                                    className={cn(inputClassName, 'w-36', form.pricingMode === 'different' && 'cursor-not-allowed')}
+                                    type="number"
+                                    min="0.01"
+                                    step="0.01"
+                                    value={form.quickSellingPrice || ''}
+                                    onChange={(e) => updateForm('quickSellingPrice', e.target.value)}
+                                    placeholder="2500"
+                                  />
                                 </div>
                                 <div>
                                   <label className="block text-xs font-medium mb-1">Cost Price</label>
-                                  <input disabled={form.pricingMode === 'different'} className={cn(inputClassName, 'w-36', form.pricingMode === 'different' && 'cursor-not-allowed')} type="number" min="0" step="0.01" value={form.quickCostPrice || ''} onChange={(e) => updateForm('quickCostPrice', e.target.value)} placeholder="1800" />
+                                  <input
+                                    disabled={form.pricingMode === 'different'}
+                                    className={cn(inputClassName, 'w-36', form.pricingMode === 'different' && 'cursor-not-allowed')}
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={form.quickCostPrice || ''}
+                                    onChange={(e) => updateForm('quickCostPrice', e.target.value)}
+                                    placeholder="1800"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium mb-1">Price Type</label>
+                                  <select
+                                    className={cn(inputClassName, 'w-28', form.pricingMode === 'different' && 'cursor-not-allowed')}
+                                    value={form.quickPriceType || 'FREE'}
+                                    disabled={form.pricingMode === 'different'}
+                                    onChange={(e) => updateForm('quickPriceType', e.target.value)}
+                                  >
+                                    <option value="FREE">FREE</option>
+                                    <option value="MRP">MRP</option>
+                                  </select>
                                 </div>
                                 <Button
                                   type="button"
@@ -744,6 +913,19 @@ export function ProductEditorDialog({
                                   All variants use the shared selling and cost prices above; they also appear on each row.
                                 </p>
                               )}
+                              <div className="mt-3 rounded-xl border border-border bg-muted/20 p-3 text-sm">
+                                {(() => {
+                                  const { marginAmount, marginPct } = calculateMargin(form.quickSellingPrice, form.quickCostPrice);
+                                  return (
+                                    <>
+                                      <p className="font-medium">Shared margin</p>
+                                      <p className={marginAmount < 0 ? 'text-destructive' : 'text-foreground'}>
+                                        {formatCurrency(marginAmount)} · {marginPct.toFixed(1)}%
+                                      </p>
+                                    </>
+                                  );
+                                })()}
+                              </div>
                               <div className={cn('mt-3 flex flex-wrap items-end gap-3 border-t border-border pt-3', form.pricingMode === 'different' && 'opacity-60')}>
                                 <div>
                                   <label className="block text-xs font-medium mb-1">Opening Stock</label>
@@ -787,12 +969,15 @@ export function ProductEditorDialog({
                               </p>
                             </div>
                             <div className="overflow-x-auto rounded-xl border border-border">
-                              <table className="w-full text-sm min-w-[640px]">
+                              <table className="w-full text-sm min-w-[860px]">
                                 <thead className="bg-muted/40">
                                   <tr className="border-b border-border">
                                     <th className="p-3 text-left">Variant</th>
                                     <th className="p-3 text-left">Selling</th>
                                     <th className="p-3 text-left">Cost</th>
+                                    <th className="p-3 text-left">Price Type</th>
+                                    <th className="p-3 text-left">Margin</th>
+                                    <th className="p-3 text-left">Margin %</th>
                                     <th className="p-3 text-left">Stock</th>
                                     <th className="p-3 text-left">Low Stock</th>
                                     <th className="p-3 text-left">Barcode</th>
@@ -808,6 +993,10 @@ export function ProductEditorDialog({
                                     const costValue = singlePricing
                                       ? (form.quickCostPrice || '')
                                       : variant.costPrice;
+                                    const priceType = singlePricing
+                                      ? (form.quickPriceType || 'FREE')
+                                      : (variant.priceType || 'FREE');
+                                    const { marginAmount, marginPct } = calculateMargin(sellingValue, costValue);
                                     return (
                                     <tr key={variant.id} className="border-b border-border last:border-0">
                                       <td className="p-2">
@@ -823,14 +1012,14 @@ export function ProductEditorDialog({
                                         <input
                                           className={cn(
                                             'w-24 rounded-lg border border-border bg-input p-2',
-                                            singlePricing && 'cursor-not-allowed opacity-80'
+                                            (singlePricing && form.id && priceType === 'MRP') && 'cursor-not-allowed opacity-80'
                                           )}
                                           type="number"
                                           min="0.01"
                                           step="0.01"
                                           value={sellingValue}
-                                          disabled={singlePricing}
-                                          readOnly={singlePricing}
+                                          disabled={singlePricing && form.id && priceType === 'MRP'}
+                                          readOnly={singlePricing && form.id && priceType === 'MRP'}
                                           onChange={(e) => updateVariantRow(index, 'sellingPrice', e.target.value)}
                                         />
                                       </td>
@@ -838,7 +1027,7 @@ export function ProductEditorDialog({
                                         <input
                                           className={cn(
                                             'w-24 rounded-lg border border-border bg-input p-2',
-                                            singlePricing && 'cursor-not-allowed opacity-80'
+                                            singlePricing && form.id && priceType === 'MRP' && 'cursor-not-allowed opacity-80'
                                           )}
                                           type="number"
                                           min="0"
@@ -851,10 +1040,36 @@ export function ProductEditorDialog({
                                         />
                                       </td>
                                       <td className="p-2">
-                                        <input className="w-20 rounded-lg border border-border bg-input p-2" type="number" min="0" step="1" value={variant.initialStock} onChange={(e) => updateVariantRow(index, 'initialStock', e.target.value)} data-focus="variant-stock" />
+                                        <select
+                                          className={cn(inputClassName, 'w-28 p-2')}
+                                          value={priceType}
+                                          onChange={(e) => {
+                                            if (singlePricing) {
+                                              updateForm('quickPriceType', e.target.value);
+                                            } else {
+                                              updateVariantRow(index, 'priceType', e.target.value);
+                                            }
+                                          }}
+                                        >
+                                          <option value="FREE">FREE</option>
+                                          <option value="MRP">MRP</option>
+                                        </select>
                                       </td>
                                       <td className="p-2">
-                                        <input className="w-20 rounded-lg border border-border bg-input p-2" type="number" min="0" step="1" value={variant.lowStockAlert} onChange={(e) => updateVariantRow(index, 'lowStockAlert', e.target.value)} />
+                                        <span className={marginAmount < 0 ? 'text-destructive font-semibold' : ''}>
+                                          {formatCurrency(marginAmount)}
+                                        </span>
+                                      </td>
+                                      <td className="p-2">
+                                        <span className={marginAmount < 0 ? 'text-destructive font-semibold' : ''}>
+                                          {marginPct.toFixed(1)}%
+                                        </span>
+                                      </td>
+                                      <td className="p-2">
+                                        <input className="w-20 rounded-lg border border-border bg-input p-2" type="number" min="0" step={measuredUnit ? '0.001' : '1'} value={variant.initialStock} onChange={(e) => updateVariantRow(index, 'initialStock', e.target.value)} data-focus="variant-stock" />
+                                      </td>
+                                      <td className="p-2">
+                                        <input className="w-20 rounded-lg border border-border bg-input p-2" type="number" min="0" step={measuredUnit ? '0.001' : '1'} value={variant.lowStockAlert} onChange={(e) => updateVariantRow(index, 'lowStockAlert', e.target.value)} />
                                       </td>
                                       <td className="p-2">
                                         <input
@@ -928,6 +1143,16 @@ export function ProductEditorDialog({
                           }}
                         >
                           Delete Product
+                        </Button>
+                      )}
+                      {(!form.id || form.isDraft) && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          disabled={saving}
+                          onClick={handleSaveDraft}
+                        >
+                          {saving ? 'Saving...' : 'Save as Draft'}
                         </Button>
                       )}
                       <Button type="submit" disabled={saving}>

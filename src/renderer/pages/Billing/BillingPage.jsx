@@ -16,8 +16,9 @@ import { invokeWithAuth, notifyLowStockUpdated } from '../../lib/ipc';
 import { useCartStore } from '../../store/cartStore';
 import { useAuthStore } from '../../store/authStore';
 import { cn } from '../../lib/utils';
-import { buildThermalReceiptHtml } from '../../lib/receiptHtml';
+import { buildThermalReceiptHtml, openReceiptFallbackWindow } from '../../lib/receiptHtml';
 import { colomboDateString, isStaleOpenSession } from '../../lib/colomboTime.js';
+import { isMeasuredUnit } from '../../lib/productUnits';
 
 const inputClassName =
   'w-full p-3.5 rounded-xl bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-all duration-100 font-semibold';
@@ -148,6 +149,7 @@ export default function BillingPage() {
       variantName: variant.name,
       sku: variant.sku,
       barcode: variant.barcode,
+      unit: variant.product?.unit,
       sellingPrice: variant.sellingPrice,
       costPrice: variant.costPrice,
     });
@@ -173,6 +175,7 @@ export default function BillingPage() {
       variantName: variant.name,
       sku: variant.sku,
       barcode: variant.barcode,
+      unit: variant.product?.unit,
       sellingPrice: variant.sellingPrice,
       costPrice: variant.costPrice,
     });
@@ -329,32 +332,23 @@ export default function BillingPage() {
         printRes.data?.error
         || printRes.error
         || 'Automatic print failed.';
-      const fallback = openHtmlReceiptFallback(response.data, settings);
+      const fallback = openReceiptFallbackWindow(
+        buildThermalReceiptHtml({
+          shop: settings || {},
+          sale: response.data,
+          paperWidth: settings?.paperWidth || 80,
+          autoPrint: false,
+        }),
+        { title: `Receipt ${response.data?.invoiceNumber || ''}`.trim() || 'Receipt preview' }
+      );
       setPrintStatus(
         fallback.ok
-          ? `${errMsg} Opened browser print dialog.`
+          ? `${errMsg} Opened receipt preview on screen.`
           : `${errMsg} ${fallback.error || 'Use Reprint Receipt.'}`
       );
     }
     setPrinting(false);
   };
-
-  function openHtmlReceiptFallback(sale, shopSettings) {
-    const html = buildThermalReceiptHtml({
-      shop: shopSettings || {},
-      sale,
-      paperWidth: shopSettings?.paperWidth || 80,
-      autoPrint: true,
-    });
-    const win = window.open('', '_blank', 'width=360,height=640');
-    if (!win) {
-      return { ok: false, error: 'Pop-up blocked. Allow pop-ups to print the receipt.' };
-    }
-    win.document.open();
-    win.document.write(html);
-    win.document.close();
-    return { ok: true };
-  }
 
   const handlePrintReceipt = async () => {
     if (!completedSale || printing) return;
@@ -374,9 +368,17 @@ export default function BillingPage() {
 
     const receiptResponse = await invokeWithAuth('sale:getReceipt', { saleId: completedSale.id });
     const fallbackSale = receiptResponse.success ? receiptResponse.data?.sale : completedSale;
-    const fallback = openHtmlReceiptFallback(fallbackSale, settings);
+    const fallback = openReceiptFallbackWindow(
+      buildThermalReceiptHtml({
+        shop: settings || {},
+        sale: fallbackSale,
+        paperWidth: settings?.paperWidth || 80,
+        autoPrint: false,
+      }),
+      { title: `Receipt ${fallbackSale?.invoiceNumber || ''}`.trim() || 'Receipt preview' }
+    );
     if (fallback.ok) {
-      setPrintStatus('Opened browser print dialog.');
+      setPrintStatus('Opened receipt preview on screen.');
     } else {
       setPrintStatus(
         thermal.data?.error
@@ -528,6 +530,8 @@ export default function BillingPage() {
                   {totals.lines.map((item) => {
                     const lineType = saleDiscountActive ? 'none' : (item.discountType || 'none');
                     const lineValue = saleDiscountActive ? '' : (item.discountValue || '');
+                    const measured = isMeasuredUnit(item.unit);
+                    const qtyStep = measured ? 0.1 : 1;
                     return (
                       <tr key={item.variantId} className="hover:bg-muted/5 transition-colors">
                         <td className="p-4 align-middle">
@@ -538,21 +542,22 @@ export default function BillingPage() {
                           <div className="flex items-center gap-1">
                             <button
                               type="button"
-                              onClick={() => updateQty(item.variantId, item.quantity - 1)}
+                              onClick={() => updateQty(item.variantId, Math.max(0, item.quantity - qtyStep))}
                               className="h-10 w-10 rounded-xl border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/60 active:scale-95 transition-all select-none cursor-pointer"
                             >
                               <Minus className="h-4 w-4" />
                             </button>
                             <input
                               type="number"
-                              min="1"
+                              min={measured ? '0.001' : '1'}
+                              step={measured ? '0.001' : '1'}
                               className="w-14 h-10 rounded-xl border border-border bg-input text-center font-bold text-base focus:outline-none focus:ring-2 focus:ring-ring"
                               value={item.quantity}
                               onChange={(e) => updateQty(item.variantId, e.target.value)}
                             />
                             <button
                               type="button"
-                              onClick={() => updateQty(item.variantId, item.quantity + 1)}
+                              onClick={() => updateQty(item.variantId, item.quantity + qtyStep)}
                               className="h-10 w-10 rounded-xl border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/60 active:scale-95 transition-all select-none cursor-pointer"
                             >
                               <Plus className="h-4 w-4" />

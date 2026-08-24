@@ -18,5 +18,6 @@ export const PATH_PERMISSION = {
   '/returns': 'returns',
   '/expenses': 'expenses',
   '/low-stock': 'lowStock',
+  '/expiry-alerts': 'lowStock',
   '/reports': 'reports',
 };

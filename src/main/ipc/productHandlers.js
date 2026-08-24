@@ -116,6 +116,56 @@ export function registerProductHandlers() {
     }
   });
 
+  ipcMain.handle('product:createQuickPurchase', async (event, payload = {}) => {
+    try {
+      const session = validateSession(extractToken(payload));
+      if (!session.success) return session;
+      const permissionCheck = requirePermission(session, 'purchases');
+      if (!permissionCheck.success) return permissionCheck;
+
+      const product = productService.createProduct({
+        name: payload.name,
+        unit: payload.unit || 'pcs',
+        hasExpiry: false,
+        variants: [{
+          name: payload.name,
+          barcode: payload.barcode,
+          name: payload.variantName || payload.name,
+          attributes: payload.attributes || {},
+          sellingPrice: payload.sellingPrice,
+          costPrice: payload.costPrice,
+          priceType: payload.priceType || 'FREE',
+          trackInventory: true,
+          lowStockAlert: 0,
+          initialStock: 0,
+          isDefault: true,
+          isHidden: true,
+        }],
+        createdBy: session.user.id,
+      });
+      writeAuditLog(`quick_product_create:${product.name}`, session.user.id);
+      const variant = product.defaultVariant || product.variants?.[0] || null;
+
+      return {
+        success: true,
+        data: {
+          productId: product.id,
+          variantId: variant?.id || null,
+          productName: product.name,
+          variant,
+          sku: variant?.sku || null,
+          barcode: variant?.barcode || null,
+          costPrice: variant?.costPrice ?? 0,
+          sellingPrice: variant?.sellingPrice ?? 0,
+          unit: product.unit || 'pcs',
+          inventory: variant?.inventory || null,
+        },
+      };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
   ipcMain.handle('product:update', async (event, payload = {}) => {
     try {
       const token = extractToken(payload);

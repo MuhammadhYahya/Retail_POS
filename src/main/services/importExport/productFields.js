@@ -59,6 +59,15 @@ export const PRODUCT_FIELDS = [
     exportKey: 'sellingPrice',
   },
   {
+    key: 'priceType',
+    label: 'Price Type',
+    required: false,
+    type: 'text',
+    maxLength: 16,
+    aliases: ['price type', 'pricing type', 'mrp', 'free', 'printed price'],
+    exportKey: 'priceType',
+  },
+  {
     key: 'stockOnHand',
     label: 'Opening Stock',
     required: false,
@@ -162,6 +171,14 @@ export const PRODUCT_FIELDS = [
     aliases: ['active', 'is active', 'isactive', 'status', 'enabled'],
     exportKey: 'isActive',
   },
+  {
+    key: 'hasExpiry',
+    label: 'Has Expiry',
+    required: false,
+    type: 'boolean',
+    aliases: ['has expiry', 'expiry tracked', 'expiry enabled', 'expiry'],
+    exportKey: 'hasExpiry',
+  },
 ];
 
 export const REQUIRED_FIELD_KEYS = PRODUCT_FIELDS.filter((f) => f.required).map((f) => f.key);
@@ -173,6 +190,7 @@ export const SAMPLE_PRODUCT_ROWS = [
     barcode: '4790000000001',
     costPrice: 850,
     sellingPrice: 1490,
+    priceType: 'FREE',
     stockOnHand: 24,
     supplierName: 'ABC Garments',
     categoryName: 'Apparel',
@@ -191,6 +209,7 @@ export const SAMPLE_PRODUCT_ROWS = [
     barcode: '4790000000002',
     costPrice: 850,
     sellingPrice: 1490,
+    priceType: 'FREE',
     stockOnHand: 18,
     supplierName: 'ABC Garments',
     categoryName: 'Apparel',
@@ -209,6 +228,7 @@ export const SAMPLE_PRODUCT_ROWS = [
     barcode: '',
     costPrice: 40,
     sellingPrice: 80,
+    priceType: 'FREE',
     stockOnHand: 100,
     supplierName: 'Fresh Distributors',
     categoryName: 'Beverages',

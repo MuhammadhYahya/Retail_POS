@@ -1,3 +1,4 @@
+import path from 'path';
 import backupService from './index.js';
 
 function parseTimeToMinutes(hhmm) {
@@ -63,6 +64,41 @@ function msUntilNextSchedule(settings, now = new Date()) {
   return Math.max(1000, next.getTime() - now.getTime());
 }
 
+function isLocationUnavailableError(error) {
+  const message = String(error?.message || error || '');
+  return message.includes('Backup folder is unavailable')
+    || message.includes('Cannot write to the backup location');
+}
+
+async function runAutomaticBackup({ themePreference = null } = {}) {
+  const settings = backupService.getBackupSettings();
+  const preferredLocation = settings.location || backupService.getDefaultBackupDir();
+
+  try {
+    return await backupService.createBackup({
+      destinationDir: preferredLocation,
+      type: 'automatic',
+      themePreference,
+    });
+  } catch (error) {
+    if (!isLocationUnavailableError(error)) {
+      throw error;
+    }
+
+    const fallbackLocation = backupService.getDefaultBackupDir();
+    if (fallbackLocation !== preferredLocation) {
+      console.warn('[backupSchedule] Falling back to default backup folder:', fallbackLocation);
+      return backupService.createBackup({
+        destinationDir: fallbackLocation,
+        type: 'automatic',
+        themePreference,
+      });
+    }
+
+    throw error;
+  }
+}
+
 let timerHandle = null;
 let running = false;
 
@@ -76,15 +112,13 @@ const backupScheduleService = {
 
     running = true;
     try {
-      const location = settings.location || backupService.getDefaultBackupDir();
-      const result = await backupService.createBackup({
-        destinationDir: location,
-        type: 'automatic',
-        themePreference,
-      });
+      const result = await runAutomaticBackup({ themePreference });
       backupService.markAutoBackupDone();
-      backupService.pruneAutomaticBackups({ location, keep: settings.keep });
+      backupService.pruneAutomaticBackups({ location: path.dirname(result.path), keep: settings.keep });
       return { ran: true, result };
+    } catch (error) {
+      console.error('[backupSchedule]', error.message);
+      return { ran: false, reason: 'failed', error: error.message };
     } finally {
       running = false;
     }
@@ -97,15 +131,13 @@ const backupScheduleService = {
 
     running = true;
     try {
-      const location = settings.location || backupService.getDefaultBackupDir();
-      const result = await backupService.createBackup({
-        destinationDir: location,
-        type: 'automatic',
-        themePreference,
-      });
+      const result = await runAutomaticBackup({ themePreference });
       backupService.markAutoBackupDone();
-      backupService.pruneAutomaticBackups({ location, keep: settings.keep });
+      backupService.pruneAutomaticBackups({ location: path.dirname(result.path), keep: settings.keep });
       return { ran: true, result };
+    } catch (error) {
+      console.error('[backupSchedule]', error.message);
+      return { ran: false, reason: 'failed', error: error.message };
     } finally {
       running = false;
     }

@@ -4,7 +4,7 @@ import { Button } from '../../components/ui/button';
 import { Alert, AlertDescription } from '../../components/ui/alert';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { invokeWithAuth } from '../../lib/ipc';
-import { buildThermalReturnReceiptHtml } from '../../lib/receiptHtml';
+import { buildThermalReturnReceiptHtml, openReceiptFallbackWindow } from '../../lib/receiptHtml';
 
 const inputClassName =
   'w-full p-3 rounded-lg bg-input border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-ring';
@@ -38,23 +38,6 @@ export default function ReturnsPage() {
     });
   }, []);
 
-  function openHtmlReturnReceiptFallback(returnRecord, shopSettings) {
-    const html = buildThermalReturnReceiptHtml({
-      shop: shopSettings || {},
-      returnRecord,
-      paperWidth: shopSettings?.paperWidth || 80,
-      autoPrint: true,
-    });
-    const win = window.open('', '_blank', 'width=360,height=640');
-    if (!win) {
-      return { ok: false, error: 'Pop-up blocked. Allow pop-ups to print the receipt.' };
-    }
-    win.document.open();
-    win.document.write(html);
-    win.document.close();
-    return { ok: true };
-  }
-
   async function printReturnReceipt(returnRecord, { openDrawer }) {
     const printRes = await invokeWithAuth('printer:printReturnReceipt', {
       returnId: returnRecord.id,
@@ -75,11 +58,19 @@ export default function ReturnsPage() {
       || 'Automatic print failed.';
     const shop = settings || (await invokeWithAuth('settings:get')).data;
     if (shop && !settings) setSettings(shop);
-    const fallback = openHtmlReturnReceiptFallback(returnRecord, shop || {});
+    const fallback = openReceiptFallbackWindow(
+      buildThermalReturnReceiptHtml({
+        shop: shop || {},
+        returnRecord,
+        paperWidth: shop?.paperWidth || 80,
+        autoPrint: false,
+      }),
+      { title: `Return ${returnRecord?.returnNumber || ''}`.trim() || 'Return preview' }
+    );
     return {
       ok: false,
       message: fallback.ok
-        ? `${errMsg} Opened browser print dialog.`
+        ? `${errMsg} Opened receipt preview on screen.`
         : `${errMsg} ${fallback.error || 'Use Print Again.'}`,
     };
   }

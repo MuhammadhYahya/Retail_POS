@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron';
 import printerService from '../services/printerService.js';
 import saleService from '../services/saleService.js';
+import purchaseService from '../services/purchaseService.js';
 import returnService from '../services/returnService.js';
 import { extractToken, requirePermission, requireRole, validateSession } from '../lib/sessionAuth.js';
 import { consumeInitialPrintGrant } from '../lib/initialPrintGrants.js';
@@ -88,6 +89,43 @@ export function registerPrinterHandlers() {
           details: { success: false, error: err.message },
         });
       }
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('printer:printPurchaseReceipt', async (event, payload = {}) => {
+    try {
+      const session = validateSession(extractToken(payload));
+      if (!session.success) return session;
+      const permCheck = requirePermission(session, 'purchases');
+      if (!permCheck.success) return permCheck;
+
+      const receipt = purchaseService.getReceipt(payload.receiptId);
+      const result = await printerService.printPurchaseReceipt({
+        receipt,
+        openDrawer: false,
+      });
+      return { success: true, data: result };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('printer:reprintPurchaseReceipt', async (event, payload = {}) => {
+    let session;
+    let receipt;
+    try {
+      session = validateSession(extractToken(payload));
+      if (!session.success) return session;
+      const permCheck = requirePermission(session, 'purchases');
+      if (!permCheck.success) return permCheck;
+      receipt = purchaseService.getReceipt(payload.receiptId);
+      if (receipt.status !== 'posted') {
+        return { success: false, error: 'Only posted GRNs can be reprinted.' };
+      }
+      const result = await printerService.printPurchaseReceipt({ receipt, openDrawer: false, reprint: true });
+      return { success: true, data: result };
+    } catch (err) {
       return { success: false, error: err.message };
     }
   });

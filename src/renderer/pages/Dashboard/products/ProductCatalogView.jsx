@@ -19,6 +19,7 @@ import { Alert, AlertDescription } from '../../../components/ui/alert';
 import { cn } from '../../../lib/utils';
 import {
   categoryDisplayName,
+  calculateMargin,
   formatCurrency,
   formatVariantDetails,
   inputClassName,
@@ -33,6 +34,8 @@ export function ProductCatalogView({
   breadcrumb,
   searchQuery,
   setSearchQuery,
+  statusFilter,
+  setStatusFilter,
   dateFilterMode,
   setDateFilterMode,
   dateFromDraft,
@@ -56,6 +59,7 @@ export function ProductCatalogView({
   openEditProduct,
   requestDeleteVariant,
   requestDeleteProduct,
+  canViewMargin = true,
 }) {
   return (
       <div className="space-y-6">
@@ -107,6 +111,19 @@ export function ProductCatalogView({
               </Button>
             </div>
           )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm text-muted-foreground">Status:</span>
+          <select
+            className={cn(inputClassName, 'w-auto')}
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+          >
+            <option value="all">All products</option>
+            <option value="published">Published only</option>
+            <option value="draft">Drafts only</option>
+          </select>
         </div>
 
         <div className="grid gap-3 lg:grid-cols-[1.5fr_auto_1fr_1fr_auto_auto]">
@@ -290,7 +307,9 @@ export function ProductCatalogView({
                   <TableHead>Category</TableHead>
                   <TableHead>SKU / Barcode</TableHead>
                   <TableHead>Selling Price</TableHead>
-                  <TableHead>Cost Price</TableHead>
+                  {canViewMargin && <TableHead>Cost Price</TableHead>}
+                  {canViewMargin && <TableHead>Margin</TableHead>}
+                  {canViewMargin && <TableHead>Margin %</TableHead>}
                   <TableHead>Stock</TableHead>
                   {canManageStock && <TableHead className="text-right">Actions</TableHead>}
                 </TableRow>
@@ -311,7 +330,14 @@ export function ProductCatalogView({
                             )}
                           </div>
                           <div className="space-y-1 min-w-0">
-                            <p className="font-medium truncate">{product.name}{isVariantRow ? ` / ${defaultVariant?.name || 'Variant'}` : ''}</p>
+                            <p className="font-medium truncate flex items-center gap-2">
+                              <span className="truncate">{product.name}{isVariantRow ? ` / ${defaultVariant?.name || 'Variant'}` : ''}</span>
+                              {product.isDraft && (
+                                <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground border border-border">
+                                  Draft
+                                </span>
+                              )}
+                            </p>
                             {(product.brand || isVariantRow) && (
                               <p className="text-xs text-muted-foreground truncate">
                                 {product.brand || ''}
@@ -348,9 +374,33 @@ export function ProductCatalogView({
                           <span className="text-muted-foreground text-sm">—</span>
                         )}
                       </TableCell>
-                      <TableCell>
-                        {defaultVariant ? formatCurrency(defaultVariant.costPrice) : <span className="text-muted-foreground text-sm">—</span>}
-                      </TableCell>
+                      {canViewMargin && (
+                        <TableCell>
+                          {defaultVariant ? formatCurrency(defaultVariant.costPrice) : <span className="text-muted-foreground text-sm">—</span>}
+                        </TableCell>
+                      )}
+                      {canViewMargin && (
+                        <TableCell>
+                          {defaultVariant ? (
+                            <span className={defaultVariant.marginAmount < 0 ? 'font-semibold text-destructive' : 'font-medium'}>
+                              {formatCurrency(defaultVariant.marginAmount)}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground text-sm">—</span>
+                          )}
+                        </TableCell>
+                      )}
+                      {canViewMargin && (
+                        <TableCell>
+                          {defaultVariant ? (
+                            <span className={defaultVariant.marginAmount < 0 ? 'font-semibold text-destructive' : 'font-medium'}>
+                              {defaultVariant.marginPct.toFixed(1)}%
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground text-sm">—</span>
+                          )}
+                        </TableCell>
+                      )}
                       <TableCell>
                         <p className="font-medium flex items-center gap-1">
                           <Boxes className="h-4 w-4 text-primary" />
@@ -407,4 +457,3 @@ export function ProductCatalogView({
       </div>
   );
 }
-

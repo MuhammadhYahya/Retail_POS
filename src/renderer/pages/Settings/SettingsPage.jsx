@@ -5,6 +5,11 @@ import { Button } from '../../components/ui/button';
 import { Alert, AlertDescription } from '../../components/ui/alert';
 import { invokeWithAuth } from '../../lib/ipc';
 import { cn } from '../../lib/utils';
+import {
+  buildThermalReceiptHtml,
+  buildThermalReturnReceiptHtml,
+  openReceiptFallbackWindow,
+} from '../../lib/receiptHtml';
 import BackupRestorePanel from './BackupRestorePanel';
 import ImportExportPanel from './ImportExportPanel';
 import ShopSettingsPanel from './ShopSettingsPanel';
@@ -39,6 +44,51 @@ const SETTINGS_SECTIONS = [
 ];
 
 const FORM_SECTIONS = new Set(['shop', 'printer', 'policies']);
+
+function buildTestSale() {
+  return {
+    invoiceNumber: 'TEST-PRINT',
+    saleDate: new Date().toISOString(),
+    cashierName: 'Test',
+    paymentMethod: 'cash',
+    amountTendered: 100,
+    changeGiven: 0,
+    subtotal: 100,
+    discountTotal: 0,
+    total: 100,
+    items: [
+      {
+        productName: 'Receipt test item',
+        variantName: 'Variant A',
+        barcode: '1234567890123',
+        quantity: 1,
+        unitPrice: 100,
+        lineTotal: 100,
+      },
+    ],
+  };
+}
+
+function buildTestReturn() {
+  return {
+    returnNumber: 'RET-TEST-0001',
+    invoiceNumber: 'INV-TEST-0001',
+    saleDate: new Date().toISOString(),
+    processedByName: 'Test',
+    refundTotal: 5500,
+    refundMethod: 'cash',
+    reason: 'Wrong size',
+    items: [
+      {
+        productName: 'Receipt test return item',
+        variantName: 'Size 42',
+        quantity: 1,
+        unitRefund: 5500,
+        lineRefund: 5500,
+      },
+    ],
+  };
+}
 
 export default function SettingsPage() {
   const [activeSection, setActiveSection] = useState('shop');
@@ -96,14 +146,40 @@ export default function SettingsPage() {
     const response = await invokeWithAuth('printer:testPrint');
     setTestingPrint(false);
     if (!response.success) {
-      setError(response.error || 'Test print failed.');
+      const fallback = openReceiptFallbackWindow(
+        buildThermalReceiptHtml({
+          shop: form || {},
+          sale: buildTestSale(),
+          paperWidth: form.paperWidth || 80,
+          autoPrint: false,
+        }),
+        { title: 'Printer test preview' }
+      );
+      setError(
+        fallback.ok
+          ? `${response.error || 'Test print failed.'} Opened receipt preview on screen.`
+          : `${response.error || 'Test print failed.'} ${fallback.error || 'Use Print Again.'}`
+      );
       return;
     }
     if (response.data?.success) {
       setMessage('Test page sent to the receipt printer.');
       return;
     }
-    setError(response.data?.error || 'Test print failed.');
+    const fallback = openReceiptFallbackWindow(
+        buildThermalReceiptHtml({
+          shop: form || {},
+          sale: buildTestSale(),
+          paperWidth: form.paperWidth || 80,
+          autoPrint: false,
+        }),
+      { title: 'Printer test preview' }
+    );
+    setError(
+      fallback.ok
+        ? `${response.data?.error || 'Test print failed.'} Opened receipt preview on screen.`
+        : `${response.data?.error || 'Test print failed.'} ${fallback.error || 'Use Print Again.'}`
+    );
   };
 
   const handleTestReturnPrint = async () => {
@@ -114,14 +190,40 @@ export default function SettingsPage() {
     const response = await invokeWithAuth('printer:testReturnReceipt');
     setTestingPrint(false);
     if (!response.success) {
-      setError(response.error || 'Return test print failed.');
+      const fallback = openReceiptFallbackWindow(
+        buildThermalReturnReceiptHtml({
+          shop: form || {},
+          returnRecord: buildTestReturn(),
+          paperWidth: form.paperWidth || 80,
+          autoPrint: false,
+        }),
+        { title: 'Return receipt test preview' }
+      );
+      setError(
+        fallback.ok
+          ? `${response.error || 'Return test print failed.'} Opened receipt preview on screen.`
+          : `${response.error || 'Return test print failed.'} ${fallback.error || 'Use Print Again.'}`
+      );
       return;
     }
     if (response.data?.success) {
       setMessage('Return receipt test page sent to the receipt printer.');
       return;
     }
-    setError(response.data?.error || 'Return test print failed.');
+    const fallback = openReceiptFallbackWindow(
+      buildThermalReturnReceiptHtml({
+        shop: form || {},
+        returnRecord: buildTestReturn(),
+        paperWidth: form.paperWidth || 80,
+        autoPrint: false,
+      }),
+      { title: 'Return receipt test preview' }
+    );
+    setError(
+      fallback.ok
+        ? `${response.data?.error || 'Return test print failed.'} Opened receipt preview on screen.`
+        : `${response.data?.error || 'Return test print failed.'} ${fallback.error || 'Use Print Again.'}`
+    );
   };
 
   const showSaveBar = FORM_SECTIONS.has(activeSection);

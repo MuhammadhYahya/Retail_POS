@@ -275,6 +275,151 @@ export function buildThermalReturnReceiptHtml({
   <p class="center muted">Thank you.</p>
   ${footer ? `<p class="center muted">${footer}</p>` : ''}
   ${autoPrint ? '<script>window.onload=function(){setTimeout(function(){window.print();},50);}</script>' : ''}
+  </body>
+  </html>`;
+}
+
+export function buildThermalPurchaseReceiptHtml({
+  shop = {},
+  receipt = {},
+  paperWidth = 80,
+  autoPrint = false,
+  reprint = false,
+} = {}) {
+  const widthMm = Number(paperWidth) === 58 ? 58 : 80;
+  const contentMm = widthMm === 58 ? 48 : 72;
+  const shopName = escapeHtml(shop.shopName || 'Shop');
+  const address = escapeHtml(shop.shopAddress || '');
+  const phone = escapeHtml(shop.shopPhone || '');
+  const footer = escapeHtml(shop.receiptFooter || '');
+  const header = escapeHtml(shop.receiptHeader || '');
+  const grnNumber = escapeHtml(receipt.grnNumber || '');
+  const supplierName = escapeHtml(receipt.supplierName || '');
+  const invoiceNumber = escapeHtml(receipt.invoiceNumber || '');
+  const receivedDate = receipt.receivedDate
+    ? escapeHtml(new Date(receipt.receivedDate).toLocaleString())
+    : '';
+
+  const itemRows = (receipt.items || [])
+    .map((item) => {
+      const name = escapeHtml(item.productName || item.variantName || 'Item');
+      const variant = item.variantName && item.variantName !== item.productName
+        ? `<div class="muted">${escapeHtml(item.variantName)}</div>`
+        : '';
+      const qty = escapeHtml(item.quantity);
+      const unitCost = money(item.unitCost);
+      const lineTotal = money(item.lineTotal);
+      const batch = item.batchNumber ? `<div class="muted">Batch: ${escapeHtml(item.batchNumber)}</div>` : '';
+      const expiry = item.expiryDate ? `<div class="muted">Expiry: ${escapeHtml(item.expiryDate)}</div>` : '';
+      return `<div class="item">
+        <div class="name">${name}</div>
+        ${variant}
+        ${batch}
+        ${expiry}
+        <div class="line"><span>${qty} x ${unitCost}</span><span>${lineTotal}</span></div>
+      </div>`;
+    })
+    .join('');
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>${grnNumber || 'Purchase Receipt'}</title>
+  <style>
+    @page {
+      size: ${widthMm}mm auto;
+      margin: 0;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      width: ${widthMm}mm;
+      margin: 0;
+      padding: 0;
+      background: #fff;
+      color: #000;
+    }
+    body {
+      width: ${contentMm}mm;
+      max-width: ${contentMm}mm;
+      margin: 0 auto;
+      padding: 2mm 1.5mm 4mm;
+      font-family: "Consolas", "Courier New", monospace;
+      font-size: 11px;
+      line-height: 1.25;
+    }
+    h1 {
+      font-size: 13px;
+      margin: 0 0 2px;
+      text-align: center;
+    }
+    h2 {
+      font-size: 12px;
+      margin: 0;
+      text-align: center;
+      font-weight: 700;
+    }
+    .center { text-align: center; }
+    .muted { color: #222; font-size: 10px; }
+    .label { margin-top: 6px; font-size: 10px; }
+    .value { margin-bottom: 2px; word-break: break-word; }
+    .rule {
+      border: none;
+      border-top: 1px dashed #000;
+      margin: 4px 0;
+    }
+    .item { margin: 6px 0; }
+    .name { word-break: break-word; }
+    .line {
+      display: flex;
+      justify-content: space-between;
+      gap: 4px;
+    }
+    .total { font-weight: 700; font-size: 12px; }
+    @media print {
+      html, body {
+        width: ${widthMm}mm;
+        height: auto !important;
+        overflow: visible;
+      }
+      body { padding-bottom: 8mm; }
+    }
+  </style>
+</head>
+<body>
+  <h1>${shopName}</h1>
+  ${header ? `<p class="center muted">${header}</p>` : ''}
+  ${address ? `<p class="center muted">${address}</p>` : ''}
+  ${phone ? `<p class="center muted">Tel: ${phone}</p>` : ''}
+  <hr class="rule" />
+  <h2>PURCHASE RECEIPT${reprint ? ' - REPRINT' : ''}</h2>
+  <hr class="rule" />
+  <div class="label">GRN:</div>
+  <div class="value"><strong>${grnNumber}</strong></div>
+  ${supplierName ? `<div class="label">Supplier:</div><div class="value">${supplierName}</div>` : ''}
+  ${invoiceNumber ? `<div class="label">Invoice:</div><div class="value">${invoiceNumber}</div>` : ''}
+  ${receivedDate ? `<div class="label">Received:</div><div class="value">${receivedDate}</div>` : ''}
+  <hr class="rule" />
+  ${itemRows || '<div class="muted">No items</div>'}
+  <hr class="rule" />
+  <div class="label">Total Cost</div>
+  <div class="value total">Rs. ${money(receipt.totalCost)}</div>
+  ${receipt.notes ? `<div class="label">Notes</div><div class="value">${escapeHtml(receipt.notes)}</div>` : ''}
+  ${footer ? `<p class="center muted" style="margin-top:6px">${footer}</p>` : ''}
+  ${autoPrint ? '<script>window.onload=function(){setTimeout(function(){window.print();},50);}</script>' : ''}
 </body>
 </html>`;
+}
+
+export function openReceiptFallbackWindow(html, { title = 'Receipt preview', width = 420, height = 760 } = {}) {
+  const win = window.open('', '_blank', `width=${width},height=${height}`);
+  if (!win) {
+    return { ok: false, error: 'Pop-up blocked. Allow pop-ups to view the receipt.' };
+  }
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+  win.document.title = title;
+  win.focus();
+  return { ok: true };
 }

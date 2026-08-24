@@ -15,6 +15,7 @@ import BillingPage from './pages/Billing/BillingPage';
 import ReportsPage from './pages/Reports/ReportsPage';
 import SettingsPage from './pages/Settings/SettingsPage';
 import LowStockPage from './pages/Inventory/LowStockPage';
+import ExpiryAlertsPage from './pages/Inventory/ExpiryAlertsPage';
 import DayClosePage from './pages/Cash/DayClosePage';
 import PurchasesPage from './pages/Purchases/PurchasesPage';
 import PurchaseReturnsPage from './pages/Purchases/PurchaseReturnsPage';
@@ -205,6 +206,7 @@ function AppRoutes() {
 
         <Route path="/products" element={<FeatureRoute permission={PATH_PERMISSION['/products']}><ProductsManagement /></FeatureRoute>} />
         <Route path="/low-stock" element={<FeatureRoute permission={PATH_PERMISSION['/low-stock']}><LowStockPage /></FeatureRoute>} />
+        <Route path="/expiry-alerts" element={<FeatureRoute permission={PATH_PERMISSION['/expiry-alerts']}><ExpiryAlertsPage /></FeatureRoute>} />
         <Route
           path="/billing"
           element={

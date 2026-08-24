@@ -206,6 +206,68 @@ function buildEscPosReturnReceipt({ shop, returnRecord, paperWidth = 80 }) {
   return Buffer.concat(chunks);
 }
 
+function formatPurchaseDate(value) {
+  const raw = String(value || '').replace('T', ' ').trim();
+  if (!raw) return '';
+  return raw.slice(0, 19);
+}
+
+function buildEscPosPurchaseReceipt({ shop, receipt, paperWidth = 80, reprint = false }) {
+  const chars = paperWidth >= 72 ? 42 : 32;
+  const rule = '-'.repeat(chars);
+  const chunks = [];
+  const ESC = 0x1b;
+  const GS = 0x1d;
+
+  chunks.push(Buffer.from([ESC, 0x40])); // init
+  chunks.push(Buffer.from([ESC, 0x74, 0])); // code page PC437
+  chunks.push(Buffer.from([ESC, 0x52, 0])); // international char set USA
+  chunks.push(Buffer.from([ESC, 0x4d, 0])); // Font A
+  chunks.push(Buffer.from([ESC, 0x61, 1])); // center
+  pushWrapped(chunks, shop.shopName || 'Shop', chars);
+  if (shop.receiptHeader) pushWrapped(chunks, shop.receiptHeader, chars);
+  if (shop.shopAddress) pushWrapped(chunks, shop.shopAddress, chars);
+  if (shop.shopPhone) chunks.push(encodeText(`Tel: ${shop.shopPhone}\n`));
+  chunks.push(encodeText(`${rule}\n`));
+  chunks.push(encodeText('PURCHASE RECEIPT\n'));
+  if (reprint) chunks.push(encodeText('REPRINT\n'));
+  chunks.push(encodeText(`${rule}\n`));
+  chunks.push(Buffer.from([ESC, 0x61, 0])); // left
+
+  chunks.push(encodeText(`GRN: ${receipt.grnNumber || ''}\n`));
+  if (receipt.supplierName) chunks.push(encodeText(`Supplier: ${receipt.supplierName}\n`));
+  if (receipt.invoiceNumber) chunks.push(encodeText(`Invoice: ${receipt.invoiceNumber}\n`));
+  if (receipt.receivedDate) chunks.push(encodeText(`Received: ${formatPurchaseDate(receipt.receivedDate)}\n`));
+  chunks.push(encodeText(`${rule}\n`));
+
+  for (const item of receipt.items || []) {
+    const productName = item.productName || 'Item';
+    pushWrapped(chunks, productName, chars);
+    if (item.variantName && item.variantName !== productName) {
+      pushWrapped(chunks, `  ${item.variantName}`, chars);
+    }
+    if (item.batchNumber) chunks.push(encodeText(`  Batch: ${item.batchNumber}\n`));
+    if (item.expiryDate) chunks.push(encodeText(`  Expiry: ${item.expiryDate}\n`));
+    const lineTotal = Number(item.lineTotal || 0);
+    chunks.push(encodeText(`  ${item.quantity} x ${money(item.unitCost)}  ${money(lineTotal)}\n`));
+  }
+
+  chunks.push(encodeText(`${rule}\n`));
+  chunks.push(encodeText(`TOTAL COST: Rs. ${money(receipt.totalCost)}\n`));
+  if (receipt.notes) {
+    chunks.push(encodeText(`${rule}\n`));
+    pushWrapped(chunks, `Notes: ${receipt.notes}`, chars);
+  }
+
+  if (shop.receiptFooter) {
+    chunks.push(Buffer.from([ESC, 0x61, 1]));
+    pushWrapped(chunks, shop.receiptFooter, chars);
+  }
+
+  chunks.push(Buffer.from([GS, 0x56, 65, 0x40]));
+  return Buffer.concat(chunks);
+}
+
 function buildDrawerKick() {
   // ESC p m t1 t2 — pulse pin 2 (cash drawer on most XP-80 setups)
   return Buffer.from([0x1b, 0x70, 0x00, 0x19, 0xfa]);
@@ -229,6 +291,34 @@ function buildReturnPayload({ shop, returnRecord, paperWidth, openDrawer }) {
   const buffer = buildEscPosReturnReceipt({ shop, returnRecord, paperWidth });
   if (!openDrawer) return buffer;
   return Buffer.concat([buffer, buildDrawerKick()]);
+}
+
+function buildPurchasePayload({ shop, receipt, paperWidth, openDrawer, reprint = false }) {
+  const buffer = buildEscPosPurchaseReceipt({ shop, receipt, paperWidth, reprint });
+  if (!openDrawer) return buffer;
+  return Buffer.concat([buffer, buildDrawerKick()]);
+}
+
+function buildTestPurchase() {
+  return {
+    grnNumber: 'GRN-TEST-0001',
+    supplierName: 'Test Supplier',
+    invoiceNumber: 'INV-TEST-0001',
+    receivedDate: new Date().toISOString(),
+    totalCost: 2500,
+    notes: 'Printer test purchase receipt',
+    items: [
+      {
+        productName: 'Rice 1kg',
+        variantName: 'Standard',
+        batchNumber: 'BATCH-001',
+        expiryDate: '2027-12-31',
+        quantity: 2,
+        unitCost: 1250,
+        lineTotal: 2500,
+      },
+    ],
+  };
 }
 
 function buildTestSale(shop) {
@@ -364,6 +454,30 @@ const printerService = {
     return sendPayload(configured, payload);
   },
 
+  async printPurchaseReceipt({ receipt, openDrawer = false, reprint = false } = {}) {
+    const shop = settingsService.get();
+    const configured = String(shop.printerPort || '').trim();
+    const paperWidth = shop.paperWidth || 80;
+
+    if (!configured) {
+      return {
+        success: false,
+        fallback: 'html',
+        error: 'No receipt printer selected in Settings.',
+      };
+    }
+
+    const payload = buildPurchasePayload({
+      shop,
+      receipt,
+      paperWidth,
+      openDrawer: Boolean(openDrawer),
+      reprint: Boolean(reprint),
+    });
+
+    return sendPayload(configured, payload);
+  },
+
   async testPrint() {
     const shop = settingsService.get();
     const configured = String(shop.printerPort || '').trim();
@@ -412,6 +526,33 @@ const printerService = {
       returnRecord: buildTestReturn(),
       paperWidth,
       openDrawer: false,
+    });
+
+    return sendPayload(configured, payload);
+  },
+
+  async testPurchaseReceipt() {
+    const shop = settingsService.get();
+    const configured = String(shop.printerPort || '').trim();
+    const paperWidth = shop.paperWidth || 80;
+
+    if (!configured) {
+      return {
+        success: false,
+        error: 'No receipt printer selected in Settings.',
+      };
+    }
+
+    const payload = buildPurchasePayload({
+      shop: {
+        ...shop,
+        receiptHeader: shop.receiptHeader || 'GRN printer test',
+        receiptFooter: shop.receiptFooter || 'If you can read this, cut and feed are OK.',
+      },
+      receipt: buildTestPurchase(),
+      paperWidth,
+      openDrawer: false,
+      reprint: false,
     });
 
     return sendPayload(configured, payload);

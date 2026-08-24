@@ -29,6 +29,7 @@ export const VARIANT_AXIS_TYPES = {
   colorOnly: 'colorOnly',
   sizeAndColor: 'sizeAndColor',
   custom: 'custom',
+  packSize: 'packSize',
 };
 
 export const VARIANT_BUILD_MODES = {
@@ -38,6 +39,10 @@ export const VARIANT_BUILD_MODES = {
 
 function cleanLabel(value) {
   return String(value ?? '').trim();
+}
+
+function normalizeAttributeLabel(value) {
+  return cleanLabel(value).toLowerCase();
 }
 
 function uniquePreserveOrder(items) {
@@ -98,15 +103,15 @@ export function attributeSetKey(attributes = {}) {
 }
 
 export function variantDisplayName(attributes = {}, fallback = 'Variant') {
-  const preferred = ['size', 'color', 'colour'];
+  const preferred = ['packsize', 'size', 'color', 'colour'];
   const entries = Object.entries(attributes || {}).filter(
     ([, value]) => value !== undefined && value !== null && String(value).trim()
   );
   const ordered = [
     ...preferred
-      .map((key) => entries.find(([k]) => k.toLowerCase() === key))
+      .map((key) => entries.find(([k]) => normalizeAttributeLabel(k) === key))
       .filter(Boolean),
-    ...entries.filter(([key]) => !preferred.includes(key.toLowerCase())),
+    ...entries.filter(([key]) => !preferred.includes(normalizeAttributeLabel(key))),
   ];
   const name = ordered.map(([, value]) => String(value).trim()).join(' / ');
   return name || fallback;
@@ -154,6 +159,11 @@ export function buildAttributeSets({
     return sets;
   }
 
+  if (axisType === VARIANT_AXIS_TYPES.packSize) {
+    uniquePreserveOrder(simpleValues).forEach((value) => push({ packSize: value }));
+    return sets;
+  }
+
   // sizeAndColor — only assigned group pairs
   (groups || []).forEach((group) => {
     const label = cleanLabel(group?.label);
@@ -178,6 +188,7 @@ export function countAttributeSets(config) {
 export function detectAxisTypeFromVariants(variants = []) {
   let hasSize = false;
   let hasColor = false;
+  let hasPackSize = false;
   let customKey = '';
 
   (variants || []).forEach((variant) => {
@@ -186,13 +197,15 @@ export function detectAxisTypeFromVariants(variants = []) {
       : {};
     Object.entries(attrs).forEach(([key, value]) => {
       if (!cleanLabel(value)) return;
-      const lower = key.toLowerCase();
+      const lower = normalizeAttributeLabel(key);
+      if (lower === 'packsize' || lower === 'pack_size' || lower === 'pack size') hasPackSize = true;
       if (lower === 'size') hasSize = true;
       else if (lower === 'color' || lower === 'colour') hasColor = true;
       else if (!customKey) customKey = key;
     });
   });
 
+  if (hasPackSize) return { axisType: VARIANT_AXIS_TYPES.packSize, customAttributeName: '' };
   if (hasSize && hasColor) return { axisType: VARIANT_AXIS_TYPES.sizeAndColor, customAttributeName: '' };
   if (hasSize) return { axisType: VARIANT_AXIS_TYPES.sizeOnly, customAttributeName: '' };
   if (hasColor) return { axisType: VARIANT_AXIS_TYPES.colorOnly, customAttributeName: '' };
@@ -214,6 +227,9 @@ export function simpleValuesFromVariants(variants = [], axisType = VARIANT_AXIS_
     if (axisType === VARIANT_AXIS_TYPES.sizeOnly && attrs.size) values.push(attrs.size);
     if (axisType === VARIANT_AXIS_TYPES.colorOnly && (attrs.color || attrs.colour)) {
       values.push(attrs.color || attrs.colour);
+    }
+    if (axisType === VARIANT_AXIS_TYPES.packSize && (attrs.packSize || attrs.pack_size)) {
+      values.push(attrs.packSize || attrs.pack_size);
     }
     if (axisType === VARIANT_AXIS_TYPES.custom) {
       const customEntry = Object.entries(attrs).find(

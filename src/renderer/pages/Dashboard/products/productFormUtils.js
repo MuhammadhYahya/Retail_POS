@@ -22,6 +22,18 @@ function cleanText(value) {
   return String(value ?? '').trim();
 }
 
+function normalizePriceType(value) {
+  return String(value ?? '').trim().toUpperCase() === 'MRP' ? 'MRP' : 'FREE';
+}
+
+function calculateMargin(sellingPrice, costPrice) {
+  const selling = Number(sellingPrice || 0);
+  const cost = Number(costPrice || 0);
+  const marginAmount = Math.round(((selling - cost) + Number.EPSILON) * 100) / 100;
+  const marginPct = selling > 0 ? Math.round((((marginAmount / selling) + Number.EPSILON) * 10000)) / 100 : 0;
+  return { marginAmount, marginPct };
+}
+
 function newVariantDraft(index = 0, overrides = {}) {
   return {
     id: window.crypto.randomUUID(),
@@ -30,6 +42,7 @@ function newVariantDraft(index = 0, overrides = {}) {
     barcode: '',
     sellingPrice: '',
     costPrice: '',
+    priceType: 'FREE',
     lowStockAlert: '0',
     trackInventory: true,
     isDefault: index === 0,
@@ -63,6 +76,21 @@ function parseAttributes(value) {
   }
 }
 
+function hasBuilderAttributes(attributes = {}) {
+  return Object.entries(attributes || {}).some(([key, value]) => {
+    if (!String(value ?? '').trim()) return false;
+    return Boolean(String(key || '').trim());
+  });
+}
+
+function labelForAttributeKey(key) {
+  const lower = String(key || '').trim().toLowerCase();
+  if (lower === 'packsize' || lower === 'pack_size' || lower === 'pack size') return 'Pack size';
+  if (lower === 'size') return 'Size';
+  if (lower === 'color' || lower === 'colour') return 'Color';
+  return String(key || '').replace(/[_ ]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 function normalizeVariantForPayload(variant) {
   let attributes = {};
   const attributesText = cleanText(variant.attributesText);
@@ -85,6 +113,7 @@ function normalizeVariantForPayload(variant) {
     barcode: cleanText(variant.barcode) || undefined,
     sellingPrice: Number.isFinite(sellingPrice) ? sellingPrice : 0,
     costPrice: Number.isFinite(costPrice) ? costPrice : 0,
+    priceType: normalizePriceType(variant.priceType),
     lowStockAlert: Number.isFinite(lowStockAlert) ? lowStockAlert : 0,
     trackInventory: Boolean(variant.trackInventory),
     isDefault: Boolean(variant.isDefault),
@@ -142,7 +171,8 @@ function buildVariantsFromPairs(productName, pairs = [], existingRows = []) {
 
 function productToForm(product, { step = 1 } = {}) {
   const variants = product.variants?.length ? product.variants : [null];
-  const isMatrix = variants.length > 1;
+  const isMatrix = (product.variants || []).some((variant) => hasBuilderAttributes(variant?.attributes || {}))
+    || variants.length > 1;
   const hasSharedVariantPrice = isMatrix && variants.every(
     (variant) => Number(variant.sellingPrice) === Number(variants[0].sellingPrice)
       && Number(variant.costPrice) === Number(variants[0].costPrice)
@@ -159,6 +189,9 @@ function productToForm(product, { step = 1 } = {}) {
         activeGroupId: '',
       };
   const unitValue = product.unit || '';
+  const sharedPriceType = isMatrix && variants.every((variant) => normalizePriceType(variant.priceType) === normalizePriceType(variants[0]?.priceType))
+    ? normalizePriceType(variants[0]?.priceType)
+    : 'FREE';
 
   return {
     id: product.id,
@@ -169,9 +202,13 @@ function productToForm(product, { step = 1 } = {}) {
     unit: unitValue,
     unitSelect: resolveUnitSelectValue(unitValue),
     categoryId: product.categoryId || '',
+    isDraft: Boolean(product.isDraft),
+    hasExpiry: Boolean(product.hasExpiry),
+    expiryHistory: Array.isArray(product.expiryHistory) ? [...product.expiryHistory] : [],
     imageUrls: Array.isArray(product.imageUrls) ? [...product.imageUrls] : [],
     variantMode: isMatrix ? 'matrix' : 'single',
     pricingMode: hasSharedVariantPrice ? 'single' : 'different',
+    quickPriceType: isMatrix ? sharedPriceType : '',
     quickSellingPrice: isMatrix ? String(variants[0]?.sellingPrice ?? '') : '',
     quickCostPrice: isMatrix ? String(variants[0]?.costPrice ?? '') : '',
     quickStock: isMatrix ? String(variants[0]?.inventory?.onHand ?? '') : '',
@@ -179,6 +216,7 @@ function productToForm(product, { step = 1 } = {}) {
     sizePicker: '',
     sizeRangeFrom: '',
     sizeRangeTo: '',
+    packSizePicker: '',
     colorPicker: '',
     customColor: '',
     customValuePicker: '',
@@ -197,6 +235,7 @@ function productToForm(product, { step = 1 } = {}) {
           barcode: variants[0].barcode || '',
           sellingPrice: String(variants[0].sellingPrice ?? ''),
           costPrice: String(variants[0].costPrice ?? ''),
+          priceType: normalizePriceType(variants[0].priceType),
           lowStockAlert: String(variants[0].lowStockAlert ?? 0),
           trackInventory: Boolean(variants[0].trackInventory),
           isDefault: true,
@@ -214,6 +253,7 @@ function productToForm(product, { step = 1 } = {}) {
           barcode: variant.barcode || '',
           sellingPrice: String(variant.sellingPrice ?? ''),
           costPrice: String(variant.costPrice ?? ''),
+          priceType: normalizePriceType(variant.priceType),
           lowStockAlert: String(variant.lowStockAlert ?? 0),
           trackInventory: Boolean(variant.trackInventory),
           isDefault: Boolean(variant.isDefault) || index === 0,
@@ -237,8 +277,12 @@ function emptyProductForm(categoryId = '') {
     unitSelect: '',
     categoryId: categoryId || '',
     imageUrls: [],
+    isDraft: false,
+    hasExpiry: false,
+    expiryHistory: [],
     variantMode: 'single',
     pricingMode: 'single',
+    quickPriceType: 'FREE',
     quickSellingPrice: '',
     quickCostPrice: '',
     quickStock: '',
@@ -279,13 +323,17 @@ function formatVariantDetails(variant) {
   const attributes = variant?.attributes && typeof variant.attributes === 'object'
     ? variant.attributes
     : {};
-  const preferredKeys = ['size', 'color', 'colour'];
+  const preferredKeys = ['packsize', 'pack_size', 'pack size', 'size', 'color', 'colour'];
+  const attrKeys = Object.keys(attributes);
   const keys = [
-    ...preferredKeys.filter((key) => Object.prototype.hasOwnProperty.call(attributes, key)),
-    ...Object.keys(attributes).filter((key) => !preferredKeys.includes(key)),
+    ...preferredKeys.filter((key) => attrKeys.some((attrKey) => String(attrKey).trim().toLowerCase() === key)),
+    ...attrKeys.filter((key) => !preferredKeys.includes(String(key).trim().toLowerCase())),
   ];
   const details = keys
-    .map((key) => `${key.charAt(0).toUpperCase()}${key.slice(1)}: ${String(attributes[key]).trim()}`)
+    .map((key) => {
+      const actualKey = attrKeys.find((attrKey) => String(attrKey).trim().toLowerCase() === String(key).trim().toLowerCase());
+      return `${labelForAttributeKey(actualKey || key)}: ${String(attributes[actualKey]).trim()}`;
+    })
     .filter((detail) => !detail.endsWith(':'));
 
   return details.length ? details.join(' · ') : cleanText(variant?.name) || 'Variant';
@@ -392,45 +440,10 @@ function getFormVariantDrafts(form) {
   return form.variantMode === 'matrix' ? form.variantRows : [form.singleVariant];
 }
 
-function findInvalidPriceVariant(form) {
-  return getFormVariantDrafts(form).find((variant) => {
-    const { sellingPrice, costPrice } = resolveVariantPrices(form, variant);
-    const sellingRaw = cleanText(sellingPrice);
-    const costRaw = cleanText(costPrice);
-    if (sellingRaw === '' || costRaw === '') return false;
-    const selling = Number(sellingRaw);
-    const cost = Number(costRaw);
-    return Number.isFinite(selling) && Number.isFinite(cost) && selling < cost;
-  });
-}
-
-function findMissingPriceError(form) {
-  const drafts = getFormVariantDrafts(form);
-  for (const variant of drafts) {
-    const label = cleanText(variant?.name) || 'Unnamed variant';
-    const { sellingPrice, costPrice } = resolveVariantPrices(form, variant);
-    const sellingRaw = cleanText(sellingPrice);
-    const costRaw = cleanText(costPrice);
-    const selling = Number(sellingRaw);
-    const cost = Number(costRaw);
-
-    if (sellingRaw === '' || !Number.isFinite(selling) || selling <= 0) {
-      return form.variantMode === 'matrix' && form.pricingMode === 'single'
-        ? 'Selling price is required and must be greater than 0.'
-        : `Selling price is required and must be greater than 0 for variant "${label}".`;
-    }
-    if (costRaw === '' || !Number.isFinite(cost) || cost < 0) {
-      return form.variantMode === 'matrix' && form.pricingMode === 'single'
-        ? 'Cost price is required and must be 0 or greater.'
-        : `Cost price is required and must be 0 or greater for variant "${label}".`;
-    }
-  }
-  return null;
-}
-
 function collectProductSoftWarnings(form) {
   const warnings = [];
   const drafts = getFormVariantDrafts(form);
+  let anySellingZero = false;
   let anyCostZero = false;
   let anyStockEmpty = false;
   let anyLowStockOff = false;
@@ -438,9 +451,11 @@ function collectProductSoftWarnings(form) {
   drafts.forEach((variant) => {
     const prices = resolveVariantPrices(form, variant);
     const stockFields = resolveVariantStockFields(form, variant);
+    const selling = Number(cleanText(prices.sellingPrice));
     const cost = Number(cleanText(prices.costPrice));
     const stockRaw = cleanText(stockFields.initialStock);
     const lowRaw = cleanText(stockFields.lowStockAlert);
+    if (!Number.isFinite(selling) || selling <= 0) anySellingZero = true;
     if (Number.isFinite(cost) && cost === 0) anyCostZero = true;
     if (stockRaw === '' || !Number.isFinite(Number(stockRaw)) || Number(stockRaw) <= 0) {
       anyStockEmpty = true;
@@ -450,6 +465,9 @@ function collectProductSoftWarnings(form) {
     }
   });
 
+  if (anySellingZero) {
+    warnings.push('Selling price is 0 or empty — this item cannot be added to a sale until you set a price.');
+  }
   if (anyCostZero) {
     warnings.push('Cost price is 0 — profit reports will be inaccurate until you set a real cost.');
   }
@@ -470,6 +488,7 @@ function prepareProductPayload(form) {
     unit: cleanText(form.unit) || undefined,
     categoryId: form.categoryId || undefined,
     imageUrls: form.imageUrls,
+    hasExpiry: Boolean(form.hasExpiry),
   };
 
   if (form.variantMode === 'matrix') {
@@ -477,12 +496,13 @@ function prepareProductPayload(form) {
       ...base,
       variants: form.variantRows.map((variant, index) => {
         const stockFields = resolveVariantStockFields(form, variant);
-        const parsed = normalizeVariantForPayload({
+          const parsed = normalizeVariantForPayload({
           ...variant,
           ...(form.pricingMode === 'single'
             ? {
                 sellingPrice: form.quickSellingPrice,
                 costPrice: form.quickCostPrice,
+                priceType: form.quickPriceType,
                 initialStock: stockFields.initialStock,
                 lowStockAlert: stockFields.lowStockAlert,
               }
@@ -501,6 +521,7 @@ function prepareProductPayload(form) {
     ...base,
     variants: [normalizeVariantForPayload({
       ...form.singleVariant,
+      priceType: form.singleVariant.priceType || form.quickPriceType || 'FREE',
       isDefault: true,
       isHidden: true,
       sortOrder: 0,
@@ -529,9 +550,8 @@ export {
   resolveVariantPrices,
   resolveVariantStockFields,
   getFormVariantDrafts,
-  findInvalidPriceVariant,
-  findMissingPriceError,
   collectProductSoftWarnings,
   prepareProductPayload,
+  calculateMargin,
 };
 

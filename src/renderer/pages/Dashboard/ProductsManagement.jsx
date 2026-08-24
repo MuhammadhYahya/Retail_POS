@@ -4,6 +4,7 @@ import AppShell from '../../components/layout/AppShell';
 import { invokeWithAuth, notifyLowStockUpdated } from '../../lib/ipc';
 import { useAuthStore } from '../../store/authStore';
 import { hasPermission } from '../../lib/permissions.js';
+import { isMeasuredUnit } from '../../lib/productUnits';
 import {
   buildAttributeSets,
   expandNumericSizeRange,
@@ -18,8 +19,6 @@ import {
   cleanText,
   collectProductSoftWarnings,
   emptyProductForm,
-  findInvalidPriceVariant,
-  findMissingPriceError,
   isWithinDateRange,
   newVariantDraft,
   parseAttributes,
@@ -38,6 +37,7 @@ export default function ProductsManagement() {
   const [searchParams, setSearchParams] = useSearchParams();
   const user = useAuthStore((state) => state.user);
   const isAdmin = user?.role === 'admin';
+  const canViewMargin = user?.role !== 'cashier';
   const canManageStock = hasPermission(user, 'stockAdjust');
 
   const [products, setProducts] = useState([]);
@@ -48,6 +48,7 @@ export default function ProductsManagement() {
   const [success, setSuccess] = useState('');
   const [dialogError, setDialogError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [selectedCategoryId, setSelectedCategoryId] = useState(null);
   const [dateFromDraft, setDateFromDraft] = useState('');
   const [dateToDraft, setDateToDraft] = useState('');
@@ -208,17 +209,21 @@ export default function ProductsManagement() {
   const filteredProducts = useMemo(() => {
     return products.filter((product) => {
       if (selectedCategoryId && product.categoryId !== selectedCategoryId) return false;
+      if (statusFilter === 'draft' && !product.isDraft) return false;
+      if (statusFilter === 'published' && product.isDraft) return false;
       if (!isWithinDateRange(product, appliedDateRange.from, appliedDateRange.to)) return false;
       return productMatchesSearch(product, searchQuery.trim());
     });
-  }, [products, selectedCategoryId, appliedDateRange, searchQuery]);
+  }, [products, selectedCategoryId, statusFilter, appliedDateRange, searchQuery]);
 
   const productRows = useMemo(() => filteredProducts.flatMap((product) => {
     const variants = product.variants?.length ? product.variants : [null];
+    const isVariantFamily = (product.variants || []).length > 1
+      || (product.variants || []).some((variant) => variant?.attributes && Object.keys(variant.attributes || {}).length > 0);
     return variants.map((variant) => ({
       product,
       variant,
-      isVariantRow: variants.length > 1,
+      isVariantRow: isVariantFamily,
     }));
   }), [filteredProducts]);
 
@@ -251,6 +256,13 @@ export default function ProductsManagement() {
       ...prev,
       singleVariant: { ...prev.singleVariant, [field]: value },
     }));
+  };
+
+  const formatPackSizeValue = (rawValue) => {
+    const value = cleanText(rawValue);
+    const unit = cleanText(form.unit);
+    if (!value || !unit) return '';
+    return `${value} ${unit}`;
   };
 
   const updateVariantRow = (index, field, value) => {
@@ -307,6 +319,17 @@ export default function ProductsManagement() {
       colorPicker: '',
       customColor: '',
       customValuePicker: '',
+      simpleValues: uniquePreserveOrder([...(prev.simpleValues || []), next]),
+    }));
+  };
+
+  const addPackSizeValue = () => {
+    const next = formatPackSizeValue(form.packSizePicker);
+    if (!next) return;
+    setDialogError('');
+    setForm((prev) => ({
+      ...prev,
+      packSizePicker: '',
       simpleValues: uniquePreserveOrder([...(prev.simpleValues || []), next]),
     }));
   };
@@ -469,6 +492,7 @@ export default function ProductsManagement() {
           sizeMode: hydrated.sizeMode,
           activeGroupId: hydrated.activeGroupId,
           sizePicker: '',
+          packSizePicker: '',
           colorPicker: '',
           customColor: '',
           customValuePicker: '',
@@ -486,6 +510,7 @@ export default function ProductsManagement() {
         customAttributeName: axisType === VARIANT_AXIS_TYPES.custom ? (prev.customAttributeName || 'Option') : '',
         activeGroupId: '',
         sizePicker: '',
+        packSizePicker: '',
         colorPicker: '',
         customColor: '',
         customValuePicker: '',
@@ -509,6 +534,7 @@ export default function ProductsManagement() {
         variantGroups: nextGroups,
         activeGroupId: nextGroups[0]?.id || '',
         sizePicker: '',
+        packSizePicker: '',
         colorPicker: '',
         customColor: '',
         sizeRangeFrom: '',
@@ -524,6 +550,7 @@ export default function ProductsManagement() {
       let message = 'Add at least one option before building variants.';
       if (config.axisType === VARIANT_AXIS_TYPES.sizeOnly) message = 'Add at least one size before building variants.';
       if (config.axisType === VARIANT_AXIS_TYPES.colorOnly) message = 'Add at least one color before building variants.';
+      if (config.axisType === VARIANT_AXIS_TYPES.packSize) message = 'Add at least one pack size before building variants.';
       if (config.axisType === VARIANT_AXIS_TYPES.custom) {
         message = cleanText(form.customAttributeName)
           ? 'Add at least one custom value before building variants.'
@@ -590,8 +617,7 @@ export default function ProductsManagement() {
     }));
   };
 
-  const handleSaveProduct = async (event) => {
-    event.preventDefault();
+  const saveProductCore = async (isDraft) => {
     setDialogError('');
 
     if (!cleanText(form.name)) {
@@ -599,21 +625,8 @@ export default function ProductsManagement() {
       return;
     }
 
-
     if (form.variantMode === 'matrix' && !form.variantRows.length) {
       setDialogError('Generate at least one variant before saving.');
-      return;
-    }
-
-    const missingPriceError = findMissingPriceError(form);
-    if (missingPriceError) {
-      setDialogError(missingPriceError);
-      return;
-    }
-
-    const invalidPriceVariant = findInvalidPriceVariant(form);
-    if (invalidPriceVariant) {
-      setDialogError(`Selling price cannot be lower than cost price for variant "${invalidPriceVariant.name || 'Unnamed variant'}".`);
       return;
     }
 
@@ -649,19 +662,30 @@ export default function ProductsManagement() {
 
     setSaving(true);
     const response = form.id
-      ? await invokeWithAuth('product:update', { productId: form.id, ...payload })
-      : await invokeWithAuth('product:create', payload);
+      ? await invokeWithAuth('product:update', { productId: form.id, ...payload, isDraft })
+      : await invokeWithAuth('product:create', { ...payload, isDraft });
     setSaving(false);
 
     if (response.success) {
       setProductDialogOpen(false);
       setForm(emptyProductForm(''));
-      const baseMsg = form.id ? 'Product updated successfully.' : 'Product added successfully.';
+      const baseMsg = isDraft
+        ? 'Draft saved.'
+        : form.id ? 'Product updated successfully.' : 'Product added successfully.';
       notifySuccess(softWarnings.length ? `${baseMsg} ${softWarnings[0]}` : baseMsg);
       loadData();
     } else {
       setDialogError(response.error || 'Failed to save product');
     }
+  };
+
+  const handleSaveProduct = async (event) => {
+    event.preventDefault();
+    await saveProductCore(false);
+  };
+
+  const handleSaveDraft = async () => {
+    await saveProductCore(true);
   };
 
   const findCategoryNameConflict = (name, parentId) => {
@@ -939,10 +963,14 @@ export default function ProductsManagement() {
   };
 
   const startMatrixMode = () => {
+    const nextAxisType = isMeasuredUnit(form.unit)
+      ? VARIANT_AXIS_TYPES.packSize
+      : VARIANT_AXIS_TYPES.sizeAndColor;
     setForm((prev) => ({
       ...prev,
       variantMode: 'matrix',
       step: 2,
+      variantAxisType: isMeasuredUnit(prev.unit) ? VARIANT_AXIS_TYPES.packSize : (prev.variantAxisType || nextAxisType),
       variantRows: prev.variantRows.length
         ? prev.variantRows
         : [],
@@ -950,6 +978,7 @@ export default function ProductsManagement() {
         ? prev.variantGroups
         : [],
       activeGroupId: prev.activeGroupId || prev.variantGroups?.[0]?.id || '',
+      packSizePicker: '',
     }));
   };
 
@@ -975,6 +1004,8 @@ export default function ProductsManagement() {
         breadcrumb={breadcrumb}
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
+        statusFilter={statusFilter}
+        setStatusFilter={setStatusFilter}
         dateFilterMode={dateFilterMode}
         setDateFilterMode={setDateFilterMode}
         dateFromDraft={dateFromDraft}
@@ -995,10 +1026,11 @@ export default function ProductsManagement() {
         loading={loading}
         filteredProducts={filteredProducts}
         openStockDialog={openStockDialog}
-        openEditProduct={openEditProduct}
-        requestDeleteVariant={requestDeleteVariant}
-        requestDeleteProduct={requestDeleteProduct}
-      />
+            openEditProduct={openEditProduct}
+            requestDeleteVariant={requestDeleteVariant}
+            requestDeleteProduct={requestDeleteProduct}
+            canViewMargin={canViewMargin}
+          />
 
       {isAdmin && (
         <>
@@ -1012,6 +1044,7 @@ export default function ProductsManagement() {
             success={success}
             productSoftWarnings={productSoftWarnings}
             handleSaveProduct={handleSaveProduct}
+            handleSaveDraft={handleSaveDraft}
             updateForm={updateForm}
             categories={categories}
             imageInputRef={imageInputRef}
@@ -1023,6 +1056,7 @@ export default function ProductsManagement() {
             switchAxisType={switchAxisType}
             addSimpleValue={addSimpleValue}
             removeSimpleValue={removeSimpleValue}
+            addPackSizeValue={addPackSizeValue}
             addSimpleSizeRange={addSimpleSizeRange}
             addVariantGroup={addVariantGroup}
             switchBuildMode={switchBuildMode}

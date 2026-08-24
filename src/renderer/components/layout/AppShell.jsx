@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { useThemeStore } from '../../store/themeStore';
 import { Button } from '../ui/button';
-import { LogOut, LayoutDashboard, Users, ShoppingCart, Package, BarChart3, Settings, Sun, Moon, AlertTriangle, Wallet, Truck, Undo2, Receipt, Tag, ShieldCheck, Menu, X, ChevronDown, ChevronRight } from 'lucide-react';
+import { LogOut, LayoutDashboard, Users, ShoppingCart, Package, BarChart3, Settings, Sun, Moon, AlertTriangle, Wallet, Truck, Undo2, Receipt, Tag, ShieldCheck, Menu, X, ChevronDown, ChevronRight, CalendarRange } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { getDashboardPath, invokeWithAuth, LOW_STOCK_UPDATED_EVENT } from '../../lib/ipc';
 import { useCloseDayReminder } from '../../lib/useCloseDayReminder.js';
@@ -23,6 +23,7 @@ const INVENTORY_NAV = [
   { path: '/products', label: 'Products', icon: Package, color: 'text-violet-500', permission: 'products' },
   { path: '/purchases', label: 'New Purchase / GRN', icon: Truck, color: 'text-cyan-500', permission: 'purchases' },
   { path: '/purchase-returns', label: 'Purchase Returns', icon: Undo2, color: 'text-orange-500', permission: 'purchaseReturns' },
+  { path: '/expiry-alerts', label: 'Expiry Alerts', icon: CalendarRange, color: 'text-amber-500', permission: 'lowStock' },
 ];
 
 const ADMIN_ONLY_NAV = [
@@ -88,7 +89,7 @@ export default function AppShell({ children, title, description }) {
   const [timeString, setTimeString] = React.useState('');
   const [profileOpen, setProfileOpen] = React.useState(false);
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
-  const inventoryPathActive = ['/products', '/purchases', '/purchase-returns'].includes(location.pathname);
+  const inventoryPathActive = ['/products', '/purchases', '/purchase-returns', '/expiry-alerts'].includes(location.pathname);
   const [inventoryOpen, setInventoryOpen] = React.useState(inventoryPathActive);
   const [lowStockCount, setLowStockCount] = React.useState(0);
   const showCloseReminder = useCloseDayReminder();

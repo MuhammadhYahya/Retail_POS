@@ -48,6 +48,7 @@ export const useCartStore = create((set, get) => ({
           variantName: productLike.variantName || productLike.name || '',
           sku: productLike.sku || '',
           barcode: productLike.barcode || '',
+          unit: productLike.unit || '',
           unitPrice: Number(productLike.unitPrice ?? productLike.sellingPrice ?? 0),
           costPrice: Number(productLike.costPrice ?? 0),
           discountType: DISCOUNT_NONE,
