@@ -560,6 +560,36 @@ const saleService = {
     }));
   },
 
+  /**
+   * Shop-wide completed sales for one business day, newest first, with the
+   * cashier who rang each one. Read-only; used by the admin dashboard. The
+   * per-cashier view stays in listTodayForCashier.
+   */
+  listTodayForShop({ date = colomboDateString(), limit = 100 } = {}) {
+    const db = getDb();
+    const take = Math.min(Math.max(toNumber(limit, 100), 1), 200);
+    const { start, end } = colomboDayBounds(date);
+    const rows = db.prepare(`
+      SELECT s.*, COUNT(si.id) AS item_count,
+        u.display_name AS cashier_name,
+        u.username AS cashier_username
+      FROM sales s
+      LEFT JOIN sale_items si ON si.sale_id = s.id
+      LEFT JOIN users u ON u.id = s.cashier_id
+      WHERE s.deleted_at IS NULL
+        AND s.status = 'completed'
+        AND s.sale_date >= ?
+        AND s.sale_date <= ?
+      GROUP BY s.id
+      ORDER BY s.sale_date DESC
+      LIMIT ?
+    `).all(start, end, take);
+    return rows.map((row) => ({
+      ...mapSaleRow(row, []),
+      itemCount: Number(row.item_count || 0),
+    }));
+  },
+
   listBillingHistory({ date = colomboDateString(), days = 30, limit = 1000 } = {}) {
     const db = getDb();
     const take = Math.min(Math.max(toNumber(limit, 1000), 1), 2000);

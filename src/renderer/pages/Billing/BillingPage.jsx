@@ -64,6 +64,12 @@ export default function BillingPage() {
   const [salesHistoryLoading, setSalesHistoryLoading] = useState(true);
   const [salesHistoryError, setSalesHistoryError] = useState('');
   const [expandedDates, setExpandedDates] = useState({});
+  // Below the xl breakpoint the two panes stack, so Sales History collapses to
+  // keep the active sale (cart + payment) on screen without page scrolling.
+  const [isNarrow, setIsNarrow] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 1279px)').matches
+  );
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const items = useCartStore((state) => state.items);
   const saleDiscountType = useCartStore((state) => state.saleDiscountType);
@@ -103,6 +109,14 @@ export default function BillingPage() {
       if (sessionResponse.success) setDayOpen(sessionResponse.data);
     });
     loadSalesHistory();
+  }, []);
+
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 1279px)');
+    const onChange = (event) => setIsNarrow(event.matches);
+    setIsNarrow(query.matches);
+    query.addEventListener('change', onChange);
+    return () => query.removeEventListener('change', onChange);
   }, []);
 
   useEffect(() => {
@@ -439,9 +453,9 @@ export default function BillingPage() {
   }
 
   return (
-    <AppShell title="New Sale" description="Scan barcode, take payment, save the sale.">
-      <div className="grid gap-6 xl:grid-cols-[1.35fr_1fr]">
-        <div className="space-y-4">
+    <AppShell title="New Sale" description="Scan an item to begin.">
+      <div className="grid gap-6 grid-cols-1 xl:grid-cols-[1.35fr_1fr]">
+        <div className="flex min-w-0 flex-col gap-4">
           {!dayOpen && (
             <Alert variant="destructive" className="rounded-xl">
               <AlertDescription className="font-semibold">
@@ -480,8 +494,7 @@ export default function BillingPage() {
 
           {maxPct !== null && (
             <p className="text-xs text-muted-foreground">
-              Your discount limit: up to <span className="font-semibold text-foreground">{maxPct}%</span> of item or bill total.
-              {user?.role === 'admin' ? '' : ' Admins have no limit.'}
+              Discount limit: <span className="font-semibold text-foreground tabular-nums">{maxPct}%</span>
             </p>
           )}
 
@@ -506,8 +519,115 @@ export default function BillingPage() {
             </Button>
           </form>
 
-          <div className="rounded-2xl border border-border/60 bg-card overflow-hidden shadow-sm">
-            <div className="overflow-x-auto">
+          <div className="@container min-w-0 rounded-2xl border border-border/60 bg-card overflow-hidden shadow-sm">
+            {/* Container query, not a viewport breakpoint: the cart swaps between
+                stacked cards and the full table based on its OWN width, so it fits
+                at any window size regardless of the pane split or sidebar. */}
+            <div className="divide-y divide-border/40 @4xl:hidden">
+              {!items.length && (
+                <p className="p-10 text-center text-muted-foreground font-medium">
+                  No items added. Scan a barcode to start checkout.
+                </p>
+              )}
+              {totals.lines.map((item) => {
+                const lineType = saleDiscountActive ? 'none' : (item.discountType || 'none');
+                const lineValue = saleDiscountActive ? '' : (item.discountValue || '');
+                const measured = isMeasuredUnit(item.unit);
+                const qtyStep = measured ? 0.1 : 1;
+                return (
+                  <div key={item.variantId} className="p-4 space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-bold text-base text-foreground leading-tight">{item.productName}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5 font-mono tracking-wide truncate">
+                          {item.barcode || item.sku}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="font-bold text-base text-foreground tabular-nums">
+                          {formatMoney(item.lineTotal)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removeItem(item.variantId)}
+                          className="p-2.5 rounded-xl text-destructive hover:bg-destructive/10 active:scale-95 transition-all cursor-pointer"
+                          title="Remove item"
+                        >
+                          <Trash2 className="h-5 w-5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => updateQty(item.variantId, Math.max(0, item.quantity - qtyStep))}
+                          className="h-11 w-11 rounded-xl border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/60 active:scale-95 transition-all select-none cursor-pointer"
+                        >
+                          <Minus className="h-4 w-4" />
+                        </button>
+                        <input
+                          type="number"
+                          min={measured ? '0.001' : '1'}
+                          step={measured ? '0.001' : '1'}
+                          className="w-14 h-11 rounded-xl border border-border bg-input text-center font-bold text-base tabular-nums focus:outline-none focus:ring-2 focus:ring-ring"
+                          value={item.quantity}
+                          onChange={(e) => updateQty(item.variantId, e.target.value)}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => updateQty(item.variantId, item.quantity + qtyStep)}
+                          className="h-11 w-11 rounded-xl border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/60 active:scale-95 transition-all select-none cursor-pointer"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </button>
+                      </div>
+
+                      <span className="text-sm font-semibold text-muted-foreground tabular-nums">
+                        × {formatMoney(item.unitPrice)}
+                      </span>
+
+                      <div className="flex items-center gap-1.5 ml-auto">
+                        <select
+                          className="h-11 rounded-xl border border-border bg-input text-xs font-semibold px-2 disabled:opacity-50"
+                          disabled={saleDiscountActive}
+                          value={lineType === 'none' ? 'fixed' : lineType}
+                          onChange={(e) => handleItemDiscountChange(item.variantId, e.target.value, lineValue || 0)}
+                        >
+                          <option value="fixed">Rs.</option>
+                          <option value="percent">%</option>
+                        </select>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          disabled={saleDiscountActive}
+                          className="w-20 h-11 rounded-xl border border-border bg-input text-sm font-semibold px-2 tabular-nums focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+                          value={lineType === 'none' ? '' : lineValue}
+                          placeholder="0"
+                          onChange={(e) =>
+                            handleItemDiscountChange(
+                              item.variantId,
+                              lineType === 'none' ? 'fixed' : lineType,
+                              e.target.value
+                            )
+                          }
+                        />
+                      </div>
+                    </div>
+
+                    {item.discountAmount > 0 && (
+                      <p className="text-xs text-muted-foreground tabular-nums">
+                        Discount −{formatMoney(item.discountAmount)}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="hidden @4xl:block">
               <table className="w-full text-sm">
                 <thead className="bg-muted/40 text-muted-foreground border-b border-border/60">
                   <tr>
@@ -543,7 +663,7 @@ export default function BillingPage() {
                             <button
                               type="button"
                               onClick={() => updateQty(item.variantId, Math.max(0, item.quantity - qtyStep))}
-                              className="h-10 w-10 rounded-xl border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/60 active:scale-95 transition-all select-none cursor-pointer"
+                              className="h-11 w-11 rounded-xl border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/60 active:scale-95 transition-all select-none cursor-pointer"
                             >
                               <Minus className="h-4 w-4" />
                             </button>
@@ -551,20 +671,20 @@ export default function BillingPage() {
                               type="number"
                               min={measured ? '0.001' : '1'}
                               step={measured ? '0.001' : '1'}
-                              className="w-14 h-10 rounded-xl border border-border bg-input text-center font-bold text-base focus:outline-none focus:ring-2 focus:ring-ring"
+                              className="w-14 h-11 rounded-xl border border-border bg-input text-center font-bold text-base tabular-nums focus:outline-none focus:ring-2 focus:ring-ring"
                               value={item.quantity}
                               onChange={(e) => updateQty(item.variantId, e.target.value)}
                             />
                             <button
                               type="button"
                               onClick={() => updateQty(item.variantId, item.quantity + qtyStep)}
-                              className="h-10 w-10 rounded-xl border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/60 active:scale-95 transition-all select-none cursor-pointer"
+                              className="h-11 w-11 rounded-xl border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/60 active:scale-95 transition-all select-none cursor-pointer"
                             >
                               <Plus className="h-4 w-4" />
                             </button>
                           </div>
                         </td>
-                        <td className="p-4 align-middle font-bold text-foreground">{formatMoney(item.unitPrice)}</td>
+                        <td className="p-4 align-middle font-bold text-foreground tabular-nums">{formatMoney(item.unitPrice)}</td>
                         <td className="p-4 align-middle">
                           <div className="flex gap-1.5 items-center">
                             <select
@@ -599,13 +719,13 @@ export default function BillingPage() {
                               }
                             />
                             {item.discountAmount > 0 && (
-                              <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                              <span className="text-[10px] text-muted-foreground whitespace-nowrap tabular-nums">
                                 −{formatMoney(item.discountAmount)}
                               </span>
                             )}
                           </div>
                         </td>
-                        <td className="p-4 align-middle text-right font-bold text-base text-foreground">{formatMoney(item.lineTotal)}</td>
+                        <td className="p-4 align-middle text-right font-bold text-base text-foreground tabular-nums">{formatMoney(item.lineTotal)}</td>
                         <td className="p-4 align-middle text-right">
                           <button
                             type="button"
@@ -623,58 +743,18 @@ export default function BillingPage() {
               </table>
             </div>
           </div>
-
-          <section className="rounded-2xl border border-border bg-card overflow-hidden shadow-sm">
-            <div className="border-b border-border/60 px-5 py-4">
-              <h2 className="text-lg font-extrabold text-foreground">Sales History</h2>
-              <p className="text-xs text-muted-foreground">Today&apos;s sales and the previous 29 days.</p>
-            </div>
-            {salesHistoryLoading ? <p className="p-5 text-sm text-muted-foreground">Loading sales history...</p> : salesHistoryError ? <p className="p-5 text-sm text-destructive">{salesHistoryError}</p> : !groupedSales.length ? <p className="p-5 text-sm text-muted-foreground">No completed sales in recent history.</p> : (
-              <div className="divide-y divide-border/60">
-                {groupedSales.map(({ date, sales, isToday }) => {
-                  const forcedCollapsed = isToday && items.length > 0;
-                  const expanded = isToday ? items.length === 0 && expandedDates[date] !== false : Boolean(expandedDates[date]);
-                  return (
-                    <div key={date}>
-                      <button type="button" className="w-full flex items-center justify-between gap-3 px-5 py-4 text-left hover:bg-muted/30 transition-colors" onClick={() => {
-                        if (forcedCollapsed) return;
-                        setExpandedDates((current) => ({ ...current, [date]: !expanded }));
-                      }} aria-expanded={expanded} aria-disabled={forcedCollapsed}>
-                        <span className="flex items-center gap-2">
-                          {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                          <span className="font-bold">{isToday ? "Today's Sales" : new Date(`${date}T00:00:00`).toLocaleDateString([], { dateStyle: 'medium' })}</span>
-                          <span className="text-xs text-muted-foreground">({sales.length})</span>
-                        </span>
-                        {forcedCollapsed && <span className="text-[11px] font-semibold text-muted-foreground">Cart active</span>}
-                      </button>
-                      {expanded && <div className="overflow-x-auto border-t border-border/40"><table className="w-full text-sm"><tbody className="divide-y divide-border/40">
-                        {sales.map((sale) => <tr key={sale.id}>
-                          <td className="px-5 py-3 font-mono font-semibold">{sale.invoiceNumber}</td>
-                          <td className="px-5 py-3 text-muted-foreground">{new Date(sale.saleDate).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</td>
-                          <td className="px-5 py-3">{sale.itemCount} item{sale.itemCount === 1 ? '' : 's'}</td>
-                          <td className="px-5 py-3 font-bold">{formatMoney(sale.total)}</td>
-                          {user?.role === 'admin' && <td className="px-5 py-3 text-right"><button type="button" onClick={() => { setCompletedSale(sale); setSuccessOpen(true); setPrintStatus(''); }} className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-bold hover:bg-muted"><Printer className="h-3.5 w-3.5" /> Reprint</button></td>}
-                        </tr>)}
-                      </tbody></table></div>}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </section>
         </div>
 
         <div className="rounded-2xl border border-border bg-card p-6 space-y-6 h-fit shadow-md">
           <div>
             <h3 className="font-extrabold text-lg text-foreground mb-1">Select Payment</h3>
-            <p className="text-xs text-muted-foreground">Choose customer checkout method</p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             {[
-              { id: 'cash', label: 'Cash', activeBg: 'bg-emerald-500/15 border-emerald-500 text-emerald-500 font-bold' },
-              { id: 'card', label: 'Card', activeBg: 'bg-violet-500/15 border-violet-500 text-violet-500 font-bold' },
-            ].map(({ id, label, activeBg }) => {
+              { id: 'cash', label: 'Cash' },
+              { id: 'card', label: 'Card' },
+            ].map(({ id, label }) => {
               const isActive = paymentMethod === id;
               return (
                 <button
@@ -688,7 +768,9 @@ export default function BillingPage() {
                   }}
                   className={cn(
                     'h-14 rounded-xl border-2 text-sm font-bold transition-all cursor-pointer shadow-sm active:scale-95',
-                    isActive ? activeBg : 'border-border bg-card text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                    isActive
+                      ? 'bg-primary-tint border-primary text-primary-dark'
+                      : 'border-border bg-card text-muted-foreground hover:text-foreground hover:bg-muted/50'
                   )}
                 >
                   {label}
@@ -707,7 +789,7 @@ export default function BillingPage() {
               )}
             </div>
             <p className="text-[11px] text-muted-foreground">
-              Applies to the whole bill. Clears any item discounts (only one type at a time).
+              Applies to the whole bill instead of item discounts.
             </p>
             <div className="flex gap-2">
               <select
@@ -731,27 +813,6 @@ export default function BillingPage() {
                 Apply
               </Button>
             </div>
-          </div>
-
-          <div className="p-4 rounded-xl bg-muted/40 border border-border/40 space-y-3 text-sm">
-            <div className="flex justify-between font-semibold">
-              <span className="text-muted-foreground">Subtotal (original)</span>
-              <span className="text-foreground">{formatMoney(totals.subtotal)}</span>
-            </div>
-            <div className="flex justify-between font-semibold">
-              <span className="text-muted-foreground">Discount</span>
-              <span className="text-foreground">{formatMoney(totals.discountTotal)}</span>
-            </div>
-            <div className="flex justify-between text-lg font-black pt-3 border-t border-border border-dashed">
-              <span className="text-foreground">Grand Total</span>
-              <span className="text-foreground text-xl">{formatMoney(totals.total)}</span>
-            </div>
-            {user?.role === 'admin' && (
-              <div className="flex justify-between text-xs font-semibold pt-1 text-muted-foreground">
-                <span>Est. profit after discount</span>
-                <span>{formatMoney(totals.discountedProfit)}</span>
-              </div>
-            )}
           </div>
 
           {paymentMethod === 'cash' && (
@@ -787,7 +848,7 @@ export default function BillingPage() {
                   type="number"
                   min="0"
                   step="0.01"
-                  className={cn(inputClassName, 'pl-11 text-lg font-black h-12 border-2 focus:ring-4')}
+                  className={cn(inputClassName, 'pl-11 text-lg font-black h-12 border-2 focus:ring-4 tabular-nums')}
                   value={tendered}
                   onChange={(e) => setTendered(e.target.value)}
                   placeholder={String(totals.total.toFixed(2))}
@@ -803,7 +864,7 @@ export default function BillingPage() {
                       const currentTendered = Number(tendered || 0);
                       setTendered(String(currentTendered + amount));
                     }}
-                    className="h-10 rounded-xl border border-border bg-card hover:bg-muted text-xs font-extrabold text-foreground cursor-pointer transition-all active:scale-95"
+                    className="h-11 rounded-xl border border-border bg-card hover:bg-muted text-xs font-extrabold text-foreground tabular-nums cursor-pointer transition-all active:scale-95"
                   >
                     +{amount}
                   </button>
@@ -813,18 +874,46 @@ export default function BillingPage() {
               {cashShortfall > 0.001 ? (
                 <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-destructive">
                   <p className="font-black">Insufficient Cash</p>
-                  <p className="text-sm font-bold">Additional amount required: {formatMoney(cashShortfall)}</p>
+                  <p className="text-sm font-bold">Additional amount required: <span className="tabular-nums">{formatMoney(cashShortfall)}</span></p>
                 </div>
               ) : (
                 <div className="flex justify-between items-center text-sm font-bold pt-1">
                   <span className="text-muted-foreground">Change Given</span>
-                  <span className="text-base font-black text-emerald-500">{formatMoney(change)}</span>
+                  <span className="text-base font-black text-emerald-500 tabular-nums">{formatMoney(change)}</span>
                 </div>
               )}
             </div>
           )}
 
-          <div className="space-y-3 pt-2">
+          <div className="space-y-3">
+            <div className="px-1 space-y-1.5 text-sm">
+              <div className="flex justify-between font-semibold">
+                <span className="text-muted-foreground">Subtotal</span>
+                <span className="text-foreground tabular-nums">{formatMoney(totals.subtotal)}</span>
+              </div>
+              {totals.discountTotal > 0 && (
+                <div className="flex justify-between font-semibold">
+                  <span className="text-muted-foreground">Discount</span>
+                  <span className="text-foreground tabular-nums">−{formatMoney(totals.discountTotal)}</span>
+                </div>
+              )}
+            </div>
+            <div className="rounded-2xl bg-primary-tint border border-primary/20 px-5 py-4 flex items-center justify-between gap-3">
+              <span className="font-bold text-primary-dark">Total</span>
+              <span
+                key={totals.total}
+                className="zen-total-pulse text-4xl font-black tabular-nums text-primary-dark leading-none"
+              >
+                {formatMoney(totals.total)}
+              </span>
+            </div>
+            {user?.role === 'admin' && (
+              <div className="flex justify-between text-xs font-semibold px-1 text-muted-foreground">
+                <span>Est. profit after discount</span>
+                <span className="tabular-nums">{formatMoney(totals.discountedProfit)}</span>
+              </div>
+            )}
+
             <button
               type="button"
               disabled={saving || !items.length || staleDayBlocks || !dayOpen}
@@ -843,6 +932,107 @@ export default function BillingPage() {
             </button>
           </div>
         </div>
+
+        <section className="rounded-2xl border border-border bg-card overflow-hidden shadow-sm xl:col-start-1 xl:row-start-2">
+          <button
+            type="button"
+            disabled={!isNarrow}
+            onClick={() => setHistoryOpen((open) => !open)}
+            aria-expanded={isNarrow ? historyOpen : true}
+            className="w-full flex items-center justify-between gap-3 px-5 py-4 text-left disabled:cursor-default enabled:hover:bg-muted/30 transition-colors"
+          >
+            <span className="flex items-center gap-2">
+              {isNarrow && (historyOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />)}
+              <span className="text-lg font-extrabold text-foreground">Sales History</span>
+              {salesHistory.length > 0 && (
+                <span className="text-xs text-muted-foreground tabular-nums">({salesHistory.length})</span>
+              )}
+            </span>
+          </button>
+
+          {(!isNarrow || historyOpen) && (
+            <div className="max-h-64 overflow-y-auto border-t border-border/60">
+              {salesHistoryLoading ? (
+                <p className="p-5 text-sm text-muted-foreground">Loading sales history...</p>
+              ) : salesHistoryError ? (
+                <p className="p-5 text-sm text-destructive">{salesHistoryError}</p>
+              ) : !groupedSales.length ? (
+                <p className="p-5 text-sm text-muted-foreground">No completed sales yet.</p>
+              ) : (
+                <div className="divide-y divide-border/60">
+                  {groupedSales.map(({ date, sales, isToday }) => {
+                    const forcedCollapsed = isToday && items.length > 0;
+                    const expanded = isToday
+                      ? items.length === 0 && expandedDates[date] !== false
+                      : Boolean(expandedDates[date]);
+                    return (
+                      <div key={date}>
+                        <button
+                          type="button"
+                          className="w-full flex items-center justify-between gap-3 px-5 py-3 text-left hover:bg-muted/30 transition-colors"
+                          onClick={() => {
+                            if (forcedCollapsed) return;
+                            setExpandedDates((current) => ({ ...current, [date]: !expanded }));
+                          }}
+                          aria-expanded={expanded}
+                          aria-disabled={forcedCollapsed}
+                        >
+                          <span className="flex items-center gap-2">
+                            {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                            <span className="font-bold">
+                              {isToday
+                                ? "Today's Sales"
+                                : new Date(`${date}T00:00:00`).toLocaleDateString([], { dateStyle: 'medium' })}
+                            </span>
+                            <span className="text-xs text-muted-foreground tabular-nums">({sales.length})</span>
+                          </span>
+                          {forcedCollapsed && (
+                            <span className="text-[11px] font-semibold text-muted-foreground">Cart active</span>
+                          )}
+                        </button>
+                        {expanded && (
+                          <div className="overflow-x-auto border-t border-border/40">
+                            <table className="w-full text-sm">
+                              <tbody className="divide-y divide-border/40">
+                                {sales.map((sale) => (
+                                  <tr key={sale.id}>
+                                    <td className="px-5 py-3 font-mono font-semibold">{sale.invoiceNumber}</td>
+                                    <td className="px-5 py-3 text-muted-foreground">
+                                      {new Date(sale.saleDate).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                                    </td>
+                                    <td className="px-5 py-3">
+                                      {sale.itemCount} item{sale.itemCount === 1 ? '' : 's'}
+                                    </td>
+                                    <td className="px-5 py-3 font-bold tabular-nums">{formatMoney(sale.total)}</td>
+                                    {user?.role === 'admin' && (
+                                      <td className="px-5 py-3 text-right">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setCompletedSale(sale);
+                                            setSuccessOpen(true);
+                                            setPrintStatus('');
+                                          }}
+                                          className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-bold hover:bg-muted"
+                                        >
+                                          <Printer className="h-3.5 w-3.5" /> Reprint
+                                        </button>
+                                      </td>
+                                    )}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </section>
       </div>
 
       <Dialog open={catalogOpen} onOpenChange={setCatalogOpen}>
@@ -850,7 +1040,7 @@ export default function BillingPage() {
           <DialogHeader>
             <DialogTitle>Search Products</DialogTitle>
             <DialogDescription>
-              Search by name, SKU, barcode, or brand. Only barcode-enabled variants can be added.
+              Only items with a barcode can be added.
             </DialogDescription>
           </DialogHeader>
 
@@ -886,7 +1076,7 @@ export default function BillingPage() {
                         {variant.barcode} · {variant.sku}
                       </p>
                     </div>
-                    <div className="text-sm font-bold text-foreground">
+                    <div className="text-sm font-bold text-foreground tabular-nums">
                       {formatMoney(variant.sellingPrice)}
                     </div>
                   </div>
@@ -914,12 +1104,12 @@ export default function BillingPage() {
               <div className="absolute right-4 top-3 text-xs font-semibold text-amber-600">Starting new sale in 0:{String(receiptSeconds).padStart(2, '0')}...</div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Total Sale</span>
-                <span className="font-extrabold text-foreground text-lg">{formatMoney(completedSale.total)}</span>
+                <span className="font-extrabold text-foreground text-lg tabular-nums">{formatMoney(completedSale.total)}</span>
               </div>
               {completedSale.discountTotal > 0 && (
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Discount applied</span>
-                  <span className="text-foreground">{formatMoney(completedSale.discountTotal)}</span>
+                  <span className="text-foreground tabular-nums">{formatMoney(completedSale.discountTotal)}</span>
                 </div>
               )}
               <div className="flex justify-between text-sm items-center">
@@ -930,11 +1120,11 @@ export default function BillingPage() {
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Cash Tendered</span>
-                <span className="text-foreground">{formatMoney(completedSale.amountTendered)}</span>
+                <span className="text-foreground tabular-nums">{formatMoney(completedSale.amountTendered)}</span>
               </div>
               <div className="flex justify-between text-sm pt-2 border-t border-dashed border-border/60">
                 <span className="text-muted-foreground">Change Given</span>
-                <span className="font-black text-emerald-500 text-base">{formatMoney(completedSale.changeGiven)}</span>
+                <span className="font-black text-emerald-500 text-base tabular-nums">{formatMoney(completedSale.changeGiven)}</span>
               </div>
 
             </div>

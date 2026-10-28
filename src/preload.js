@@ -38,6 +38,7 @@ const validChannels = [
   'sale:create',
   'sale:listTodayCashier',
   'sale:listBillingHistory',
+  'sale:listTodayShop',
   'sale:void',
   'sale:getReceipt',
   'settings:get',

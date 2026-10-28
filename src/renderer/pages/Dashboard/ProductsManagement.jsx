@@ -227,11 +227,6 @@ export default function ProductsManagement() {
     }));
   }), [filteredProducts]);
 
-  const productSoftWarnings = useMemo(() => {
-    if (!productDialogOpen || form.step !== 2) return [];
-    return collectProductSoftWarnings(form);
-  }, [productDialogOpen, form]);
-
   const openCreateProduct = (categoryId = '') => {
     if (!isAdmin) return;
     setDialogError('');
@@ -1042,7 +1037,6 @@ export default function ProductsManagement() {
             setForm={setForm}
             dialogError={dialogError}
             success={success}
-            productSoftWarnings={productSoftWarnings}
             handleSaveProduct={handleSaveProduct}
             handleSaveDraft={handleSaveDraft}
             updateForm={updateForm}

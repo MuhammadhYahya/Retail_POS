@@ -34,7 +34,6 @@ export function ProductEditorDialog({
   setForm,
   dialogError,
   success,
-  productSoftWarnings,
   handleSaveProduct,
   handleSaveDraft,
   updateForm,
@@ -89,7 +88,7 @@ export function ProductEditorDialog({
                   )}
                 </DialogTitle>
                 <DialogDescription>
-                  Product master: identity, prices, and barcodes. Receive stock via Purchases / GRN; print from Labels.
+                  Product master: identity, prices, and barcodes.
                 </DialogDescription>
               </DialogHeader>
 
@@ -102,18 +101,6 @@ export function ProductEditorDialog({
               {!dialogError && success && (
                 <Alert>
                   <AlertDescription>{success}</AlertDescription>
-                </Alert>
-              )}
-
-              {productSoftWarnings.length > 0 && (
-                <Alert>
-                  <AlertDescription>
-                    <ul className="list-disc space-y-1 pl-4">
-                      {productSoftWarnings.map((warning) => (
-                        <li key={warning}>{warning}</li>
-                      ))}
-                    </ul>
-                  </AlertDescription>
                 </Alert>
               )}
 
@@ -152,52 +139,6 @@ export function ProductEditorDialog({
                       </select>
                     </div>
 
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div>
-                        <label className="block text-sm font-medium mb-2" htmlFor="product-unit">
-                          Unit
-                        </label>
-                        <select
-                          id="product-unit"
-                          className={inputClassName}
-                          value={form.unitSelect || ''}
-                          disabled={form.variantAxisType === VARIANT_AXIS_TYPES.packSize}
-                          onChange={(e) => {
-                            const next = e.target.value;
-                            setForm((prev) => ({
-                              ...prev,
-                              unitSelect: next,
-                              unit: next === CUSTOM_UNIT_VALUE ? (PRODUCT_UNITS.includes(prev.unit) ? '' : prev.unit) : next,
-                            }));
-                          }}
-                        >
-                          <option value="">Select unit</option>
-                          {PRODUCT_UNITS.map((unit) => (
-                            <option key={unit} value={unit}>{unit}</option>
-                          ))}
-                          <option value={CUSTOM_UNIT_VALUE}>Custom…</option>
-                        </select>
-                        {form.unitSelect === CUSTOM_UNIT_VALUE && (
-                          <input
-                            className={cn(inputClassName, 'mt-2')}
-                            value={form.unit}
-                            onChange={(e) => updateForm('unit', e.target.value)}
-                            placeholder="e.g. carton, dozen"
-                          />
-                        )}
-                        {measuredUnit && (
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            Measured units unlock quantity-based pack size variants.
-                          </p>
-                        )}
-                        {form.variantAxisType === VARIANT_AXIS_TYPES.packSize && (
-                          <p className="mt-1 text-xs font-medium text-primary">
-                            Pack size mode is locked to {packSizeUnitLabel} from step 1.
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
                     <div>
                       <label className="block text-sm font-medium mb-2" htmlFor="product-brand">
                         Brand (optional)
@@ -210,104 +151,6 @@ export function ProductEditorDialog({
                         placeholder="Anchor, Singer, Kohinoor"
                       />
                     </div>
-
-                    <div>
-                      <label className="block text-sm font-medium mb-2" htmlFor="product-description">
-                        Description
-                      </label>
-                      <textarea
-                        id="product-description"
-                        className={cn(inputClassName, 'min-h-24')}
-                        value={form.description}
-                        onChange={(e) => updateForm('description', e.target.value)}
-                        placeholder="Optional product notes"
-                      />
-                    </div>
-
-                    <label className="flex items-start gap-3 rounded-xl border border-border bg-muted/20 p-3 text-sm">
-                      <input
-                        type="checkbox"
-                        className="mt-1 h-4 w-4"
-                        checked={Boolean(form.hasExpiry)}
-                        onChange={(e) => updateForm('hasExpiry', e.target.checked)}
-                      />
-                      <span>
-                        <span className="font-medium">Track expiry on GRN</span>
-                        <span className="block text-xs text-muted-foreground">
-                          Receive batch number and expiry date when stock arrives. Inventory value still follows WAC.
-                        </span>
-                      </span>
-                    </label>
-
-                    {(form.hasExpiry || (form.expiryHistory || []).length > 0) && (
-                      <div className="rounded-xl border border-border bg-muted/20 p-3 space-y-3">
-                        <div>
-                          <p className="text-sm font-semibold">Recent expiry receipts</p>
-                          <p className="text-xs text-muted-foreground">
-                            Read-only GRN history for this product. Batch and expiry stay at receipt level in phase 1.
-                          </p>
-                        </div>
-                        {(form.expiryHistory || []).length === 0 ? (
-                          <p className="text-xs text-muted-foreground">No posted GRN expiry records yet.</p>
-                        ) : (
-                          <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                            {form.expiryHistory.slice(0, 8).map((item) => (
-                              <div key={item.receiptItemId} className="rounded-lg border border-border bg-card px-3 py-2 text-xs">
-                                <div className="flex flex-wrap items-center justify-between gap-2">
-                                  <p className="font-semibold">{item.grnNumber}</p>
-                                  <p className="text-muted-foreground">{item.saleStatus}</p>
-                                </div>
-                                <p className="text-muted-foreground">
-                                  {item.variantName || 'Variant'}{item.sku ? ` - ${item.sku}` : ''}
-                                </p>
-                                <p className="text-muted-foreground">
-                                  {item.batchNumber ? `Batch ${item.batchNumber}` : 'No batch'}{item.expiryDate ? ` - Expiry ${item.expiryDate}` : ''}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-sm font-medium">Image</p>
-                        <Button type="button" variant="outline" size="sm" onClick={() => imageInputRef.current?.click()}>
-                          <ImagePlus className="h-4 w-4 mr-2" />
-                          Add
-                        </Button>
-                        <input
-                          ref={imageInputRef}
-                          type="file"
-                          accept="image/*"
-                          multiple
-                          className="hidden"
-                          onChange={handleImageFiles}
-                        />
-                      </div>
-
-                      {form.imageUrls.length > 0 && (
-                        <div className="flex flex-wrap gap-3">
-                          {form.imageUrls.map((url, index) => (
-                            <div
-                              key={`${index}-${url.slice(0, 32)}`}
-                              className="relative h-20 w-20 rounded-lg border border-border overflow-hidden bg-muted/40"
-                            >
-                              <img src={url} alt="" className="h-full w-full object-cover" />
-                              <button
-                                type="button"
-                                className="absolute top-1 right-1 rounded-full bg-background/90 p-0.5 border border-border"
-                                onClick={() => removeImage(index)}
-                                title="Remove image"
-                              >
-                                <X className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
                   </div>
                 )}
 
@@ -318,6 +161,34 @@ export function ProductEditorDialog({
                         Product: <span className="font-medium text-foreground">{form.name}</span>
                       </p>
                     ) : null}
+
+                    <div className="rounded-xl border border-border bg-muted/20 p-4">
+                      <label className="block text-sm font-medium mb-2" htmlFor="product-unit">Unit</label>
+                      <select
+                        id="product-unit"
+                        className={cn(inputClassName, 'max-w-xs')}
+                        value={form.unitSelect || ''}
+                        disabled={form.variantAxisType === VARIANT_AXIS_TYPES.packSize}
+                        onChange={(e) => {
+                          const next = e.target.value;
+                          setForm((prev) => ({
+                            ...prev,
+                            unitSelect: next,
+                            unit: next === CUSTOM_UNIT_VALUE ? (PRODUCT_UNITS.includes(prev.unit) ? '' : prev.unit) : next,
+                          }));
+                        }}
+                      >
+                        <option value="">Select unit</option>
+                        {PRODUCT_UNITS.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
+                        <option value={CUSTOM_UNIT_VALUE}>Custom…</option>
+                      </select>
+                      {form.unitSelect === CUSTOM_UNIT_VALUE && (
+                        <input className={cn(inputClassName, 'mt-2 max-w-xs')} value={form.unit} onChange={(e) => updateForm('unit', e.target.value)} placeholder="e.g. carton, dozen" />
+                      )}
+                      {measuredUnit && <p className="mt-1 text-xs text-muted-foreground">Measured units unlock quantity-based pack size variants below.</p>}
+                      {form.variantAxisType === VARIANT_AXIS_TYPES.packSize && <p className="mt-1 text-xs font-medium text-primary">Pack size mode is locked to {packSizeUnitLabel}.</p>}
+                    </div>
+
                     <div className="flex flex-wrap gap-3">
                       <button
                         type="button"
@@ -359,7 +230,7 @@ export function ProductEditorDialog({
                               type="number"
                               step="0.01"
                               min="0"
-                              className={inputClassName}
+                              className={cn(inputClassName, 'tabular-nums')}
                               value={form.singleVariant.sellingPrice}
                               onChange={(e) => updateSingleVariant('sellingPrice', e.target.value)}
                               placeholder="Optional — set later if unknown"
@@ -374,7 +245,7 @@ export function ProductEditorDialog({
                               type="number"
                               step="0.01"
                               min="0"
-                              className={inputClassName}
+                              className={cn(inputClassName, 'tabular-nums')}
                               value={form.singleVariant.costPrice}
                               onChange={(e) => updateSingleVariant('costPrice', e.target.value)}
                               placeholder="0"
@@ -383,42 +254,26 @@ export function ProductEditorDialog({
                           </div>
                         </div>
 
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <div>
-                            <label className="block text-sm font-medium mb-2">Price type</label>
-                            <select
-                              className={inputClassName}
-                              value={form.singleVariant.priceType || 'FREE'}
-                              onChange={(e) => updateSingleVariant('priceType', e.target.value)}
-                            >
-                              <option value="FREE">FREE</option>
-                              <option value="MRP">MRP</option>
-                            </select>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              MRP locks the selling price after save. WAC still updates underneath it.
-                            </p>
-                          </div>
-                          <div className="rounded-xl border border-border bg-muted/20 p-3 text-sm">
-                            {(() => {
-                              const { marginAmount, marginPct } = calculateMargin(
-                                form.singleVariant.sellingPrice,
-                                form.singleVariant.costPrice
-                              );
-                              return (
-                                <>
-                                  <p className="font-medium">Live margin</p>
-                                  <p className={marginAmount < 0 ? 'text-destructive' : 'text-foreground'}>
-                                    {formatCurrency(marginAmount)} · {marginPct.toFixed(1)}%
-                                  </p>
-                                </>
-                              );
-                            })()}
-                          </div>
+                        <div className="rounded-xl bg-primary-tint border border-primary/20 px-4 py-3">
+                          {(() => {
+                            const { marginAmount, marginPct } = calculateMargin(
+                              form.singleVariant.sellingPrice,
+                              form.singleVariant.costPrice
+                            );
+                            const negative = marginAmount < 0;
+                            return (
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="font-bold text-primary-dark">Margin</span>
+                                <span className={cn('text-2xl font-black tabular-nums leading-none', negative ? 'text-destructive' : 'text-primary-dark')}>
+                                  {formatCurrency(marginAmount)} <span className="text-base font-bold">· {marginPct.toFixed(1)}%</span>
+                                </span>
+                              </div>
+                            );
+                          })()}
                         </div>
 
                         <div className="rounded-xl border border-border bg-muted/20 p-3 text-xs text-muted-foreground space-y-1">
-                          <p>This screen is the product master (identity, prices, barcodes). Opening stock is optional.</p>
-                          <p>Future inventory is normally received through <strong>Purchases / GRN</strong>. Print labels from the Labels module after stock arrives.</p>
+                          <p>Opening stock is optional — receive it later via <strong>Purchases / GRN</strong>.</p>
                         </div>
 
                         <div className="grid gap-4 md:grid-cols-2">
@@ -431,7 +286,7 @@ export function ProductEditorDialog({
                               type="number"
                               step={measuredUnit ? '0.001' : '1'}
                               min="0"
-                              className={inputClassName}
+                              className={cn(inputClassName, 'tabular-nums')}
                               value={form.singleVariant.initialStock}
                               onChange={(e) => updateSingleVariant('initialStock', e.target.value)}
                               placeholder="0"
@@ -448,7 +303,7 @@ export function ProductEditorDialog({
                               type="number"
                               step={measuredUnit ? '0.001' : '1'}
                               min="0"
-                              className={inputClassName}
+                              className={cn(inputClassName, 'tabular-nums')}
                               value={form.singleVariant.lowStockAlert}
                               onChange={(e) => updateSingleVariant('lowStockAlert', e.target.value)}
                               placeholder="0"
@@ -832,9 +687,8 @@ export function ProductEditorDialog({
 
                         {form.variantRows.length > 0 ? (
                           <div className="space-y-4">
-                            <div className="rounded-xl border border-border bg-muted/20 p-3 text-xs text-muted-foreground space-y-1">
-                              <p>Product master sets variants, prices, and barcodes. Opening stock is optional.</p>
-                              <p>Receive inventory later via <strong>Purchases / GRN</strong>, then print from Labels.</p>
+                            <div className="rounded-xl border border-border bg-muted/20 p-3 text-xs text-muted-foreground">
+                              <p>Opening stock is optional — receive it later via <strong>Purchases / GRN</strong>.</p>
                             </div>
                             <div className={cn('rounded-xl border p-4', form.pricingMode === 'different' ? 'border-border bg-muted/50' : 'border-border bg-muted/20')}>
                               <div className="flex flex-wrap items-end gap-3">
@@ -850,7 +704,7 @@ export function ProductEditorDialog({
                                   <label className="block text-xs font-medium mb-1">Selling Price</label>
                                   <input
                                     disabled={form.pricingMode === 'different'}
-                                    className={cn(inputClassName, 'w-36', form.pricingMode === 'different' && 'cursor-not-allowed')}
+                                    className={cn(inputClassName, 'w-36 tabular-nums', form.pricingMode === 'different' && 'cursor-not-allowed')}
                                     type="number"
                                     min="0.01"
                                     step="0.01"
@@ -863,7 +717,7 @@ export function ProductEditorDialog({
                                   <label className="block text-xs font-medium mb-1">Cost Price</label>
                                   <input
                                     disabled={form.pricingMode === 'different'}
-                                    className={cn(inputClassName, 'w-36', form.pricingMode === 'different' && 'cursor-not-allowed')}
+                                    className={cn(inputClassName, 'w-36 tabular-nums', form.pricingMode === 'different' && 'cursor-not-allowed')}
                                     type="number"
                                     min="0"
                                     step="0.01"
@@ -871,18 +725,6 @@ export function ProductEditorDialog({
                                     onChange={(e) => updateForm('quickCostPrice', e.target.value)}
                                     placeholder="1800"
                                   />
-                                </div>
-                                <div>
-                                  <label className="block text-xs font-medium mb-1">Price Type</label>
-                                  <select
-                                    className={cn(inputClassName, 'w-28', form.pricingMode === 'different' && 'cursor-not-allowed')}
-                                    value={form.quickPriceType || 'FREE'}
-                                    disabled={form.pricingMode === 'different'}
-                                    onChange={(e) => updateForm('quickPriceType', e.target.value)}
-                                  >
-                                    <option value="FREE">FREE</option>
-                                    <option value="MRP">MRP</option>
-                                  </select>
                                 </div>
                                 <Button
                                   type="button"
@@ -913,27 +755,28 @@ export function ProductEditorDialog({
                                   All variants use the shared selling and cost prices above; they also appear on each row.
                                 </p>
                               )}
-                              <div className="mt-3 rounded-xl border border-border bg-muted/20 p-3 text-sm">
+                              <div className="mt-3 rounded-xl bg-primary-tint border border-primary/20 px-4 py-3">
                                 {(() => {
                                   const { marginAmount, marginPct } = calculateMargin(form.quickSellingPrice, form.quickCostPrice);
+                                  const negative = marginAmount < 0;
                                   return (
-                                    <>
-                                      <p className="font-medium">Shared margin</p>
-                                      <p className={marginAmount < 0 ? 'text-destructive' : 'text-foreground'}>
-                                        {formatCurrency(marginAmount)} · {marginPct.toFixed(1)}%
-                                      </p>
-                                    </>
+                                    <div className="flex items-center justify-between gap-3">
+                                      <span className="font-bold text-primary-dark">Shared margin</span>
+                                      <span className={cn('text-2xl font-black tabular-nums leading-none', negative ? 'text-destructive' : 'text-primary-dark')}>
+                                        {formatCurrency(marginAmount)} <span className="text-base font-bold">· {marginPct.toFixed(1)}%</span>
+                                      </span>
+                                    </div>
                                   );
                                 })()}
                               </div>
                               <div className={cn('mt-3 flex flex-wrap items-end gap-3 border-t border-border pt-3', form.pricingMode === 'different' && 'opacity-60')}>
                                 <div>
                                   <label className="block text-xs font-medium mb-1">Opening Stock</label>
-                                  <input disabled={form.pricingMode === 'different'} className={cn(inputClassName, 'w-36', form.pricingMode === 'different' && 'cursor-not-allowed')} type="number" min="0" step="1" value={form.quickStock || ''} onChange={(e) => updateForm('quickStock', e.target.value)} placeholder="0" />
+                                  <input disabled={form.pricingMode === 'different'} className={cn(inputClassName, 'w-36 tabular-nums', form.pricingMode === 'different' && 'cursor-not-allowed')} type="number" min="0" step="1" value={form.quickStock || ''} onChange={(e) => updateForm('quickStock', e.target.value)} placeholder="0" />
                                 </div>
                                 <div>
                                   <label className="block text-xs font-medium mb-1">Low Stock Level</label>
-                                  <input disabled={form.pricingMode === 'different'} className={cn(inputClassName, 'w-36', form.pricingMode === 'different' && 'cursor-not-allowed')} type="number" min="0" step="1" value={form.quickLowStockAlert || ''} onChange={(e) => updateForm('quickLowStockAlert', e.target.value)} placeholder="0" />
+                                  <input disabled={form.pricingMode === 'different'} className={cn(inputClassName, 'w-36 tabular-nums', form.pricingMode === 'different' && 'cursor-not-allowed')} type="number" min="0" step="1" value={form.quickLowStockAlert || ''} onChange={(e) => updateForm('quickLowStockAlert', e.target.value)} placeholder="0" />
                                 </div>
                                 <Button
                                   type="button"
@@ -975,7 +818,6 @@ export function ProductEditorDialog({
                                     <th className="p-3 text-left">Variant</th>
                                     <th className="p-3 text-left">Selling</th>
                                     <th className="p-3 text-left">Cost</th>
-                                    <th className="p-3 text-left">Price Type</th>
                                     <th className="p-3 text-left">Margin</th>
                                     <th className="p-3 text-left">Margin %</th>
                                     <th className="p-3 text-left">Stock</th>
@@ -993,9 +835,6 @@ export function ProductEditorDialog({
                                     const costValue = singlePricing
                                       ? (form.quickCostPrice || '')
                                       : variant.costPrice;
-                                    const priceType = singlePricing
-                                      ? (form.quickPriceType || 'FREE')
-                                      : (variant.priceType || 'FREE');
                                     const { marginAmount, marginPct } = calculateMargin(sellingValue, costValue);
                                     return (
                                     <tr key={variant.id} className="border-b border-border last:border-0">
@@ -1010,24 +849,19 @@ export function ProductEditorDialog({
                                       </td>
                                       <td className="p-2">
                                         <input
-                                          className={cn(
-                                            'w-24 rounded-lg border border-border bg-input p-2',
-                                            (singlePricing && form.id && priceType === 'MRP') && 'cursor-not-allowed opacity-80'
-                                          )}
+                                          className="w-24 rounded-lg border border-border bg-input p-2 tabular-nums"
                                           type="number"
                                           min="0.01"
                                           step="0.01"
                                           value={sellingValue}
-                                          disabled={singlePricing && form.id && priceType === 'MRP'}
-                                          readOnly={singlePricing && form.id && priceType === 'MRP'}
                                           onChange={(e) => updateVariantRow(index, 'sellingPrice', e.target.value)}
                                         />
                                       </td>
                                       <td className="p-2">
                                         <input
                                           className={cn(
-                                            'w-24 rounded-lg border border-border bg-input p-2',
-                                            singlePricing && form.id && priceType === 'MRP' && 'cursor-not-allowed opacity-80'
+                                            'w-24 rounded-lg border border-border bg-input p-2 tabular-nums',
+                                            singlePricing && 'cursor-not-allowed opacity-80'
                                           )}
                                           type="number"
                                           min="0"
@@ -1040,36 +874,20 @@ export function ProductEditorDialog({
                                         />
                                       </td>
                                       <td className="p-2">
-                                        <select
-                                          className={cn(inputClassName, 'w-28 p-2')}
-                                          value={priceType}
-                                          onChange={(e) => {
-                                            if (singlePricing) {
-                                              updateForm('quickPriceType', e.target.value);
-                                            } else {
-                                              updateVariantRow(index, 'priceType', e.target.value);
-                                            }
-                                          }}
-                                        >
-                                          <option value="FREE">FREE</option>
-                                          <option value="MRP">MRP</option>
-                                        </select>
-                                      </td>
-                                      <td className="p-2">
-                                        <span className={marginAmount < 0 ? 'text-destructive font-semibold' : ''}>
+                                        <span className={cn('tabular-nums', marginAmount < 0 ? 'text-destructive font-semibold' : '')}>
                                           {formatCurrency(marginAmount)}
                                         </span>
                                       </td>
                                       <td className="p-2">
-                                        <span className={marginAmount < 0 ? 'text-destructive font-semibold' : ''}>
+                                        <span className={cn('tabular-nums', marginAmount < 0 ? 'text-destructive font-semibold' : '')}>
                                           {marginPct.toFixed(1)}%
                                         </span>
                                       </td>
                                       <td className="p-2">
-                                        <input className="w-20 rounded-lg border border-border bg-input p-2" type="number" min="0" step={measuredUnit ? '0.001' : '1'} value={variant.initialStock} onChange={(e) => updateVariantRow(index, 'initialStock', e.target.value)} data-focus="variant-stock" />
+                                        <input className="w-20 rounded-lg border border-border bg-input p-2 tabular-nums" type="number" min="0" step={measuredUnit ? '0.001' : '1'} value={variant.initialStock} onChange={(e) => updateVariantRow(index, 'initialStock', e.target.value)} data-focus="variant-stock" />
                                       </td>
                                       <td className="p-2">
-                                        <input className="w-20 rounded-lg border border-border bg-input p-2" type="number" min="0" step={measuredUnit ? '0.001' : '1'} value={variant.lowStockAlert} onChange={(e) => updateVariantRow(index, 'lowStockAlert', e.target.value)} />
+                                        <input className="w-20 rounded-lg border border-border bg-input p-2 tabular-nums" type="number" min="0" step={measuredUnit ? '0.001' : '1'} value={variant.lowStockAlert} onChange={(e) => updateVariantRow(index, 'lowStockAlert', e.target.value)} />
                                       </td>
                                       <td className="p-2">
                                         <input
@@ -1103,11 +921,67 @@ export function ProductEditorDialog({
                   </div>
                 )}
 
+                {form.step === 3 && (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-2" htmlFor="product-description">
+                        Description
+                      </label>
+                      <textarea
+                        id="product-description"
+                        className={cn(inputClassName, 'min-h-24')}
+                        value={form.description}
+                        onChange={(e) => updateForm('description', e.target.value)}
+                        placeholder="Optional product notes"
+                      />
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-medium">Image</p>
+                        <Button type="button" variant="outline" size="sm" onClick={() => imageInputRef.current?.click()}>
+                          <ImagePlus className="h-4 w-4 mr-2" />
+                          Add
+                        </Button>
+                        <input
+                          ref={imageInputRef}
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          className="hidden"
+                          onChange={handleImageFiles}
+                        />
+                      </div>
+
+                      {form.imageUrls.length > 0 && (
+                        <div className="flex flex-wrap gap-3">
+                          {form.imageUrls.map((url, index) => (
+                            <div
+                              key={`${index}-${url.slice(0, 32)}`}
+                              className="relative h-20 w-20 rounded-lg border border-border overflow-hidden bg-muted/40"
+                            >
+                              <img src={url} alt="" className="h-full w-full object-cover" />
+                              <button
+                                type="button"
+                                className="absolute top-1 right-1 rounded-full bg-background/90 p-0.5 border border-border"
+                                onClick={() => removeImage(index)}
+                                title="Remove image"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <DialogFooter className="gap-2">
                   <Button type="button" variant="outline" onClick={() => setProductDialogOpen(false)}>
                     Cancel
                   </Button>
-                  {form.step === 1 ? (
+                  {form.step === 1 && (
                     <Button
                       type="button"
                       onClick={() =>
@@ -1120,12 +994,30 @@ export function ProductEditorDialog({
                     >
                       Next
                     </Button>
-                  ) : (
+                  )}
+                  {form.step === 2 && (
                     <>
                       <Button
                         type="button"
                         variant="ghost"
                         onClick={() => setForm((prev) => ({ ...prev, step: 1 }))}
+                      >
+                        Back
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={() => setForm((prev) => ({ ...prev, step: 3 }))}
+                      >
+                        Next
+                      </Button>
+                    </>
+                  )}
+                  {form.step === 3 && (
+                    <>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => setForm((prev) => ({ ...prev, step: 2 }))}
                       >
                         Back
                       </Button>

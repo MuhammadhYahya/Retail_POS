@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { useThemeStore } from '../../store/themeStore';
 import { Button } from '../ui/button';
-import { LogOut, LayoutDashboard, Users, ShoppingCart, Package, BarChart3, Settings, Sun, Moon, AlertTriangle, Wallet, Truck, Undo2, Receipt, Tag, ShieldCheck, Menu, X, ChevronDown, ChevronRight, CalendarRange } from 'lucide-react';
+import { LogOut, LayoutDashboard, Users, ShoppingCart, Package, BarChart3, Settings, Sun, Moon, AlertTriangle, Wallet, Truck, Undo2, Receipt, Tag, ShieldCheck, Menu, X, ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { getDashboardPath, invokeWithAuth, LOW_STOCK_UPDATED_EVENT } from '../../lib/ipc';
 import { useCloseDayReminder } from '../../lib/useCloseDayReminder.js';
@@ -22,8 +22,6 @@ const FEATURE_NAV = [
 const INVENTORY_NAV = [
   { path: '/products', label: 'Products', icon: Package, color: 'text-violet-500', permission: 'products' },
   { path: '/purchases', label: 'New Purchase / GRN', icon: Truck, color: 'text-cyan-500', permission: 'purchases' },
-  { path: '/purchase-returns', label: 'Purchase Returns', icon: Undo2, color: 'text-orange-500', permission: 'purchaseReturns' },
-  { path: '/expiry-alerts', label: 'Expiry Alerts', icon: CalendarRange, color: 'text-amber-500', permission: 'lowStock' },
 ];
 
 const ADMIN_ONLY_NAV = [
@@ -79,7 +77,13 @@ const nameToAvatar = (name) => {
   return name.slice(0, 2).toUpperCase();
 };
 
-export default function AppShell({ children, title, description }) {
+/**
+ * `fitViewport` opts a screen into the ZEN no-forced-scroll rule: the content
+ * area fills the viewport exactly and never scrolls as a whole. Screens that
+ * opt in are responsible for scoping their own bounded scroll areas. Screens
+ * without it keep the original whole-page scroll behaviour.
+ */
+export default function AppShell({ children, title, description, fitViewport = false }) {
   const navigate = useNavigate();
   const location = useLocation();
   const user = useAuthStore((state) => state.user);
@@ -89,7 +93,7 @@ export default function AppShell({ children, title, description }) {
   const [timeString, setTimeString] = React.useState('');
   const [profileOpen, setProfileOpen] = React.useState(false);
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
-  const inventoryPathActive = ['/products', '/purchases', '/purchase-returns', '/expiry-alerts'].includes(location.pathname);
+  const inventoryPathActive = ['/products', '/purchases'].includes(location.pathname);
   const [inventoryOpen, setInventoryOpen] = React.useState(inventoryPathActive);
   const [lowStockCount, setLowStockCount] = React.useState(0);
   const showCloseReminder = useCloseDayReminder();
@@ -311,7 +315,14 @@ export default function AppShell({ children, title, description }) {
             </div>
           </div>
         </header>
-        <div className="flex-1 min-h-0 p-4 sm:p-6 lg:p-8 overflow-y-auto">{children}</div>
+        <div
+          className={cn(
+            'flex-1 min-h-0 p-4 sm:p-6 lg:p-8',
+            fitViewport ? 'overflow-hidden' : 'overflow-y-auto'
+          )}
+        >
+          {children}
+        </div>
       </main>
     </div>
   );

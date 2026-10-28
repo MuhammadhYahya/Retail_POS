@@ -60,6 +60,23 @@ export function registerSaleHandlers() {
     }
   });
 
+  // Shop-wide view of today's sales for the admin dashboard. Read-only.
+  ipcMain.handle('sale:listTodayShop', async (event, payload = {}) => {
+    try {
+      const token = extractToken(payload);
+      const session = validateSession(token);
+      if (!session.success) return session;
+      const roleCheck = requireRole(session, ['admin']);
+      if (!roleCheck.success) return roleCheck;
+      return {
+        success: true,
+        data: saleService.listTodayForShop({ limit: payload.limit }),
+      };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
   ipcMain.handle('sale:listBillingHistory', async (event, payload = {}) => {
     try {
       const token = extractToken(payload);

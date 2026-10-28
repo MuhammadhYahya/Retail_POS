@@ -58,9 +58,15 @@ export default function PurchasesPage() {
   const [supplierName, setSupplierName] = useState('');
   const [supplierPhone, setSupplierPhone] = useState('');
   const [supplierAddress, setSupplierAddress] = useState('');
-  const [supplierNotes, setSupplierNotes] = useState('');
   const [supplierEditorOpen, setSupplierEditorOpen] = useState(false);
   const [editingSupplierId, setEditingSupplierId] = useState('');
+  // The edit dialog keeps its own fields. Sharing them with the "Add supplier"
+  // form meant a cancelled edit left a stale name behind, and posting a GRN
+  // without picking a supplier then silently created a duplicate.
+  const [editName, setEditName] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editAddress, setEditAddress] = useState('');
+  const [editNotes, setEditNotes] = useState('');
   const [supplierId, setSupplierId] = useState('');
   const [barcode, setBarcode] = useState('');
   const [catalog, setCatalog] = useState([]);
@@ -117,19 +123,27 @@ export default function PurchasesPage() {
     setSupplierName('');
     setSupplierPhone('');
     setSupplierAddress('');
-    setSupplierNotes('');
     setSupplierId(response.data.id);
     refresh();
   };
 
   const openSupplierEditor = (supplier) => {
     setEditingSupplierId(supplier.id);
-    setSupplierName(supplier.name || '');
-    setSupplierPhone(supplier.phone || '');
-    setSupplierAddress(supplier.address || '');
-    setSupplierNotes(supplier.notes || '');
+    setEditName(supplier.name || '');
+    setEditPhone(supplier.phone || '');
+    setEditAddress(supplier.address || '');
+    setEditNotes(supplier.notes || '');
     setError('');
     setSupplierEditorOpen(true);
+  };
+
+  const closeSupplierEditor = () => {
+    setSupplierEditorOpen(false);
+    setEditingSupplierId('');
+    setEditName('');
+    setEditPhone('');
+    setEditAddress('');
+    setEditNotes('');
   };
 
   const updateSupplier = async (event) => {
@@ -137,20 +151,16 @@ export default function PurchasesPage() {
     setError('');
     const response = await invokeWithAuth('supplier:update', {
       id: editingSupplierId,
-      name: supplierName.trim(),
-      phone: supplierPhone.trim() || null,
-      address: supplierAddress.trim() || null,
-      notes: supplierNotes.trim() || null,
+      name: editName.trim(),
+      phone: editPhone.trim() || null,
+      address: editAddress.trim() || null,
+      notes: editNotes.trim() || null,
     });
     if (!response.success) {
       setError(response.error || 'Could not update supplier.');
       return;
     }
-    setSupplierEditorOpen(false);
-    setSupplierName('');
-    setSupplierPhone('');
-    setSupplierAddress('');
-    setSupplierNotes('');
+    closeSupplierEditor();
     await refresh();
   };
 
@@ -172,9 +182,8 @@ export default function PurchasesPage() {
 
   const addVariantToLines = (variant, costOverride = null) => {
     const variantId = variant.id || variant.variantId;
-    const hasExpiry = Boolean(variant.product?.hasExpiry ?? variant.product?.has_expiry);
     setLines((prev) => {
-      const existing = prev.find((line) => line.variantId === variantId && !line.hasExpiry);
+      const existing = prev.find((line) => line.variantId === variantId);
       if (existing) {
         return prev.map((line) =>
           line.id === existing.id
@@ -195,10 +204,6 @@ export default function PurchasesPage() {
           sellingPrice: Number(variant.sellingPrice ?? variant.selling_price ?? 0),
           currentStock: Number(variant.inventory?.onHand ?? variant.inventory?.on_hand ?? 0),
           currentWac: Number(variant.costPrice ?? variant.cost_price ?? 0),
-          priceType: String(variant.priceType || variant.price_type || 'FREE').toUpperCase(),
-          hasExpiry,
-          batchNumber: '',
-          expiryDate: '',
         },
       ];
     });
@@ -302,11 +307,8 @@ export default function PurchasesPage() {
 
     if (warnings.length) {
       const labels = warnings.map((line) => line.label).join(', ');
-      const hasMrp = warnings.some((line) => line.priceType === 'MRP');
       const ok = window.confirm(
-        hasMrp
-          ? `MRP item(s) will end up with low or negative margin after this GRN: ${labels}.\n\nContinue anyway?`
-          : `After this purchase, margin will drop on: ${labels}.\n\nContinue anyway?`
+        `After this purchase, margin will drop on: ${labels}.\n\nContinue anyway?`
       );
       if (!ok) {
         setBusy(false);
@@ -324,10 +326,6 @@ export default function PurchasesPage() {
         variantId: line.variantId,
         quantity: Number(line.quantity),
         unitCost: Number(line.unitCost),
-        priceType: line.priceType,
-        batchNumber: line.batchNumber || null,
-        expiryDate: line.hasExpiry ? line.expiryDate || null : null,
-        receivedMrp: line.priceType === 'MRP' ? Number(line.sellingPrice) : null,
       })),
     });
     if (!createRes.success) {
@@ -364,6 +362,21 @@ export default function PurchasesPage() {
     })
     .filter((line) => Number.isFinite(line.marginAmount) && line.marginPct <= 10);
 
+  /**
+   * Display-only running total for the unposted draft. Mirrors the backend's
+   * per-line `quantity * unitCost` sum so the cashier sees a live figure before
+   * posting; the posted receipt's authoritative total still comes from the
+   * server response, which is what Recent GRNs renders.
+   */
+  const grnTotal = useMemo(
+    () =>
+      Math.round(
+        (lines.reduce((sum, line) => sum + Number(line.quantity || 0) * Number(line.unitCost || 0), 0) +
+          Number.EPSILON) * 100
+      ) / 100,
+    [lines]
+  );
+
   const selectedReceipt = receipts.find((receipt) => receipt.id === selectedReceiptId) || receipts[0] || null;
 
   const reprintReceipt = async (receipt) => {
@@ -398,7 +411,7 @@ export default function PurchasesPage() {
 
   return (
     <AppShell title="Purchases / GRN" description="Receive supplier stock into inventory.">
-      <div className="space-y-6 max-w-5xl">
+      <div className="space-y-6">
         {error && (
           <Alert variant="destructive">
             <AlertDescription>{error}</AlertDescription>
@@ -410,373 +423,441 @@ export default function PurchasesPage() {
           </Alert>
         )}
         {grnWarnings.length > 0 && (
-          <Alert variant={grnWarnings.some((line) => line.priceType === 'MRP') ? 'destructive' : undefined}>
-            <p className="mb-1 font-semibold">
-              {grnWarnings.some((line) => line.priceType === 'MRP')
-                ? 'MRP items will keep their price, but margin is getting tight.'
-                : 'Projected margin is low on one or more GRN lines.'}
-            </p>
+          <Alert>
+            <p className="mb-1 font-semibold">Low margin after this purchase</p>
             <AlertDescription>
               {grnWarnings.map((line) => `${line.label} (${formatMoney(line.marginAmount)} / ${line.marginPct.toFixed(1)}%)`).join(', ')}
             </AlertDescription>
           </Alert>
         )}
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Suppliers</CardTitle>
-            <CardDescription>Click a supplier row to use it for this GRN.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {!suppliers.length ? (
-              <p className="text-sm text-muted-foreground">No suppliers yet. Add one below.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border text-left text-muted-foreground">
-                      <th className="px-3 py-2">Name</th>
-                      <th className="px-3 py-2">Phone</th>
-                      <th className="px-3 py-2">Address</th>
-                      <th className="px-3 py-2">Status</th>
-                      <th className="px-3 py-2 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {suppliers.map((supplier) => (
-                      <tr
-                        key={supplier.id}
-                        tabIndex={0}
-                        role="button"
-                        onClick={() => setSupplierId(supplier.id)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter' || event.key === ' ') {
-                            event.preventDefault();
-                            setSupplierId(supplier.id);
-                          }
-                        }}
-                        className={`cursor-pointer border-b border-border/60 transition-colors ${
-                          supplierId === supplier.id ? 'bg-primary/10' : 'hover:bg-muted/30'
-                        }`}
-                      >
-                        <td className="px-3 py-3 font-medium">{supplier.name}</td>
-                        <td className="px-3 py-3">{supplier.phone || '-'}</td>
-                        <td className="px-3 py-3">{supplier.address || '-'}</td>
-                        <td className="px-3 py-3">{supplier.isActive ? 'Active' : 'Inactive'}</td>
-                        <td className="px-3 py-3 text-right">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            title={`Edit ${supplier.name}`}
-                            aria-label={`Edit ${supplier.name}`}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              openSupplierEditor(supplier);
-                            }}
-                          >
-                            <PencilLine className="h-4 w-4" />
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <div className="grid gap-6 lg:grid-cols-2">
-          <Card>
+        <div className="grid gap-6 xl:grid-cols-[1.4fr_1fr] xl:items-start">
+          {/* ---------- New GRN (top left) ---------- */}
+          <Card className="@container">
             <CardHeader>
               <CardTitle>New GRN</CardTitle>
-              <CardDescription>Scan barcodes, set cost, then post to stock.</CardDescription>
+              <CardDescription>Scan items, set cost, then post to stock.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-5">
               <div>
-                <label className="block text-sm font-medium mb-2" htmlFor="purchase-barcode">Scan product barcode</label>
-                <div className="flex gap-2">
+                <label className="block text-sm font-medium mb-2" htmlFor="purchase-barcode">
+                  Scan product
+                </label>
+                <div className="flex flex-wrap gap-2">
                   <input
                     id="purchase-barcode"
                     ref={barcodeRef}
-                    className={inputClassName}
-                    placeholder="Scan barcode or enter SKU, then Enter"
+                    className={`${inputClassName} h-12 min-w-0 flex-1`}
+                    placeholder="Scan barcode or type SKU, then Enter"
                     value={barcode}
                     onChange={(e) => setBarcode(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addByBarcode())}
                     autoFocus
                   />
-                  <Button type="button" onClick={addByBarcode}>
+                  <Button type="button" className="h-12 px-5 font-bold" onClick={addByBarcode}>
                     Add
                   </Button>
-                  <Button type="button" variant="outline" onClick={() => setCatalogOpen(true)}>
+                  <Button type="button" variant="outline" className="h-12 px-5 font-bold" onClick={() => setCatalogOpen(true)}>
                     Browse
                   </Button>
                 </div>
               </div>
-              <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
-                <input
-                  className={inputClassName}
-                  placeholder="New supplier name"
-                  value={supplierName}
-                  onChange={(e) => setSupplierName(e.target.value)}
-                />
-                <input
-                  className={inputClassName}
-                  placeholder="Phone (optional)"
-                  value={supplierPhone}
-                  onChange={(e) => setSupplierPhone(e.target.value)}
-                />
-                <Button type="button" variant="outline" onClick={addSupplier}>
-                  Add supplier
-                </Button>
-              </div>
-              <input
-                className={inputClassName}
-                placeholder="Supplier address (optional)"
-                value={supplierAddress}
-                onChange={(e) => setSupplierAddress(e.target.value)}
-              />
-              <div>
-                <label className="block text-sm font-medium mb-2">Supplier</label>
-                <select
-                  className={inputClassName}
-                  value={supplierId}
-                  onChange={(e) => setSupplierId(e.target.value)}
-                >
-                  <option value="">Optional</option>
-                  {suppliers.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Choose an existing supplier, or type a new one above and press Add.
-                </p>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <input className={inputClassName} placeholder="Supplier invoice number" value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} required />
+
+              <div className="grid gap-3 @lg:grid-cols-3">
                 <div>
-                  <label className="sr-only" htmlFor="purchase-invoice-date">Supplier invoice date</label>
+                  <label className="block text-sm font-medium mb-2" htmlFor="grn-supplier">Supplier</label>
+                  <select
+                    id="grn-supplier"
+                    className={`${inputClassName} h-12`}
+                    value={supplierId}
+                    onChange={(e) => setSupplierId(e.target.value)}
+                  >
+                    <option value="">Select supplier</option>
+                    {suppliers.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-2" htmlFor="grn-invoice">Invoice number</label>
+                  <input
+                    id="grn-invoice"
+                    className={`${inputClassName} h-12`}
+                    placeholder="e.g. INV-1024"
+                    value={invoiceNumber}
+                    onChange={(e) => setInvoiceNumber(e.target.value)}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-2" htmlFor="purchase-invoice-date">Invoice date</label>
                   <input
                     id="purchase-invoice-date"
-                    className={inputClassName}
+                    className={`${inputClassName} h-12 tabular-nums`}
                     type="date"
                     max={today}
                     value={invoiceDate}
                     onChange={(e) => setInvoiceDate(e.target.value)}
                     required
                   />
-                  <p className="mt-1 text-xs text-muted-foreground">Today or an earlier date only.</p>
                 </div>
               </div>
-              <div className="space-y-2">
-                {!lines.length && <p className="text-sm text-muted-foreground">No lines yet.</p>}
-                {lines.map((line) => (
-                  <div key={line.id} className="grid grid-cols-12 gap-2 items-center text-sm">
-                    <div className="col-span-5 font-semibold truncate">{line.label}</div>
-                    <input
-                      className={`${inputClassName} col-span-2 !p-2`}
-                      type="number"
-                      min="0.001"
-                      step={isMeasuredUnit(line.unit) ? '0.001' : '1'}
-                      value={line.quantity}
-                      onChange={(e) =>
-                        setLines((prev) =>
-                          prev.map((l) =>
-                            l.id === line.id ? { ...l, quantity: e.target.value } : l
-                          )
-                        )
-                      }
-                    />
-                    <input
-                      className={`${inputClassName} col-span-3 !p-2`}
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={line.unitCost}
-                      onChange={(e) =>
-                        setLines((prev) =>
-                          prev.map((l) =>
-                            l.id === line.id ? { ...l, unitCost: e.target.value } : l
-                          )
-                          )
-                        }
-                      />
-                    {line.priceType === 'MRP' ? (
-                      <input
-                        className={`${inputClassName} col-span-2 !p-2`}
-                        type="number"
-                        min="0.01"
-                        step="0.01"
-                        value={line.sellingPrice}
-                        onChange={(e) =>
-                          setLines((prev) =>
-                            prev.map((l) =>
-                              l.id === line.id ? { ...l, sellingPrice: e.target.value } : l
-                            )
-                          )
-                        }
-                        placeholder="MRP"
-                      />
-                    ) : (
-                      <div className="col-span-2 rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
-                        Free price
-                      </div>
-                    )}
-                    <div className="col-span-12 grid gap-2 md:grid-cols-3">
-                      {line.hasExpiry ? (
-                        <>
-                          <input
-                            className={`${inputClassName} !p-2`}
-                            placeholder="Batch number (optional)"
-                            value={line.batchNumber}
-                            onChange={(e) =>
-                              setLines((prev) =>
-                                prev.map((l) => (
-                                  l.id === line.id ? { ...l, batchNumber: e.target.value } : l
-                                ))
-                              )
-                            }
-                          />
-                          <input
-                            className={`${inputClassName} !p-2`}
-                            type="date"
-                            value={line.expiryDate}
-                            onChange={(e) =>
-                              setLines((prev) =>
-                                prev.map((l) => (
-                                  l.id === line.id ? { ...l, expiryDate: e.target.value } : l
-                                ))
-                              )
-                            }
-                            required
-                          />
-                        </>
-                      ) : (
-                        <div className="md:col-span-2 rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
-                          No expiry tracking for this product.
+
+              {/* ----- Lines: cards when tight, table when the card is wide ----- */}
+              {!lines.length ? (
+                <p className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+                  No items yet. Scan a barcode to start.
+                </p>
+              ) : (
+                <>
+                  <div className="space-y-3 @3xl:hidden">
+                    {lines.map((line) => {
+                      const nextWac = projectedWac(line.currentStock, line.currentWac, line.quantity, line.unitCost);
+                      const { marginAmount, marginPct } = calculateMargin(line.sellingPrice, nextWac);
+                      const lineTotal = Number(line.quantity || 0) * Number(line.unitCost || 0);
+                      return (
+                        <div key={line.id} className="rounded-xl border border-border bg-muted/20 p-4 space-y-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <p className="font-bold text-foreground leading-tight min-w-0">{line.label}</p>
+                            <span className="font-bold tabular-nums shrink-0">{formatMoney(lineTotal)}</span>
+                          </div>
+                          <div className="flex flex-wrap items-end gap-3">
+                            <div>
+                              <label className="block text-xs font-medium mb-1 text-muted-foreground">Qty</label>
+                              <input
+                                className={`${inputClassName} h-11 w-24 tabular-nums !p-2 text-center`}
+                                type="number"
+                                min="0.001"
+                                step={isMeasuredUnit(line.unit) ? '0.001' : '1'}
+                                value={line.quantity}
+                                onChange={(e) =>
+                                  setLines((prev) => prev.map((l) => (l.id === line.id ? { ...l, quantity: e.target.value } : l)))
+                                }
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium mb-1 text-muted-foreground">Unit cost</label>
+                              <input
+                                className={`${inputClassName} h-11 w-32 tabular-nums !p-2`}
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={line.unitCost}
+                                onChange={(e) =>
+                                  setLines((prev) => prev.map((l) => (l.id === line.id ? { ...l, unitCost: e.target.value } : l)))
+                                }
+                              />
+                            </div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="h-11 ml-auto"
+                              onClick={() => setLines((prev) => prev.filter((l) => l.id !== line.id))}
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                          <p className="text-xs text-muted-foreground tabular-nums">
+                            WAC after {formatMoney(nextWac)} ·{' '}
+                            <span className={marginPct <= 10 ? 'font-semibold text-amber-600' : ''}>
+                              margin {formatMoney(marginAmount)} ({marginPct.toFixed(1)}%)
+                            </span>
+                          </p>
                         </div>
-                      )}
-                      <div className="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs">
-                        {(() => {
+                      );
+                    })}
+                  </div>
+
+                  <div className="hidden @3xl:block overflow-hidden rounded-xl border border-border">
+                    <table className="w-full text-sm">
+                      <thead className="bg-muted/40 text-muted-foreground border-b border-border">
+                        <tr>
+                          <th className="text-left p-3 font-bold text-xs uppercase tracking-wider">Item</th>
+                          <th className="text-left p-3 font-bold text-xs uppercase tracking-wider w-[7rem]">Qty</th>
+                          <th className="text-left p-3 font-bold text-xs uppercase tracking-wider w-[9rem]">Unit cost</th>
+                          <th className="text-right p-3 font-bold text-xs uppercase tracking-wider w-[8rem]">Line total</th>
+                          <th className="text-left p-3 font-bold text-xs uppercase tracking-wider w-[13rem]">After GRN</th>
+                          <th className="p-3 w-[6rem]" />
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/40">
+                        {lines.map((line) => {
                           const nextWac = projectedWac(line.currentStock, line.currentWac, line.quantity, line.unitCost);
                           const { marginAmount, marginPct } = calculateMargin(line.sellingPrice, nextWac);
+                          const lineTotal = Number(line.quantity || 0) * Number(line.unitCost || 0);
                           return (
-                            <>
-                              <p className="font-semibold">Projected margin</p>
-                              <p className={marginAmount < 0 ? 'text-destructive font-semibold' : 'text-foreground'}>
-                                {formatMoney(marginAmount)} - {marginPct.toFixed(1)}%
-                              </p>
-                              <p className="text-[11px] text-muted-foreground">
-                                WAC after GRN: {formatMoney(nextWac)}
-                              </p>
-                            </>
+                            <tr key={line.id}>
+                              <td className="p-3 font-semibold">{line.label}</td>
+                              <td className="p-3">
+                                <input
+                                  className={`${inputClassName} h-11 tabular-nums !p-2 text-center`}
+                                  type="number"
+                                  min="0.001"
+                                  step={isMeasuredUnit(line.unit) ? '0.001' : '1'}
+                                  value={line.quantity}
+                                  onChange={(e) =>
+                                    setLines((prev) => prev.map((l) => (l.id === line.id ? { ...l, quantity: e.target.value } : l)))
+                                  }
+                                />
+                              </td>
+                              <td className="p-3">
+                                <input
+                                  className={`${inputClassName} h-11 tabular-nums !p-2`}
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={line.unitCost}
+                                  onChange={(e) =>
+                                    setLines((prev) => prev.map((l) => (l.id === line.id ? { ...l, unitCost: e.target.value } : l)))
+                                  }
+                                />
+                              </td>
+                              <td className="p-3 text-right font-bold tabular-nums">{formatMoney(lineTotal)}</td>
+                              <td className="p-3 text-xs text-muted-foreground tabular-nums">
+                                <p>WAC {formatMoney(nextWac)}</p>
+                                <p className={marginPct <= 10 ? 'font-semibold text-amber-600' : ''}>
+                                  {formatMoney(marginAmount)} ({marginPct.toFixed(1)}%)
+                                </p>
+                              </td>
+                              <td className="p-3 text-right">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="h-11"
+                                  onClick={() => setLines((prev) => prev.filter((l) => l.id !== line.id))}
+                                >
+                                  Remove
+                                </Button>
+                              </td>
+                            </tr>
                           );
-                        })()}
-                      </div>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="col-span-2"
-                      onClick={() => setLines((prev) => prev.filter((l) => l.id !== line.id))}
-                    >
-                      Remove
-                    </Button>
+                        })}
+                      </tbody>
+                    </table>
                   </div>
-                ))}
-              </div>
+                </>
+              )}
+
               <input
-                className={inputClassName}
-                placeholder="Notes"
+                className={`${inputClassName} h-12`}
+                placeholder="Notes (optional)"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
               />
-              <Button type="button" disabled={busy || !lines.length} onClick={createAndPost}>
-                {busy ? 'Posting...' : 'Create & post GRN'}
+
+              <div className="rounded-2xl bg-primary-tint border border-primary/20 px-5 py-4 flex items-center justify-between gap-3">
+                <span className="font-bold text-primary-dark">Total cost</span>
+                <span
+                  key={grnTotal}
+                  className="zen-total-pulse text-3xl font-black tabular-nums text-primary-dark leading-none"
+                >
+                  {formatMoney(grnTotal)}
+                </span>
+              </div>
+
+              <Button
+                type="button"
+                className="w-full h-14 rounded-2xl font-bold text-base"
+                disabled={busy || !lines.length}
+                onClick={createAndPost}
+              >
+                {busy ? 'Posting...' : 'Create & Post GRN'}
               </Button>
             </CardContent>
           </Card>
 
+          {/* ---------- Suppliers (right) ---------- */}
           <Card>
             <CardHeader>
-              <CardTitle>Recent GRNs</CardTitle>
+              <CardTitle>Suppliers</CardTitle>
+              <CardDescription>Tap a supplier to use it on this GRN.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3">
-              {!receipts.length && <p className="text-sm text-muted-foreground">No receipts yet.</p>}
-              {receipts.map((r) => (
-                <button
-                  key={r.id}
-                  type="button"
-                  className={`w-full rounded-xl border px-3 py-2 text-left transition-colors ${
-                    selectedReceiptId === r.id ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted/30'
-                  }`}
-                  onClick={() => setSelectedReceiptId(r.id)}
-                >
-                  <div className="font-semibold font-mono">{r.grnNumber}</div>
-                  <div className="text-muted-foreground text-sm">
-                    {r.supplierName || 'No supplier'} - {r.status} - {formatMoney(r.totalCost)} - {r.items?.length || 0} lines
-                  </div>
-                </button>
-              ))}
+            <CardContent className="space-y-4">
+              <div className="space-y-2 rounded-xl border border-border bg-muted/20 p-4">
+                <p className="text-sm font-bold">Add supplier</p>
+                <input
+                  className={`${inputClassName} h-11`}
+                  placeholder="Supplier name"
+                  value={supplierName}
+                  onChange={(e) => setSupplierName(e.target.value)}
+                />
+                <input
+                  className={`${inputClassName} h-11`}
+                  placeholder="Phone (optional)"
+                  value={supplierPhone}
+                  onChange={(e) => setSupplierPhone(e.target.value)}
+                />
+                <input
+                  className={`${inputClassName} h-11`}
+                  placeholder="Address (optional)"
+                  value={supplierAddress}
+                  onChange={(e) => setSupplierAddress(e.target.value)}
+                />
+                <Button type="button" variant="outline" className="h-11 w-full font-bold" onClick={addSupplier}>
+                  Add supplier
+                </Button>
+              </div>
 
-              {selectedReceipt && (
-                <div className="rounded-2xl border border-border bg-muted/20 p-4 space-y-3">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Receipt preview</p>
-                      <h3 className="text-lg font-semibold">{selectedReceipt.grnNumber}</h3>
-                      <p className="text-sm text-muted-foreground">
-                        {selectedReceipt.supplierName || 'No supplier'} - {selectedReceipt.status}
-                      </p>
-                    </div>
-                    <Button type="button" variant="outline" disabled={busy} onClick={() => reprintReceipt(selectedReceipt)}>
-                      Reprint
-                    </Button>
-                  </div>
-                  <div className="space-y-1 text-sm">
-                    <p><span className="text-muted-foreground">Invoice:</span> {selectedReceipt.invoiceNumber || '-'}</p>
-                    <p><span className="text-muted-foreground">Date:</span> {selectedReceipt.invoiceDate || '-'}</p>
-                    <p><span className="text-muted-foreground">Received:</span> {selectedReceipt.receivedDate || '-'}</p>
-                    <p><span className="text-muted-foreground">Total:</span> {formatMoney(selectedReceipt.totalCost)}</p>
-                  </div>
-                  <div className="space-y-2">
-                    {selectedReceipt.items?.map((item) => (
-                      <div key={item.id} className="rounded-lg border border-border bg-card px-3 py-2 text-sm">
-                        <p className="font-medium">{item.productName}{item.variantName ? ` - ${item.variantName}` : ''}</p>
-                        <p className="text-xs text-muted-foreground">
-                          Qty {Number(item.quantity || 0)} - Cost {formatMoney(item.unitCost)} - Line {formatMoney(item.lineTotal)}
-                        </p>
-                        {(item.batchNumber || item.expiryDate) && (
-                          <p className="text-xs text-muted-foreground">
-                            {item.batchNumber ? `Batch ${item.batchNumber}` : 'No batch'}{item.expiryDate ? ` - Expiry ${item.expiryDate}` : ''}
+              {!suppliers.length ? (
+                <p className="text-sm text-muted-foreground">No suppliers yet.</p>
+              ) : (
+                <div className="max-h-96 space-y-2 overflow-y-auto">
+                  {suppliers.map((supplier) => {
+                    const isSelected = supplierId === supplier.id;
+                    return (
+                      <div
+                        key={supplier.id}
+                        className={`flex items-center gap-2 rounded-xl border px-3 py-2 transition-colors ${
+                          isSelected ? 'border-primary bg-primary-tint' : 'border-border hover:bg-muted/30'
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setSupplierId(supplier.id)}
+                          className="min-w-0 flex-1 text-left cursor-pointer"
+                        >
+                          <p className={`font-bold truncate ${isSelected ? 'text-primary-dark' : 'text-foreground'}`}>
+                            {supplier.name}
                           </p>
-                        )}
+                          <p className="text-xs text-muted-foreground truncate">
+                            {supplier.phone || 'No phone'}
+                            {supplier.address ? ` · ${supplier.address}` : ''}
+                          </p>
+                        </button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          title={`Edit ${supplier.name}`}
+                          aria-label={`Edit ${supplier.name}`}
+                          onClick={() => openSupplierEditor(supplier)}
+                        >
+                          <PencilLine className="h-4 w-4" />
+                        </Button>
                       </div>
-                    ))}
-                  </div>
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
           </Card>
         </div>
+
+        {/* ---------- Recent GRNs (bottom, full width) ---------- */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Recent GRNs</CardTitle>
+            <CardDescription>Posted receipts. Select one to preview or reprint.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {!receipts.length ? (
+              <p className="text-sm text-muted-foreground">No receipts yet.</p>
+            ) : (
+              <div className="grid gap-4 lg:grid-cols-[20rem_1fr] lg:items-start">
+                <div className="max-h-96 space-y-2 overflow-y-auto lg:pr-1">
+                  {receipts.map((r) => {
+                    const isSelected = selectedReceiptId === r.id;
+                    return (
+                      <button
+                        key={r.id}
+                        type="button"
+                        className={`w-full rounded-xl border px-3 py-3 text-left transition-colors cursor-pointer ${
+                          isSelected ? 'border-primary bg-primary-tint' : 'border-border hover:bg-muted/30'
+                        }`}
+                        onClick={() => setSelectedReceiptId(r.id)}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className={`font-mono font-bold ${isSelected ? 'text-primary-dark' : ''}`}>
+                            {r.grnNumber}
+                          </span>
+                          <span className="font-bold tabular-nums shrink-0">{formatMoney(r.totalCost)}</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground truncate mt-0.5">
+                          {r.supplierName || 'No supplier'} · {r.items?.length || 0} line
+                          {(r.items?.length || 0) === 1 ? '' : 's'} · {r.status}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {selectedReceipt && (
+                  <div className="rounded-2xl border border-border bg-muted/20 p-5 space-y-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <h3 className="text-lg font-extrabold font-mono">{selectedReceipt.grnNumber}</h3>
+                        <p className="text-sm text-muted-foreground">
+                          {selectedReceipt.supplierName || 'No supplier'} · {selectedReceipt.status}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-11 font-bold"
+                        disabled={busy}
+                        onClick={() => reprintReceipt(selectedReceipt)}
+                      >
+                        Reprint
+                      </Button>
+                    </div>
+
+                    <div className="grid gap-x-6 gap-y-1.5 text-sm sm:grid-cols-2">
+                      <p className="flex justify-between gap-3">
+                        <span className="text-muted-foreground">Invoice</span>
+                        <span className="font-semibold">{selectedReceipt.invoiceNumber || '—'}</span>
+                      </p>
+                      <p className="flex justify-between gap-3">
+                        <span className="text-muted-foreground">Invoice date</span>
+                        <span className="font-semibold tabular-nums">{selectedReceipt.invoiceDate || '—'}</span>
+                      </p>
+                      <p className="flex justify-between gap-3">
+                        <span className="text-muted-foreground">Received</span>
+                        <span className="font-semibold tabular-nums">{selectedReceipt.receivedDate || '—'}</span>
+                      </p>
+                      <p className="flex justify-between gap-3">
+                        <span className="text-muted-foreground">Total</span>
+                        <span className="font-bold tabular-nums">{formatMoney(selectedReceipt.totalCost)}</span>
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      {selectedReceipt.items?.map((item) => (
+                        <div key={item.id} className="rounded-lg border border-border bg-card px-3 py-2">
+                          <div className="flex items-start justify-between gap-3">
+                            <p className="font-semibold text-sm min-w-0">
+                              {item.productName}
+                              {item.variantName ? ` — ${item.variantName}` : ''}
+                            </p>
+                            <span className="text-sm font-bold tabular-nums shrink-0">{formatMoney(item.lineTotal)}</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground tabular-nums mt-0.5">
+                            {Number(item.quantity || 0)} × {formatMoney(item.unitCost)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
-      <Dialog open={supplierEditorOpen} onOpenChange={setSupplierEditorOpen}>
+      <Dialog open={supplierEditorOpen} onOpenChange={(open) => (open ? setSupplierEditorOpen(true) : closeSupplierEditor())}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Edit Supplier</DialogTitle>
             <DialogDescription>Update the supplier details used on future GRNs.</DialogDescription>
           </DialogHeader>
           <form onSubmit={updateSupplier} className="space-y-4">
-            <input className={inputClassName} placeholder="Supplier name" value={supplierName} onChange={(event) => setSupplierName(event.target.value)} required />
-            <input className={inputClassName} placeholder="Phone (optional)" value={supplierPhone} onChange={(event) => setSupplierPhone(event.target.value)} />
-            <input className={inputClassName} placeholder="Address (optional)" value={supplierAddress} onChange={(event) => setSupplierAddress(event.target.value)} />
-            <textarea className={inputClassName} placeholder="Notes (optional)" value={supplierNotes} onChange={(event) => setSupplierNotes(event.target.value)} rows={3} />
+            <input className={inputClassName} placeholder="Supplier name" value={editName} onChange={(event) => setEditName(event.target.value)} required />
+            <input className={inputClassName} placeholder="Phone (optional)" value={editPhone} onChange={(event) => setEditPhone(event.target.value)} />
+            <input className={inputClassName} placeholder="Address (optional)" value={editAddress} onChange={(event) => setEditAddress(event.target.value)} />
+            <textarea className={inputClassName} placeholder="Notes (optional)" value={editNotes} onChange={(event) => setEditNotes(event.target.value)} rows={3} />
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setSupplierEditorOpen(false)}>Cancel</Button>
+              <Button type="button" variant="outline" onClick={closeSupplierEditor}>Cancel</Button>
               <Button type="submit">Save changes</Button>
             </DialogFooter>
           </form>
